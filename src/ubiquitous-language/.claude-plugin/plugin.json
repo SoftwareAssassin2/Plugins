@@ -1,0 +1,7 @@
+{
+  "name": "ubiquitous-language",
+  "displayName": "Ubiquitous Language",
+  "version": "0.1.0",
+  "description": "Extract a DDD-style ubiquitous language glossary from the current conversation, flagging ambiguities and proposing canonical terms. Forked from Matt Pocock's skill.",
+  "author": { "name": "Chris Green (Software Assassin)" }
+}

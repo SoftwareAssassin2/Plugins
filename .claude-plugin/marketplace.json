@@ -11,6 +11,12 @@
         "url": "gmickel/gmickel-claude-marketplace",
         "path": "plugins/flow-next"
       }
+    },
+    {
+      "name": "ubiquitous-language",
+      "displayName": "Ubiquitous Language",
+      "description": "Extract a DDD-style domain glossary from the current conversation, flagging ambiguities and proposing canonical terms.",
+      "source": "./src/ubiquitous-language"
     }
   ]
 }
