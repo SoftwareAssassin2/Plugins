@@ -5,7 +5,7 @@
     {
       "name": "preferred-ralph-loops-plugin",
       "displayName": "Preferred Ralph Loops Plugin",
-      "description": "Curated re-export of gmickel's flow-next plugin — Ralph autonomous mode + spec-driven planning.",
+      "description": "Curated re-export of gmickel's flow-next plugin.",
       "source": {
         "source": "git-subdir",
         "url": "gmickel/gmickel-claude-marketplace",
@@ -15,8 +15,26 @@
     {
       "name": "ubiquitous-language",
       "displayName": "Ubiquitous Language",
-      "description": "Extract a DDD-style domain glossary from the current conversation, flagging ambiguities and proposing canonical terms.",
+      "description": "Fork of Matt Pocock's ubiquitous-language skill. Extract a DDD-style domain glossary from the current conversation, flagging ambiguities and proposing canonical terms.",
       "source": "./src/ubiquitous-language"
+    },
+    {
+      "name": "grill-me",
+      "displayName": "Grill Me",
+      "description": "Fork of Matt Pocock's grill-me skill. Asks the user a series of questions to clarify their request and ensure the assistant's response is on target.",
+      "source": "./src/grill-me"
+    },
+    {
+      "name": "handoff",
+      "displayName": "Handoff",
+      "description": "Fork of Matt Pocock's handoff skill. Facilitates handoffs between different assistants or tools, ensuring context is preserved and the user's request is fulfilled seamlessly.",
+      "source": "./src/handoff"
+    },
+    {
+      "name": "tdd",
+      "displayName": "Test-Driven Development (TDD)",
+      "description": "Fork of Matt Pocock's tdd skill. Test-driven development with red-green-refactor loop.",
+      "source": "./src/tdd"
     }
   ]
 }
