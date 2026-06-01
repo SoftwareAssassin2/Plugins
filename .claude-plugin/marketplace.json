@@ -1,0 +1,16 @@
+{
+  "name": "plugins",
+  "owner": { "name": "SoftwareAssassin2" },
+  "plugins": [
+    {
+      "name": "preferred-ralph-loops-plugin",
+      "displayName": "Preferred Ralph Loops Plugin",
+      "description": "Curated re-export of gmickel's flow-next plugin — Ralph autonomous mode + spec-driven planning.",
+      "source": {
+        "source": "git-subdir",
+        "url": "gmickel/gmickel-claude-marketplace",
+        "path": "plugins/flow-next"
+      }
+    }
+  ]
+}
