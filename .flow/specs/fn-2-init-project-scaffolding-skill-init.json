@@ -1,0 +1,30 @@
+{
+  "branch_name": "fn-2-init-project-scaffolding-skill-init",
+  "completion_review_status": "unknown",
+  "completion_reviewed_at": null,
+  "created_at": "2026-06-13T10:00:59.134504Z",
+  "default_impl": null,
+  "default_review": null,
+  "default_sync": null,
+  "depends_on_epics": [
+    "fn-1-dick-ballsy-in-project-setup-skill-dick"
+  ],
+  "id": "fn-2-init-project-scaffolding-skill-init",
+  "next_task": 1,
+  "plan_review_status": "unknown",
+  "plan_reviewed_at": null,
+  "spec_path": ".flow/specs/fn-2-init-project-scaffolding-skill-init.md",
+  "status": "open",
+  "title": "init-project scaffolding skill (/init-project)",
+  "tracker": {
+    "baseHashFlow": null,
+    "baseHashTracker": null,
+    "id": null,
+    "identifier": null,
+    "lastSyncedAt": null,
+    "mergeBaseFlow": null,
+    "mergeBaseTracker": null,
+    "url": null
+  },
+  "updated_at": "2026-06-13T21:31:14.438259Z"
+}

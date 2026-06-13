@@ -1,0 +1,28 @@
+{
+  "branch_name": "fn-1-dick-ballsy-in-project-setup-skill-dick",
+  "completion_review_status": "unknown",
+  "completion_reviewed_at": null,
+  "created_at": "2026-06-13T10:00:55.268123Z",
+  "default_impl": null,
+  "default_review": null,
+  "default_sync": null,
+  "depends_on_epics": [],
+  "id": "fn-1-dick-ballsy-in-project-setup-skill-dick",
+  "next_task": 1,
+  "plan_review_status": "unknown",
+  "plan_reviewed_at": null,
+  "spec_path": ".flow/specs/fn-1-dick-ballsy-in-project-setup-skill-dick.md",
+  "status": "open",
+  "title": "Dick Ballsy in-project setup skill (/dick)",
+  "tracker": {
+    "baseHashFlow": null,
+    "baseHashTracker": null,
+    "id": null,
+    "identifier": null,
+    "lastSyncedAt": null,
+    "mergeBaseFlow": null,
+    "mergeBaseTracker": null,
+    "url": null
+  },
+  "updated_at": "2026-06-13T22:01:07.401885Z"
+}

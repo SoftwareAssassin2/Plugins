@@ -1,0 +1,50 @@
+{
+  "memory": {
+    "enabled": true
+  },
+  "planSync": {
+    "crossSpec": false,
+    "enabled": true
+  },
+  "review": {
+    "backend": null
+  },
+  "scouts": {
+    "github": false
+  },
+  "tracker": {
+    "conflictTiebreak": "always-ask",
+    "enabled": false,
+    "perEvent": {
+      "capture": "off",
+      "completionReview": "off",
+      "interview": "off",
+      "makePr": "off",
+      "plan": "off",
+      "qa": "off",
+      "resolvePr": "off",
+      "work": {
+        "done": "off",
+        "firstClaim": "off"
+      }
+    },
+    "perTracker": {
+      "labelMap": {},
+      "priorityMap": {},
+      "projectId": null,
+      "teamId": null
+    },
+    "provenance": null,
+    "staleAfterHours": 24,
+    "type": null,
+    "version": 1
+  },
+  "work": {
+    "delegate": false,
+    "delegateConsent": false,
+    "delegateDecision": "auto",
+    "delegateEffort": "medium",
+    "delegateModel": "gpt-5.5",
+    "delegateSandbox": "yolo"
+  }
+}
