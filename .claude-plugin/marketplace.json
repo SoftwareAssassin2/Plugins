@@ -45,6 +45,12 @@
       "displayName": "Test-Driven Development (TDD)",
       "description": "Fork of Matt Pocock's tdd skill. Test-driven development with red-green-refactor loop.",
       "source": "./src/tdd"
+    },
+    {
+      "name": "dick",
+      "displayName": "Dick Ballsy",
+      "description": "Boot Dick Ballsy, a brash, contrarian business-architect advisor who interrogates your business and maintains the business docs (business/strategy/customers/priorities/decisions). Use only when explicitly invoked or accepted from the /init-project hand-off.",
+      "source": "./src/dick"
     }
   ]
 }

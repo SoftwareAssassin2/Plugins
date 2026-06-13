@@ -35,7 +35,8 @@ Scaffold and register the `/dick` skill skeleton so it's a real, invocable Claud
 - [ ] (If included) `src/dick/.claude-plugin/plugin.json` mirrors the ubiquitous-language manifest shape
 
 ## Done summary
-_(filled on completion)_
-
+Scaffolded + registered /dick: SKILL.md (name: dick, narrowly-gated description, reads+adopts SOUL.md, hand-off contract), dick entry in marketplace.json (source ./src/dick), plugin.json manifest. No disable-model-invocation so /init-project can boot it.
 ## Evidence
-_(filled on completion)_
+- Commits:
+- Tests:
+- PRs:

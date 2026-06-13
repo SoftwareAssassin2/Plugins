@@ -31,7 +31,8 @@ Author the `/dick` SKILL.md behavior body — the prose that turns the loaded SO
 - [ ] Behavior verified by a live run **against a throwaway fixture project**: boots in persona, asks one question, updates a `docs/*.md` in the fixture + reports what changed, exits cleanly on "goodbye" or other clear exit intent
 
 ## Done summary
-_(filled on completion)_
-
+Authored SKILL.md behavior body: SOUL.md persona-lock + mandatory soft off-ramp; one-question interview discipline (kill/validate first, report/exit exempt, main-thread-only); candor-not-cruelty (attacks assumptions not the user); business-doc maintenance for docs/{business,strategy,customers,priorities,decisions}.md (read-before-write, edit-in-place, mark [BET]/[TODO], no fabrication, per-session diff; in-voice line only in replies).
 ## Evidence
-_(filled on completion)_
+- Commits:
+- Tests:
+- PRs:
