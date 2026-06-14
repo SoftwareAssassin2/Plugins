@@ -1,0 +1,13 @@
+# Grafana datasource provisioning — scrapes the OTel Collector's Prometheus
+# exporter endpoint (otel-collector:8889 on the compose network). Provisioned at
+# startup so a fresh `system.sh up` has a working datasource with no manual setup.
+apiVersion: 1
+
+datasources:
+  - name: OTel Collector (Prometheus)
+    uid: otel-collector-prometheus
+    type: prometheus
+    access: proxy
+    url: http://otel-collector:8889
+    isDefault: true
+    editable: true

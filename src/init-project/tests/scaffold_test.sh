@@ -138,6 +138,35 @@ check "scaffolded system.sh dispatches help (exit 0)" 'HELP_OUT="$( cd "$WORK/de
 check "scaffolded system.sh no-arg -> usage exit 64"  '( cd "$WORK/demo-app" && bash ./system.sh >/dev/null 2>&1 ); [[ $? -eq 64 ]]'
 check "scaffolded system.sh unknown -> exit 127"      '( cd "$WORK/demo-app" && bash ./system.sh nope >/dev/null 2>&1 ); [[ $? -eq 127 ]]'
 
+# Observability dev-tooling stack (fn-2 task .5): Grafana + OTel Collector compose
+# stack under etc/observability/ — INTERNAL dev tooling, NOT a systems[] component
+# and NOT an external services{} dep (no config.json entry; up/down hardcode the
+# path). Build-time-complete: compose file + collector config + Grafana provisioning
+# all land in scaffold output, token-free, with valid YAML/JSON and PINNED image tags
+# (no :latest). A real `docker compose up` needs Docker and is deferred to the dev
+# container / CI; here we assert presence + validity + that it lives OUTSIDE the
+# systems[] invariant and OUTSIDE .devcontainer/. (`docker compose config` validity
+# is run by the worker directly — it needs the docker CLI.)
+OBS="$WORK/demo-app/etc/observability"
+check "etc/observability/docker-compose.yml present" '[[ -f "$OBS/docker-compose.yml" ]]'
+check "etc/observability/otel-collector-config.yaml present" '[[ -f "$OBS/otel-collector-config.yaml" ]]'
+check "grafana datasources provisioning present" '[[ -f "$OBS/grafana/provisioning/datasources/datasources.yaml" ]]'
+check "grafana dashboards provider present" '[[ -f "$OBS/grafana/provisioning/dashboards/dashboards.yaml" ]]'
+check "observability lives OUTSIDE .devcontainer/" '[[ ! -e "$WORK/demo-app/.devcontainer/observability" ]]'
+# Pure dev tooling: NO config.json systems[] entry (the documented invariant exception).
+check "observability is NOT a config.json systems[] entry" '! jq -e "[.systems[].name] | index(\"observability\")" "$WORK/demo-app/config.json" >/dev/null'
+# Compose defines BOTH services with PINNED image tags (no floating :latest).
+check "compose defines grafana + otel-collector services" 'python3 -c "import yaml,sys; s=yaml.safe_load(open(\"$OBS/docker-compose.yml\"))[\"services\"]; sys.exit(0 if (\"grafana\" in s and \"otel-collector\" in s) else 1)"'
+check "compose images pinned (no :latest)" 'python3 -c "import yaml,sys; s=yaml.safe_load(open(\"$OBS/docker-compose.yml\"))[\"services\"]; imgs=[v[\"image\"] for v in s.values()]; sys.exit(0 if all((\":\" in i and not i.endswith(\":latest\")) for i in imgs) else 1)"'
+check "grafana image is grafana/grafana pinned" 'grep -qE "grafana/grafana:[0-9]" "$OBS/docker-compose.yml"'
+check "collector image is otel contrib pinned" 'grep -qE "otel/opentelemetry-collector-contrib:[0-9]" "$OBS/docker-compose.yml"'
+# OTel collector config is valid YAML with the standard receivers/exporters/service shape.
+check "otel config valid YAML + OTLP receiver" 'python3 -c "import yaml,sys; c=yaml.safe_load(open(\"$OBS/otel-collector-config.yaml\")); sys.exit(0 if \"otlp\" in c[\"receivers\"] and \"pipelines\" in c[\"service\"] else 1)"'
+# Grafana provisioning is valid YAML; the starter dashboard is valid JSON.
+check "grafana datasources valid YAML" 'python3 -c "import yaml; yaml.safe_load(open(\"$OBS/grafana/provisioning/datasources/datasources.yaml\"))"'
+check "grafana dashboard JSON valid" 'jq -e . "$OBS/grafana/provisioning/dashboards/otel-collector.json" >/dev/null'
+check "observability output token-free" '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$OBS"'
+
 # Angular SPA templates (fn-2 task .12): two SPAs (MarketingSite + WebApp) each its
 # own src/<component>/ folder, a single root Angular-version source, and the
 # docs/front-end.md standard — all landing in scaffold output token-free. Light
