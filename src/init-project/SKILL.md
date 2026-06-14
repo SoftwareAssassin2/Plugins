@@ -24,11 +24,11 @@ Stand up a new software project from copy-ready templates. **The templates are a
 
 ## Git/GitHub phase (after a successful scaffold)
 
-Run these as **assistant-workflow steps inside the new project dir (`./<name>/`)** — this skill instructs the agent; it does not itself execute slash commands. All prompts **default to the safe/no-op choice**; a declined repo or an absent tool degrades gracefully (non-fatal) and the skill still reports overall success.
+Run these as **assistant-workflow steps from the scaffold parent directory** (the dir that now contains `./<name>/`) — every command below uses an explicit `git -C ./<name> ...` so the working directory is unambiguous. This skill instructs the agent; it does not itself execute slash commands. All prompts **default to the safe/no-op choice** (declining leaves the freshly scaffolded files on disk untouched, no repo, no commit); a declined repo or an absent tool degrades gracefully (non-fatal) and the skill still reports overall success.
 
 Ask up front (batch the prompts):
 - **Create a GitHub repo?** (default: no) — if yes, ask for the **repo name** (default: the project name).
-- **Auto-commit after setup?** (default: yes) — make the repo's initial commit.
+- **Auto-commit after setup?** (default: no) — when accepted, make the repo's user-opted initial commit. (A commit is not a no-op, so the safe default is to leave the scaffold uncommitted.)
 - **Run `/init` after setup?** (default: no).
 
 Then, in order:
