@@ -23,7 +23,15 @@ Author the **observability** compose stack template (Grafana + OpenTelemetry Col
 - [ ] `docker compose config` validates the template
 
 ## Done summary
-_(filled on completion)_
-
+Authored the build-time-complete observability dev-tooling stack as templates under
+`templates/etc/observability/`: a pinned docker-compose stack (Grafana 11.4.0 + OTel
+Collector contrib 0.116.0 + Prometheus v3.0.1 as the query backend), the OTel
+Collector config (OTLP receivers -> Prometheus exporter + debug), a Prometheus scrape
+config, and Grafana provisioning (Prometheus datasource + dashboard provider + starter
+dashboard). It is internal tooling (no config.json systems[] entry; up/down/status
+already hardcode the path), ports are loopback-bound, and 21 focused scaffold-test
+assertions were added (164 -> 185 passing). Codex impl-review: SHIP.
 ## Evidence
-_(filled on completion)_
+- Commits: 54050ca, 9545b0c, 31e93c4
+- Tests: bash src/init-project/tests/scaffold_test.sh (185 passed, 0 failed), bash src/init-project/tests/dispatcher_test.sh (60 passed, 0 failed), docker compose -f etc/observability/docker-compose.yml config (VALID, on template + freshly scaffolded copy), python3 YAML/JSON parse of all 6 observability files (ok)
+- PRs:
