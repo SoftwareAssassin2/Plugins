@@ -119,22 +119,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends kcov jq
 
-      # Run the generated project's own shell suite under kcov, scoped to the
-      # dispatcher (system.sh) + its subcommands (src/system-cli/*.sh). scaffold.sh is
-      # NOT in scope here — it belongs to the init-project skill package, covered by
-      # that package's own tests (docs/tdd.md §2).
-      - name: Run shell suite under kcov
-        run: |
-          kcov \
-            --include-path="$PWD/system.sh,$PWD/src/system-cli" \
-            coverage-shell \
-            bash tests/system-cli/system_cli_test.sh
-
-      # kcov has no built-in gate; parse its merged summary and fail below 100% line.
-      # Branch completeness is enforced by the explicit per-branch test cases in the
-      # suite itself (bash branch metrics are not portable — docs/tdd.md §6).
-      - name: Enforce 100% shell line coverage
-        run: bash .github/scripts/kcov-gate.sh coverage-shell
+      # Run the generated project's own shell suite under kcov + the 100%-line gate.
+      # tests/coverage.sh runs tests/system-cli/system_cli_test.sh (which asserts the
+      # dispatcher + src/system-cli behaviour AND a test per branch), invoking each
+      # script as a DIRECT kcov child scoped via --include-pattern to system.sh +
+      # src/system-cli (NOT the harness, NOT scaffold.sh — that belongs to the
+      # init-project skill package per docs/tdd.md §2), merges the per-call collect
+      # dirs, and fails below 100% line (or if kcov measured nothing). --require-kcov
+      # makes an absent/non-measuring kcov a hard failure, never a silent pass.
+      - name: Run shell suite under kcov + 100% line gate
+        run: bash tests/coverage.sh --require-kcov
 
   config:
     name: config.json / config.deploy.json drift

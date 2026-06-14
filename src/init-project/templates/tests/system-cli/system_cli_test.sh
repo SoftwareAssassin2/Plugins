@@ -37,20 +37,54 @@ chmod +x "$WORK/system.sh" "$WORK"/src/system-cli/*.sh
 WSYS="$WORK/system.sh"
 WBC="$WORK/src/system-cli/build-config.sh"
 
+# Coverage mode (opt-in): when SYSTEM_CLI_KCOV_DIR is set, each script invocation
+# runs as a DIRECT kcov child (kcov instruments only its immediate target reliably —
+# the scripts under test run via bash, not deeply nested), with per-call collect dirs
+# that CI merges afterward. kcov scopes to the executed copies (system.sh +
+# src/system-cli) via --include-pattern so it measures the real scripts, never the
+# harness or scaffold.sh. When unset, invocations run plainly. Either way we strip
+# kcov's LD_PRELOAD-warning line from captured output so it never corrupts the exact
+# stderr-prefix assertions below.
+# runner <script> [args...]: run the script in $WORK, echo combined stdout+stderr,
+# and RETURN THE SCRIPT'S EXIT CODE (not the LD_PRELOAD-filter's). The filter strip
+# of kcov's preload-warning line must not mask the script's rc, so we capture rc in
+# the same subshell that runs the script and re-exit with it after filtering.
+#
+# Each runner call is itself wrapped in $(...) by the caller (a subshell), so a shell
+# variable counter would not persist — we derive a UNIQUE per-call collect dir from a
+# monotonically-incremented counter FILE under $SYSTEM_CLI_KCOV_DIR. CI merges all
+# run-* dirs afterward (kcov --merge) into one summary the coverage gate parses.
+runner() {
+  local script="$1"; shift
+  if [[ -n "${SYSTEM_CLI_KCOV_DIR:-}" ]]; then
+    local n cf="$SYSTEM_CLI_KCOV_DIR/.counter"
+    n=$(( $(cat "$cf" 2>/dev/null || echo 0) + 1 )); printf '%s' "$n" > "$cf"
+    ( cd "$WORK"
+      raw="$(kcov --collect-only \
+              --include-pattern=/system.sh,/src/system-cli/ \
+              "$SYSTEM_CLI_KCOV_DIR/run-$n" \
+              bash "$script" "$@" 2>&1)"; rc=$?
+      printf '%s' "$raw" | grep -vE "object '.*libkcov.*' from LD_PRELOAD cannot be preloaded"
+      exit "$rc" )
+  else
+    ( cd "$WORK" && bash "$script" "$@" 2>&1 )
+  fi
+}
+
 echo "== dispatcher contract =="
-OUT="$( cd "$WORK" && bash "$WSYS" help 2>&1 )"; rc=$?
+OUT="$(runner "$WSYS" help)"; rc=$?
 check "valid subcommand dispatches (help exit 0)" '[[ $rc -eq 0 ]]'
 check "help lists subcommands + descriptions"     'grep -q "Available commands:" <<<"$OUT" && grep -q "build-config" <<<"$OUT"'
 
-OUT="$( cd "$WORK" && bash "$WSYS" 2>&1 )"; rc=$?
+OUT="$(runner "$WSYS")"; rc=$?
 check "no subcommand -> exit 64"                  '[[ $rc -eq 64 ]]'
 check "no subcommand -> usage on stderr"          'grep -q "usage:" <<<"$OUT"'
 
-OUT="$( cd "$WORK" && bash "$WSYS" _private 2>&1 )"; rc=$?
+OUT="$(runner "$WSYS" _private)"; rc=$?
 check "underscore subcommand -> exit 64"          '[[ $rc -eq 64 ]]'
 check "underscore error pinned ERROR: '\''<sub>'\''" '[[ "$OUT" == "ERROR: '\''_private'\'' is a private helper"* ]]'
 
-OUT="$( cd "$WORK" && bash "$WSYS" nope 2>&1 )"; rc=$?
+OUT="$(runner "$WSYS" nope)"; rc=$?
 check "unknown subcommand -> exit 127"            '[[ $rc -eq 127 ]]'
 
 # Underscore helpers are hidden from help.
@@ -60,7 +94,7 @@ cat > "$WORK/src/system-cli/_hidden.sh" <<'HID'
 echo x
 HID
 chmod +x "$WORK/src/system-cli/_hidden.sh"
-OUT="$( cd "$WORK" && bash "$WSYS" help 2>&1 )"
+OUT="$(runner "$WSYS" help)"
 check "help hides underscore helpers"             '! grep -q "_hidden" <<<"$OUT"'
 rm -f "$WORK/src/system-cli/_hidden.sh"
 
@@ -70,7 +104,7 @@ cat > "$WORK/src/system-cli/nodesc.sh" <<'ND'
 echo x
 ND
 chmod +x "$WORK/src/system-cli/nodesc.sh"
-OUT="$( cd "$WORK" && bash "$WSYS" help 2>&1 )"
+OUT="$(runner "$WSYS" help)"
 check "help falls back to (no description)"       'grep -qE "nodesc[[:space:]]+\(no description\)" <<<"$OUT"'
 rm -f "$WORK/src/system-cli/nodesc.sh"
 
@@ -89,44 +123,44 @@ check "v_port rejects 70000"             '( v_port 70000 l ) 2>/dev/null; [[ $? 
 check "v_port accepts valid"             '( v_port 5432 l ); [[ $? -eq 0 ]]'
 
 echo "== build-config: distribution =="
-OUT="$( cd "$WORK" && bash "$WBC" 2>&1 )"; rc=$?
+OUT="$(runner "$WBC")"; rc=$?
 check "build-config succeeds"            '[[ $rc -eq 0 ]]'
 check "writes src/postgres/.env"         '[[ -f "$WORK/src/postgres/.env" ]]'
 check "DataAccess migrator conn string"  'grep -q "MIGRATOR_CONNECTION_STRING=.*Username=migrator" "$WORK/src/DataAccess/.env"'
 check "Api api-role conn + keycloak"     'grep -q "API_CONNECTION_STRING=.*Username=api" "$WORK/src/Api/.env" && grep -q "KEYCLOAK_API_CLIENT_SECRET=" "$WORK/src/Api/.env"'
 check "stamps SPA public config (non-secret)" 'jq -e "(keys|sort)==[\"clientId\",\"realmUrl\"]" "$WORK/src/WebApp/public/config.json" >/dev/null'
 
-OUT="$( cd "$WORK" && bash "$WBC" --config "$WORK/config.json" 2>&1 )"; rc=$?
+OUT="$(runner "$WBC" --config "$WORK/config.json")"; rc=$?
 check "--config <path> accepted"         '[[ $rc -eq 0 ]]'
 
-OUT="$( cd "$WORK" && bash "$WBC" --config /nonexistent.json 2>&1 )"; rc=$?
+OUT="$(runner "$WBC" --config /nonexistent.json)"; rc=$?
 check "missing --config file -> exit 64" '[[ $rc -eq 64 ]]'
 
-OUT="$( cd "$WORK" && bash "$WBC" --bogus 2>&1 )"; rc=$?
+OUT="$(runner "$WBC" --bogus)"; rc=$?
 check "unknown flag -> exit 64"          '[[ $rc -eq 64 ]]'
 
 # Reject: out-of-alphabet secret.
 BAD="$WORK/bad.json"
 jq '(.systems[] | select(.name=="postgres") | .owner_password)="bad=secret"' "$WORK/config.json" > "$BAD"
-OUT="$( cd "$WORK" && bash "$WBC" --config "$BAD" 2>&1 )"; rc=$?
+OUT="$(runner "$WBC" --config "$BAD")"; rc=$?
 check "out-of-alphabet secret -> exit 64" '[[ $rc -eq 64 ]]'
 
 # Reject: bad port.
 BADP="$WORK/badport.json"
 jq '(.systems[] | select(.name=="Api") | .port)=99999' "$WORK/config.json" > "$BADP"
-OUT="$( cd "$WORK" && bash "$WBC" --config "$BADP" 2>&1 )"; rc=$?
+OUT="$(runner "$WBC" --config "$BADP")"; rc=$?
 check "out-of-range port -> exit 64"      '[[ $rc -eq 64 ]]'
 
 # Reject: raw deploy template ({{VAR}}).
 if [[ -f "$ROOT/config.deploy.json" ]]; then
-  OUT="$( cd "$WORK" && bash "$WBC" --config "$ROOT/config.deploy.json" 2>&1 )"; rc=$?
+  OUT="$(runner "$WBC" --config "$ROOT/config.deploy.json")"; rc=$?
   check "raw deploy template -> exit 64"  '[[ $rc -eq 64 ]]'
 fi
 
 # External service credential exempt (opaque api_key with /+= passes).
 OPAQUE="$WORK/opaque.json"
 jq '.services."claude-api".api_key="sk-a/b+c=d"' "$WORK/config.json" > "$OPAQUE"
-OUT="$( cd "$WORK" && bash "$WBC" --config "$OPAQUE" 2>&1 )"; rc=$?
+OUT="$(runner "$WBC" --config "$OPAQUE")"; rc=$?
 check "external service cred exempt"      '[[ $rc -eq 0 ]]'
 
 echo "== build-config: realm-stamp mechanism =="
@@ -140,13 +174,13 @@ if [[ -f "$ROOT/src/keycloak/realm.template.json" ]]; then
   [[ -f "$ROOT/src/keycloak/docker-compose.yml" ]] \
     && cp "$ROOT/src/keycloak/docker-compose.yml" "$WORK/src/keycloak/docker-compose.yml"
   touch "$WORK/src/keycloak/import/stale-realm.json"
-  OUT="$( cd "$WORK" && bash "$WBC" 2>&1 )"; rc=$?
+  OUT="$(runner "$WBC")"; rc=$?
   REALM="$(jq -r '(.systems[] | select(.name=="keycloak") | .realm)' "$WORK/config.json")"
   check "realm import stamped"            '[[ $rc -eq 0 ]] && [[ -f "$WORK/src/keycloak/import/$REALM-realm.json" ]]'
   check "stale prior realm import removed" '[[ ! -f "$WORK/src/keycloak/import/stale-realm.json" ]]'
 else
   # No realm template yet (owned by the keycloak task) — stamping must skip cleanly.
-  OUT="$( cd "$WORK" && bash "$WBC" 2>&1 )"; rc=$?
+  OUT="$(runner "$WBC")"; rc=$?
   check "no realm template -> stamp skipped" '[[ $rc -eq 0 ]] && grep -q "skipping realm stamp" <<<"$OUT"'
 fi
 

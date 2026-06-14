@@ -306,6 +306,7 @@ check ".github/workflows/ci.yml present"       "[[ -f \"$GHA/workflows/ci.yml\" 
 check ".github/workflows/deploy.yml present"   "[[ -f \"$GHA/workflows/deploy.yml\" ]]"
 check ".github/scripts/kcov-gate.sh present+exec"    "[[ -x \"$GHA/scripts/kcov-gate.sh\" ]]"
 check ".github/scripts/config-drift.sh present+exec" "[[ -x \"$GHA/scripts/config-drift.sh\" ]]"
+check "tests/coverage.sh present+exec"               "[[ -x \"$WORK/demo-app/tests/coverage.sh\" ]]"
 check "ci.yml valid YAML"                      "python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' \"$GHA/workflows/ci.yml\""
 check "deploy.yml valid YAML"                  "python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' \"$GHA/workflows/deploy.yml\""
 check ".github output token-free"              "! grep -rqE \"__SCAFFOLD_[A-Z0-9_]+__\" \"$GHA\""
@@ -316,8 +317,9 @@ check "ci.yml runs the coverlet 100 line+branch gate" "grep -q 'ThresholdType=li
 check "ci.yml pins .NET SDK 9 (net9.0 native, no SDK-10 rollforward)" "grep -qE 'dotnet-version: *\"?9' \"$GHA/workflows/ci.yml\""
 check "ci.yml runs real npm scripts (build/lint/format/coverage)" "grep -q 'npm run build' \"$GHA/workflows/ci.yml\" && grep -q 'npm run lint' \"$GHA/workflows/ci.yml\" && grep -q 'npm run format:check' \"$GHA/workflows/ci.yml\" && grep -q 'npm run test:coverage' \"$GHA/workflows/ci.yml\""
 check "ci.yml verifies static SSG dist/<app>/browser/index.html" "grep -q 'dist/\$app/browser/index.html' \"$GHA/workflows/ci.yml\""
-check "ci.yml runs the generated shell suite under kcov" "grep -q 'tests/system-cli/system_cli_test.sh' \"$GHA/workflows/ci.yml\" && grep -q 'kcov' \"$GHA/workflows/ci.yml\" && [[ -f \"$WORK/demo-app/tests/system-cli/system_cli_test.sh\" ]]"
-check "ci.yml kcov scopes system.sh+src/system-cli (NOT scaffold.sh)" "grep -q 'include-path=.*system.sh' \"$GHA/workflows/ci.yml\" && ! grep -qE 'include-path=.*scaffold.sh' \"$GHA/workflows/ci.yml\""
+check "ci.yml runs the generated shell suite via tests/coverage.sh --require-kcov" "grep -q 'tests/coverage.sh --require-kcov' \"$GHA/workflows/ci.yml\" && [[ -x \"$WORK/demo-app/tests/coverage.sh\" ]]"
+check "coverage.sh runs the real shell suite + the kcov-gate" "grep -q 'system_cli_test.sh' \"$WORK/demo-app/tests/coverage.sh\" && grep -q 'kcov-gate.sh' \"$WORK/demo-app/tests/coverage.sh\" && [[ -f \"$WORK/demo-app/tests/system-cli/system_cli_test.sh\" ]]"
+check "coverage.sh kcov scopes system.sh+src/system-cli (via the suite, NOT scaffold.sh)" "grep -q 'include-pattern=/system.sh,/src/system-cli/' \"$WORK/demo-app/tests/system-cli/system_cli_test.sh\" && ! grep -qE 'include-pattern=[^ ]*scaffold' \"$WORK/demo-app/tests/system-cli/system_cli_test.sh\""
 check "ci.yml has a config-drift job (needs no secret store)" "grep -q 'config-drift.sh config.json config.deploy.json' \"$GHA/workflows/ci.yml\""
 # The build/test CI must carry NO secret context: no \${{ secrets.* }} reference
 # (which is how raw {{VAR-NAME}} secrets would reach validation) anywhere in ci.yml.
@@ -338,7 +340,15 @@ printf '{"percent_covered":"100","covered_lines":10,"total_lines":10}' > "$GTMP/
 check "kcov-gate PASSES at 100% line" "bash \"$GHA/scripts/kcov-gate.sh\" \"$GTMP\" >/dev/null"
 printf '{"percent_covered":"90","covered_lines":9,"total_lines":10}' > "$GTMP/kcov-merged/coverage.json"
 check "kcov-gate FAILS below 100% line" "! bash \"$GHA/scripts/kcov-gate.sh\" \"$GTMP\" >/dev/null 2>&1"
+# 0 total lines = kcov instrumented nothing -> the gate FAILS (never a silent pass).
+printf '{"percent_covered":"0.00","covered_lines":0,"total_lines":0}' > "$GTMP/kcov-merged/coverage.json"
+check "kcov-gate FAILS when 0 lines measured (broken instrumentation)" "! bash \"$GHA/scripts/kcov-gate.sh\" \"$GTMP\" >/dev/null 2>&1"
 rm -rf "$GTMP"
+# deploy.yml's renderer must map a hyphenated {{VAR-NAME}} to its underscore env var
+# (a shell var name can't contain '-'). Exercise the exact substitution shape.
+HREND="$(mktemp -d)"; printf '{"a":"{{FOO-BAR}}"}' > "$HREND/in.json"
+check "deploy renderer maps {{VAR-NAME}} hyphen to env underscore" "( cd \"$HREND\" && FOO_BAR=ok bash -c 'set -euo pipefail; v=FOO-BAR; env_name=\${v//-/_}; val=\${!env_name-}; [[ -n \"\$val\" ]] && jq --arg ph \"{{\$v}}\" --arg val \"\$val\" \"walk(if type==\\\"string\\\" then split(\\\$ph)|join(\\\$val) else . end)\" in.json | jq -e \".a==\\\"ok\\\"\" >/dev/null' )"
+rm -rf "$HREND"
 
 # Dev container template (fn-2 task .4): .devcontainer/{devcontainer.json,setup.sh}
 # + a build-time-complete .mcp.json, all landing in scaffold output token-free with

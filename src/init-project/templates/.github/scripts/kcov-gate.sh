@@ -36,6 +36,15 @@ total="$(jq -r '.total_lines // empty' "$summary")"
 
 [[ -n "$pct" ]] || { echo "ERROR: percent_covered missing from $summary" >&2; exit 1; }
 
+# A summary with zero total lines means kcov did not actually instrument the scripts
+# (wrong include scope, or a runner that can't trace bash). That is a BROKEN gate, not
+# a pass — fail loudly rather than report a misleading 0%.
+if [[ "${total:-0}" -eq 0 ]]; then
+  echo "FAIL: kcov measured 0 total lines — the shell scripts were not instrumented." >&2
+  echo "      (check the kcov include scope / that the suite runs scripts as kcov children)" >&2
+  exit 1
+fi
+
 echo "Shell line coverage: $pct% ($covered/$total lines)"
 
 # Require 100% line coverage. Use awk for the float compare (pct may be e.g. 99.9).

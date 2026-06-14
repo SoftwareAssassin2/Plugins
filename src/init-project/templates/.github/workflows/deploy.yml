@@ -65,10 +65,13 @@ jobs:
           rendered="rendered-config.json"
           cp config.deploy.json "$rendered"
           for v in "${vars[@]}"; do
-            # Look up the matching env var (set from the secret store above).
-            val="${!v-}"
+            # A {{VAR-NAME}} placeholder may legitimately contain hyphens, but a
+            # shell variable name cannot — map '-' to '_' for the env lookup (the
+            # secret env keys above use underscores). Indirect-expand the env name.
+            env_name="${v//-/_}"
+            val="${!env_name-}"
             if [[ -z "$val" ]]; then
-              echo "ERROR: no secret provided for placeholder {{$v}}" >&2
+              echo "ERROR: no secret provided for placeholder {{$v}} (expected env $env_name)" >&2
               exit 1
             fi
             # Replace every {{v}} string leaf via jq. split|join is fully LITERAL on
