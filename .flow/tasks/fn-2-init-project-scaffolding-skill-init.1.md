@@ -1,5 +1,5 @@
 ---
-satisfies: [R1, R2, R6]
+satisfies: [R1, R2, R6, R23]
 ---
 
 ## Description
@@ -13,6 +13,7 @@ Establish `/init-project` as a registered, invocable skill AND build the bundled
 - SKILL.md frontmatter per `src/handoff/SKILL.md:1-4` (name, description, argument-hint). Body = orchestration prose: ask name + description, run scaffold.sh, report tree, then (fn-2….7) offer `/dick`.
 - Register in `.claude-plugin/marketplace.json` following `:15-20` (`source: "./src/init-project"`).
 - `scaffold.sh`: scaffold into `./<project-name>/`; **refuse non-empty target unless `--force`**; `{{PROJECT_NAME}}`/`{{PROJECT_DESCRIPTION}}` substitution via **bash parameter expansion** (NOT sed); validate name `^[a-z0-9][a-z0-9-]*$`; `--dry-run` prints the tree it will create; `set -euo pipefail`; source-guarded `main "$@"` so tests can source it.
+- **Copy + substitute ONLY (R23):** the engine's sole content operation is copy the pre-authored templates verbatim and substitute the `{{PLACEHOLDER}}` tokens — it **never generates or LLM-authors content**. The templates (authored in fn-2….2 and the other template tasks) are already complete; runtime is mechanical.
 - Best-practice references: refuse-by-default norm; deterministic stamping belongs in a script, not agent prose.
 
 ## Investigation targets
@@ -27,6 +28,7 @@ Establish `/init-project` as a registered, invocable skill AND build the bundled
 - [ ] `scaffold.sh <name> <description>` creates `./<name>/` with the root layout and substitutes both placeholders (no `{{` tokens remain)
 - [ ] Non-empty target is refused unless `--force`; invalid name exits non-zero with a clear message
 - [ ] `--dry-run` prints the planned tree and writes nothing
+- [ ] Engine only copies pre-authored templates + substitutes `{{PLACEHOLDER}}` tokens — no content generation at scaffold time (R23)
 - [ ] Script uses `set -euo pipefail` and a source-guarded `main` (testable by fn-2….6)
 
 ## Done summary
