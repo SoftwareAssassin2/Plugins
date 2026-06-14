@@ -28,7 +28,8 @@ Wire **EF Core code-first migrations** (DataAccess) and the **Keycloak-gated, se
 - [ ] **Coverage-preserving tests added** (so fn-2….13's 100% gate stays green): UoW opens-txn-then-`SET LOCAL` ordering, JWT claim extraction, migrator-vs-runtime role separation
 
 ## Done summary
-_(filled on completion)_
-
+Authored the build-time-complete EF Core code-first migration (InitialRlsBaseline) with the owner-wrapped, session-context RLS baseline in DataAccess, plus the per-request Keycloak-gated unit of work (transaction-first then set_config app.user_id) and JWT-bearer auth + middleware in Api — tying the .NET solution to the postgres roles. RLS isolation was proven live against the .10 postgres container.
 ## Evidence
-_(filled on completion)_
+- Commits: 7589782, bc16892, eb58195, 4836e91, 960b794
+- Tests: dotnet build src/system.sln (succeeds, roll-forward), dotnet test src/system.sln -p:CollectCoverage=true -p:Threshold=100 (Framework 3, BusinessLogic 3, DataAccess 51, Api 29 — all 100% line+branch), dotnet ef migrations list/script via design-time factory (InitialRlsBaseline real), LIVE: dotnet ef database update as migrator vs .10 postgres container; RLS isolation proven (per-user rows isolated, WITH CHECK forge rejected, deny-by-default with no app.user_id, set_config no-leak across txns, installed helper app_current_user_id() drives policy), scaffold_test.sh 235 ok / 0 fail, dispatcher_test.sh 61 passed
+- PRs:
