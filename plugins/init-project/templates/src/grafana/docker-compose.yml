@@ -1,0 +1,46 @@
+# Grafana — the dashboards / visualization frontend of the observability stack.
+#
+# This is a src/ component (its own src/grafana/ folder, brought up/down by
+# `./system.sh up` / `down`). Its provisioned datasource points at the `prometheus`
+# service (http://prometheus:9090), reached by service name over the SHARED
+# `observability` Docker network (declared external below, created by
+# `./system.sh up`). Dashboards + datasource are provisioned at startup so a fresh
+# `system.sh up` has a working view with no manual setup.
+#
+# It is NOT a config.json systems[] component and NOT an external services{}
+# dependency — local dev tooling promoted to a first-class src/ component. See
+# docs/dev-container.md §3.
+#
+# Image tag is PINNED for reproducibility. The published port is bound to loopback
+# (127.0.0.1) — and anonymous Admin is enabled below, so this must never be
+# LAN-reachable. A real bring-up happens in the dev container / CI;
+# `docker compose -f src/grafana/docker-compose.yml config` validates this
+# definition without starting anything.
+
+services:
+  grafana:
+    image: grafana/grafana:11.4.0
+    restart: unless-stopped
+    environment:
+      # Local dev defaults only — anonymous admin access, no sign-up. Combined with
+      # the loopback port binding above, this is never exposed beyond a developer's
+      # machine / the dev container.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./provisioning:/etc/grafana/provisioning:ro
+      - grafana-storage:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - observability
+
+volumes:
+  grafana-storage:
+
+# Shared, externally-managed network (see src/otel-collector/docker-compose.yml).
+networks:
+  observability:
+    external: true
+    name: observability

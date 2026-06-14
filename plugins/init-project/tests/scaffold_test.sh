@@ -6,7 +6,7 @@
 # collision, --update manifest-gating + config.json merge, --replace-config,
 # --dry-run, invalid name, and distinct/URL-safe generated secrets.
 #
-# Run: bash src/init-project/tests/scaffold_test.sh
+# Run: bash plugins/init-project/tests/scaffold_test.sh
 # (For coverage, fn-2 task .6 wraps this under kcov; this file is the harness.)
 
 set -uo pipefail
@@ -169,46 +169,56 @@ check "scaffolded system.sh dispatches help (exit 0)" 'HELP_OUT="$( cd "$WORK/de
 check "scaffolded system.sh no-arg -> usage exit 64"  '( cd "$WORK/demo-app" && bash ./system.sh >/dev/null 2>&1 ); [[ $? -eq 64 ]]'
 check "scaffolded system.sh unknown -> exit 127"      '( cd "$WORK/demo-app" && bash ./system.sh nope >/dev/null 2>&1 ); [[ $? -eq 127 ]]'
 
-# Observability dev-tooling stack (fn-2 task .5): Grafana + OTel Collector compose
-# stack under etc/observability/ — INTERNAL dev tooling, NOT a systems[] component
-# and NOT an external services{} dep (no config.json entry; up/down hardcode the
-# path). Build-time-complete: compose file + collector config + Grafana provisioning
-# all land in scaffold output, token-free, with valid YAML/JSON and PINNED image tags
-# (no :latest). A real `docker compose up` needs Docker and is deferred to the dev
-# container / CI; here we assert presence + validity + that it lives OUTSIDE the
-# systems[] invariant and OUTSIDE .devcontainer/. (`docker compose config` validity
-# is run by the worker directly — it needs the docker CLI.)
-OBS="$WORK/demo-app/etc/observability"
-check "etc/observability/docker-compose.yml present" '[[ -f "$OBS/docker-compose.yml" ]]'
-check "etc/observability/otel-collector-config.yaml present" '[[ -f "$OBS/otel-collector-config.yaml" ]]'
-check "grafana datasources provisioning present" '[[ -f "$OBS/grafana/provisioning/datasources/datasources.yaml" ]]'
-check "grafana dashboards provider present" '[[ -f "$OBS/grafana/provisioning/dashboards/dashboards.yaml" ]]'
-check "observability lives OUTSIDE .devcontainer/" '[[ ! -e "$WORK/demo-app/.devcontainer/observability" ]]'
-# Pure dev tooling: NO config.json systems[] entry (the documented invariant exception).
-check "observability is NOT a config.json systems[] entry" '! jq -e "[.systems[].name] | index(\"observability\")" "$WORK/demo-app/config.json" >/dev/null'
-# Compose defines the named services with PINNED image tags (no floating :latest).
-# Grafana queries via a Prometheus service that scrapes the collector exporter
-# (Grafana cannot query the collector's exposition endpoint directly).
-check "compose defines grafana + otel-collector services" 'python3 -c "import yaml,sys; s=yaml.safe_load(open(\"$OBS/docker-compose.yml\"))[\"services\"]; sys.exit(0 if (\"grafana\" in s and \"otel-collector\" in s) else 1)"'
-check "compose defines prometheus query backend" 'python3 -c "import yaml,sys; s=yaml.safe_load(open(\"$OBS/docker-compose.yml\"))[\"services\"]; sys.exit(0 if \"prometheus\" in s else 1)"'
-check "compose images pinned (no :latest)" 'python3 -c "import yaml,sys; s=yaml.safe_load(open(\"$OBS/docker-compose.yml\"))[\"services\"]; imgs=[v[\"image\"] for v in s.values()]; sys.exit(0 if all((\":\" in i and not i.endswith(\":latest\")) for i in imgs) else 1)"'
-check "grafana image is grafana/grafana pinned" 'grep -qE "grafana/grafana:[0-9]" "$OBS/docker-compose.yml"'
-check "collector image is otel contrib pinned" 'grep -qE "otel/opentelemetry-collector-contrib:[0-9]" "$OBS/docker-compose.yml"'
-check "prometheus image is prom/prometheus pinned" 'grep -qE "prom/prometheus:v?[0-9]" "$OBS/docker-compose.yml"'
-# Dev tooling must bind to loopback only (anonymous-admin Grafana must not be LAN-reachable).
-check "compose published ports bound to 127.0.0.1" 'python3 -c "import yaml,sys; s=yaml.safe_load(open(\"$OBS/docker-compose.yml\"))[\"services\"]; ports=[p for v in s.values() for p in v.get(\"ports\",[])]; sys.exit(0 if ports and all(str(p).startswith(\"127.0.0.1:\") for p in ports) else 1)"'
-# No hardcoded container_name (would collide across two scaffolded projects).
-check "compose does NOT hardcode container_name" '! grep -qE "^[[:space:]]*container_name:" "$OBS/docker-compose.yml"'
-# Prometheus scrapes the collector exporter; datasource points at prometheus (not the collector).
-check "prometheus scrapes otel-collector:8889" 'grep -q "otel-collector:8889" "$OBS/prometheus/prometheus.yml"'
-check "grafana datasource points at prometheus" 'grep -q "http://prometheus:9090" "$OBS/grafana/provisioning/datasources/datasources.yaml"'
-check "prometheus scrape config valid YAML" 'python3 -c "import yaml,sys; c=yaml.safe_load(open(\"$OBS/prometheus/prometheus.yml\")); sys.exit(0 if \"scrape_configs\" in c else 1)"'
-# OTel collector config is valid YAML with the standard receivers/exporters/service shape.
-check "otel config valid YAML + OTLP receiver" 'python3 -c "import yaml,sys; c=yaml.safe_load(open(\"$OBS/otel-collector-config.yaml\")); sys.exit(0 if \"otlp\" in c[\"receivers\"] and \"pipelines\" in c[\"service\"] else 1)"'
+# Observability stack (fn-2 task .5): Grafana + Prometheus + OTel Collector, each a
+# first-class src/<component>/ compose stack (NOT a systems[] component and NOT an
+# external services{} dep — local dev tooling, no config.json entry). Being separate
+# compose projects, they resolve one another by service name over a SHARED external
+# Docker network `observability` that `system.sh up` creates. Build-time-complete:
+# each compose file + its config land in scaffold output, token-free, with valid
+# YAML/JSON, PINNED image tags (no :latest), loopback-bound ports, and the shared
+# network declared. A real `docker compose up` needs Docker and is deferred to the
+# dev container / CI; here we assert presence + validity + structure.
+OTEL="$WORK/demo-app/src/otel-collector"
+PROM="$WORK/demo-app/src/prometheus"
+GRAF="$WORK/demo-app/src/grafana"
+OBS_COMPOSES=("$OTEL/docker-compose.yml" "$PROM/docker-compose.yml" "$GRAF/docker-compose.yml")
+
+check "src/otel-collector/ compose + config present" '[[ -f "$OTEL/docker-compose.yml" && -f "$OTEL/otel-collector-config.yaml" ]]'
+check "src/prometheus/ compose + scrape config present" '[[ -f "$PROM/docker-compose.yml" && -f "$PROM/prometheus.yml" ]]'
+check "src/grafana/ compose + provisioning present" '[[ -f "$GRAF/docker-compose.yml" && -f "$GRAF/provisioning/datasources/datasources.yaml" && -f "$GRAF/provisioning/dashboards/dashboards.yaml" ]]'
+check "observability components live OUTSIDE .devcontainer/" '[[ ! -e "$WORK/demo-app/.devcontainer/grafana" && ! -e "$WORK/demo-app/.devcontainer/prometheus" && ! -e "$WORK/demo-app/.devcontainer/otel-collector" ]]'
+# Pure dev tooling: NONE of the three is a config.json systems[] entry (documented exception).
+for svc in otel-collector prometheus grafana; do
+  check "observability '$svc' is NOT a systems[] entry" "! jq -e '[.systems[].name] | index(\"$svc\")' \"\$WORK/demo-app/config.json\" >/dev/null"
+done
+# Each compose defines exactly its one service, with the expected name.
+check "otel-collector compose defines otel-collector service" 'python3 -c "import yaml,sys; s=yaml.safe_load(open(\"$OTEL/docker-compose.yml\"))[\"services\"]; sys.exit(0 if list(s)==[\"otel-collector\"] else 1)"'
+check "prometheus compose defines prometheus service" 'python3 -c "import yaml,sys; s=yaml.safe_load(open(\"$PROM/docker-compose.yml\"))[\"services\"]; sys.exit(0 if list(s)==[\"prometheus\"] else 1)"'
+check "grafana compose defines grafana service" 'python3 -c "import yaml,sys; s=yaml.safe_load(open(\"$GRAF/docker-compose.yml\"))[\"services\"]; sys.exit(0 if list(s)==[\"grafana\"] else 1)"'
+# Images PINNED per component (no floating :latest).
+check "collector image is otel contrib pinned" 'grep -qE "otel/opentelemetry-collector-contrib:[0-9]" "$OTEL/docker-compose.yml"'
+check "prometheus image is prom/prometheus pinned" 'grep -qE "prom/prometheus:v?[0-9]" "$PROM/docker-compose.yml"'
+check "grafana image is grafana/grafana pinned" 'grep -qE "grafana/grafana:[0-9]" "$GRAF/docker-compose.yml"'
+# Structural invariants applied to ALL THREE compose files: PINNED images, loopback
+# ports, the shared external `observability` network (service attached + declared
+# external), and no hardcoded container_name (would collide across scaffolded projects).
+for f in "${OBS_COMPOSES[@]}"; do
+  base="$(basename "$(dirname "$f")")"
+  check "$base: image pinned (no :latest)" "python3 -c \"import yaml,sys; s=yaml.safe_load(open('$f'))['services']; imgs=[v['image'] for v in s.values()]; sys.exit(0 if all((':' in i and not i.endswith(':latest')) for i in imgs) else 1)\""
+  check "$base: published ports bound to 127.0.0.1" "python3 -c \"import yaml,sys; s=yaml.safe_load(open('$f'))['services']; ports=[p for v in s.values() for p in v.get('ports',[])]; sys.exit(0 if ports and all(str(p).startswith('127.0.0.1:') for p in ports) else 1)\""
+  check "$base: joins shared external 'observability' network" "python3 -c \"import yaml,sys; c=yaml.safe_load(open('$f')); n=c.get('networks',{}).get('observability',{}); s=list(c['services'].values())[0]; sys.exit(0 if n.get('external') is True and 'observability' in (s.get('networks') or []) else 1)\""
+  check "$base: does NOT hardcode container_name" "! grep -qE '^[[:space:]]*container_name:' \"$f\""
+done
+# Cross-component wiring: prometheus scrapes the collector exporter; grafana queries prometheus.
+check "prometheus scrapes otel-collector:8889" 'grep -q "otel-collector:8889" "$PROM/prometheus.yml"'
+check "grafana datasource points at prometheus" 'grep -q "http://prometheus:9090" "$GRAF/provisioning/datasources/datasources.yaml"'
+check "prometheus scrape config valid YAML" 'python3 -c "import yaml,sys; c=yaml.safe_load(open(\"$PROM/prometheus.yml\")); sys.exit(0 if \"scrape_configs\" in c else 1)"'
+# OTel collector config is valid YAML with the standard receivers/service shape.
+check "otel config valid YAML + OTLP receiver" 'python3 -c "import yaml,sys; c=yaml.safe_load(open(\"$OTEL/otel-collector-config.yaml\")); sys.exit(0 if \"otlp\" in c[\"receivers\"] and \"pipelines\" in c[\"service\"] else 1)"'
 # Grafana provisioning is valid YAML; the starter dashboard is valid JSON.
-check "grafana datasources valid YAML" 'python3 -c "import yaml; yaml.safe_load(open(\"$OBS/grafana/provisioning/datasources/datasources.yaml\"))"'
-check "grafana dashboard JSON valid" 'jq -e . "$OBS/grafana/provisioning/dashboards/otel-collector.json" >/dev/null'
-check "observability output token-free" '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$OBS"'
+check "grafana datasources valid YAML" 'python3 -c "import yaml; yaml.safe_load(open(\"$GRAF/provisioning/datasources/datasources.yaml\"))"'
+check "grafana dashboard JSON valid" 'jq -e . "$GRAF/provisioning/dashboards/otel-collector.json" >/dev/null'
+check "observability output token-free" '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$OTEL" "$PROM" "$GRAF"'
 
 # Postgres + Keycloak service components (fn-2 task .10): each its own src/<component>/
 # with a PINNED-image compose stack launched by `system.sh up`. postgres ships a

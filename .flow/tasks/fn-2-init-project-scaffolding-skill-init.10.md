@@ -16,7 +16,7 @@ Scaffold the **postgres** and **keycloak** service components (per-component doc
 ## Investigation targets
 **Required:**
 - `.flow/specs/fn-2-...md` — R27 realm contents + the DB-auth model
-- `src/init-project/templates/docs/config-management.md` (fn-2….3) — how secrets flow via build-config
+- `plugins/init-project/templates/docs/config-management.md` (fn-2….3) — how secrets flow via build-config
 
 ## Acceptance
 - [ ] `src/postgres/` compose defines the Postgres service (DB `platform`), env from generated `.env`, launched via `system.sh up`; its **init script creates the `owner`/`migrator`/`api` roles** before EF migrations run
@@ -30,5 +30,5 @@ Scaffold the **postgres** and **keycloak** service components (per-component doc
 Authored the build-time-complete Postgres + Keycloak service templates: src/postgres/ (pinned compose + 10-roles.sh init that bootstraps the fixed owner/migrator/api least-privilege roles at first volume init, revokes PUBLIC connect/create, and rotates the transient bootstrap superuser password to a discarded random value) and src/keycloak/ (pinned compose with --import-realm + a committed realm.template.json defining public SPA clients webapp/marketingsite + the confidential Api client with serviceAccountsEnabled, whose dummy secret build-config stamps into the gitignored runtime import). Verified end-to-end on a clean git export + live container, including the build-config realm-stamp. Added 30 scaffold_test assertions and fixed/added dispatcher_test coverage (215 + 61 passing). Codex review: SHIP.
 ## Evidence
 - Commits: 66d519a, 70ef6f2, 0fa3159, 01fba14
-- Tests: bash src/init-project/tests/scaffold_test.sh (215 passed), bash src/init-project/tests/dispatcher_test.sh (61 passed), docker compose -f src/postgres/docker-compose.yml config (valid), docker compose -f src/keycloak/docker-compose.yml config (valid), live postgres bring-up: roles owner/migrator/api bootstrapped, migrator SET ROLE owner works, api least-privilege (REVOKE CREATE) enforced, REVOKE PUBLIC CONNECT denies stray role, superuser pw rotated (SCRAM verifier differs from bootstrap literal), build-config realm stamp: src/keycloak/import/demo-app-realm.json stamped with real realm name + client ids + Api secret (dummy removed), generated import gitignored
+- Tests: bash plugins/init-project/tests/scaffold_test.sh (215 passed), bash plugins/init-project/tests/dispatcher_test.sh (61 passed), docker compose -f src/postgres/docker-compose.yml config (valid), docker compose -f src/keycloak/docker-compose.yml config (valid), live postgres bring-up: roles owner/migrator/api bootstrapped, migrator SET ROLE owner works, api least-privilege (REVOKE CREATE) enforced, REVOKE PUBLIC CONNECT denies stray role, superuser pw rotated (SCRAM verifier differs from bootstrap literal), build-config realm stamp: src/keycloak/import/demo-app-realm.json stamped with real realm name + client ids + Api secret (dummy removed), generated import gitignored
 - PRs:

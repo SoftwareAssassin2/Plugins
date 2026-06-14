@@ -3,7 +3,7 @@ title: Template .gitignore silently drops committed fixtures from the plugin rep
 date: "2026-06-14"
 track: bug
 category: build-errors
-module: src/init-project/templates/.gitignore
+module: plugins/init-project/templates/.gitignore
 tags: [scaffold, gitignore, git-add, templates, angular]
 problem_type: build-error
 symptoms: Clean-checkout scaffold missing src/<SPA>/public/config.json; SPA startup fails on GET /config.json
@@ -16,7 +16,7 @@ The two Angular SPA templates ship a committed sample `src/<SPA>/public/config.j
 fixture so a fresh scaffold builds before `system.sh build-config` runs. The
 template's own `templates/.gitignore` carries `src/*/public/config.json` (the rule
 for the *scaffolded project*). But because the templates live at
-`src/init-project/templates/src/<SPA>/public/config.json` inside the PLUGIN repo,
+`plugins/init-project/templates/src/<SPA>/public/config.json` inside the PLUGIN repo,
 that same `.gitignore` matched there too — so `git add -A` silently skipped the
 fixtures. The committed templates were missing the files; a clean checkout would
 scaffold projects with no public config sample, and the runtime

@@ -38,7 +38,7 @@ the first time someone other than the original author tries it.
 | MCP servers | `.mcp.json` / settings — NOT `claude plugin install` |
 | VS Code extensions | `customizations.vscode.extensions` in `.devcontainer/devcontainer.json` |
 | Runtime service containers (compose-managed) | the component's own `src/<component>/` (e.g. `src/postgres/`, `src/keycloak/`) — NOT `.devcontainer/` |
-| Internal dev-tooling stacks (compose-managed, not a component) | `etc/` (e.g. `etc/observability/`) — NOT `.devcontainer/` |
+| Observability stack (compose-managed dev tooling) | its own `src/<component>/` (`src/otel-collector/`, `src/prometheus/`, `src/grafana/`) — NOT `.devcontainer/` |
 
 **Best-effort steps.** Plugin installs, MCP registration, and similar
 enable-steps are best-effort: each is isolated so a single failure warns but
@@ -51,31 +51,34 @@ container-level, the *credentials* are the contributor's.
 
 The dev container's role is to provide the **development environment** — language
 runtimes, CLIs, editor support — that a contributor uses to interact with the
-project. Two kinds of compose-managed containers live outside it:
+project. The compose-managed containers live outside it, each under its own
+`src/<component>/` folder:
 
 - **Runtime service containers that are system components.** `postgres` and
   `keycloak` are part of the system's own architecture and have matching
   `systems[]` entries; they live under `src/postgres/` and `src/keycloak/` with
   their own `docker-compose.yml`, init scripts, and config, brought up via
   `./system.sh up`.
-- **Internal dev-tooling stacks that are NOT components.** The observability
-  stack — Grafana + an OpenTelemetry Collector — is dev tooling, not a system
-  component and not an external `services{}` dependency. It lives under
-  `etc/observability/` (per the catch-all convention) and is orchestrated by
-  `./system.sh up` / `down` alongside the service components.
+- **The observability stack.** Grafana, Prometheus, and an OpenTelemetry Collector
+  are local dev tooling (no `systems[]` entry, not an external `services{}`
+  dependency), but they are first-class `src/` components — `src/grafana/`,
+  `src/prometheus/`, `src/otel-collector/` — each with its own `docker-compose.yml`.
+  Being separate compose projects, they resolve one another by service name over a
+  shared Docker network named `observability` that `./system.sh up` creates before
+  starting them. They are orchestrated by `./system.sh up` / `down` alongside the
+  service components.
 
-In every case the devcontainer provides the `docker` CLI + `docker-in-docker`
+In every case the dev container provides the `docker` CLI + `docker-in-docker`
 feature so a contributor can drive those compose stacks from inside the dev
 container, but the stack definitions themselves are part of the platform/tooling
 layer, not the dev environment.
 
-**Example — adding the observability stack as a dependency.** Suppose a
-contributor wants Grafana + OTel available locally. It is *not* added to
-`.devcontainer/`; it is a compose stack under `etc/observability/` wired into the
-dispatcher:
+**Example — the observability stack.** Grafana + Prometheus + OTel are *not* added
+to `.devcontainer/`; they are compose stacks under `src/grafana/`, `src/prometheus/`,
+and `src/otel-collector/`, wired into the dispatcher:
 
 ```bash
-# brings up postgres, keycloak, AND the etc/observability/ Grafana+OTel stack
+# brings up postgres, keycloak, AND the grafana/prometheus/otel-collector stack
 ./system.sh up
 ```
 

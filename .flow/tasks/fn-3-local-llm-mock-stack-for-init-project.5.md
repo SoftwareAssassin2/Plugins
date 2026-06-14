@@ -17,10 +17,10 @@ Author the docs: a new `docs/local-llm.md` standard (incl. removal instructions)
 
 ## Investigation targets
 **Required:**
-- `.worktrees/init-project/src/init-project/templates/_CLAUDE.md` — Standards index + invariant-exceptions table format
-- `.worktrees/init-project/src/init-project/templates/docs/dev-container.md` — dep-placement table + services-outside-devcontainer example
-- `.worktrees/init-project/src/init-project/templates/README.md` — "Running the system" section to extend
-- `.worktrees/init-project/src/init-project/templates/docs/config-management.md` — keep the services classification consistent with .2
+- `.worktrees/init-project/plugins/init-project/templates/_CLAUDE.md` — Standards index + invariant-exceptions table format
+- `.worktrees/init-project/plugins/init-project/templates/docs/dev-container.md` — dep-placement table + services-outside-devcontainer example
+- `.worktrees/init-project/plugins/init-project/templates/README.md` — "Running the system" section to extend
+- `.worktrees/init-project/plugins/init-project/templates/docs/config-management.md` — keep the services classification consistent with .2
 
 ## Acceptance
 - [ ] `docs/local-llm.md` covers what/why, opt-in, `ai`/`ai-mock` profiles, mock vs real, model selection (+ abliterated caveat), Anthropic fidelity caveat, pinned-version+digest rationale + tested version, dev-tooling classification, AND **complete removal** — delete `etc/local-llm/`, remove the `localLlm` block, restore `claude-api`/`openai-api` base URLs+keys to real-provider values, rerun `build-config` (deleting only the dir leaves build-config failing + app pointed at a missing gateway) (R3, R8, R9, R11)

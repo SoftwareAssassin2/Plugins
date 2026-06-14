@@ -6,7 +6,7 @@ satisfies: [R5]
 Author the **observability** compose stack template (Grafana + OpenTelemetry Collector) — an **internal tooling** stack under `etc/observability/`, OUTSIDE `.devcontainer/` AND outside the `src/<component>`/`systems[]` invariant (dev tooling, not a system component nor a `services{}` external dep), brought up by `system.sh up`.
 
 **Size:** M
-**Files:** `src/init-project/templates/etc/observability/docker-compose.yml` (path per generalized layout), OTel Collector config, Grafana provisioning (`datasources/`, `dashboards/`)
+**Files:** `plugins/init-project/templates/etc/observability/docker-compose.yml` (path per generalized layout), OTel Collector config, Grafana provisioning (`datasources/`, `dashboards/`)
 
 ## Approach (from docs-scout)
 - Grafana: `grafana/grafana` (pin), mount `provisioning/{datasources,dashboards}` → `/etc/grafana/provisioning`.
@@ -15,7 +15,7 @@ Author the **observability** compose stack template (Grafana + OpenTelemetry Col
 
 ## Investigation targets
 **Required:**
-- `src/init-project/templates/docs/dev-container.md` (fn-2….8) — services-live-outside rule
+- `plugins/init-project/templates/docs/dev-container.md` (fn-2….8) — services-live-outside rule
 
 ## Acceptance
 - [ ] Compose stack defines Grafana + OTel Collector with pinned images + config files
@@ -33,5 +33,5 @@ already hardcode the path), ports are loopback-bound, and 21 focused scaffold-te
 assertions were added (164 -> 185 passing). Codex impl-review: SHIP.
 ## Evidence
 - Commits: 54050ca, 9545b0c, 31e93c4
-- Tests: bash src/init-project/tests/scaffold_test.sh (185 passed, 0 failed), bash src/init-project/tests/dispatcher_test.sh (60 passed, 0 failed), docker compose -f etc/observability/docker-compose.yml config (VALID, on template + freshly scaffolded copy), python3 YAML/JSON parse of all 6 observability files (ok)
+- Tests: bash plugins/init-project/tests/scaffold_test.sh (185 passed, 0 failed), bash plugins/init-project/tests/dispatcher_test.sh (60 passed, 0 failed), docker compose -f etc/observability/docker-compose.yml config (VALID, on template + freshly scaffolded copy), python3 YAML/JSON parse of all 6 observability files (ok)
 - PRs:

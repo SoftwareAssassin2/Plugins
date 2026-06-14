@@ -17,7 +17,7 @@ External dependencies the system *connects to* (not part of it) are entries unde
 | Path | Why it's exempt |
 |---|---|
 | `src/system-cli/` | Repo tooling (the `system.sh` dispatcher's subcommands), not a deployable component. |
-| `etc/observability/` | Internal dev tooling (Grafana + OTel Collector compose stack), not a system component and not an external `services{}` dependency. |
+| `src/otel-collector/`, `src/prometheus/`, `src/grafana/` | The observability stack — local dev tooling brought up by `system.sh up`. No host/port secrets to distribute, so no `systems[]` entries (they wire together over a shared Docker network, not via `config.json`). |
 | `tests/<Component>.Tests/` | Test projects live under the top-level `tests/` directory, not `src/`. |
 
 When you add a new component, add BOTH the `src/<component>/` folder AND the `systems[]` entry — never one without the other.
@@ -34,7 +34,7 @@ The repo root is intentionally kept small. Only these directories belong at the 
 | `docs/` | Human- and agent-readable development standards and business direction. |
 | `src/` | One sub-folder per component in the mono-repo (plus `src/system-cli/`). |
 | `tests/` | Test projects (`tests/<Component>.Tests/`), separate from `src/`. |
-| `etc/` | Catch-all for supporting work that doesn't belong above (observability tooling, caches, ancillary scripts). |
+| `etc/` | Catch-all for supporting work that doesn't belong above (caches, ancillary scripts, scratch tooling). |
 
 **Convention:** new directories default to living under `etc/`. Only promote a directory to the root when there's a compelling reason — it's a peer concept to `src/`, or a tool (git, dev container, Claude Code) requires it at the root. If you're unsure, put it under `etc/` and revisit later.
 

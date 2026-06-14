@@ -6,7 +6,7 @@ satisfies: [R4, R5, R10]
 Add the scaffold-time opt-in: the `/init-project` skill asks whether to install the local LLM mock stack; on yes, it asks which model (guided menu), writes the choice into `config.json`, repoints the local `claude-api`/`openai-api` base URLs at LiteLLM, and lays down the `etc/local-llm/` templates. (The `services{}` entries themselves are always present — see .2 — so non-opt-in just leaves real-provider defaults.) Update `SKILL.md` prose and the scaffold engine.
 
 **Size:** M
-**Files:** `src/init-project/SKILL.md`, the scaffold engine (`scaffold.sh` or equivalent). NOTE: the `templates/config.json` template ALWAYS ships real-provider defaults + no `localLlm` block; the engine mutates the GENERATED project's `config.json` (via `jq`) only on opt-in — it never conditionally rewrites the template itself.
+**Files:** `plugins/init-project/SKILL.md`, the scaffold engine (`scaffold.sh` or equivalent). NOTE: the `templates/config.json` template ALWAYS ships real-provider defaults + no `localLlm` block; the engine mutates the GENERATED project's `config.json` (via `jq`) only on opt-in — it never conditionally rewrites the template itself.
 
 ## Approach
 - **Concrete scaffold contract:** the engine takes explicit flags `--local-llm` (opt-in toggle) + `--local-llm-model <model>` (default off / unset). SKILL.md (assistant-workflow prompt, like fn-2 R15's git phase) prompts "install local LLM mock stack? (y/N)"; on yes presents the model menu — lightweight (`llama3.2:3b`), more powerful (`qwen2.5:7b`), abliterated (`huihui_ai/llama3.2-abliterate`, with the quality/guardrail/license caveat), and "something else" (skill helps pick by size/VRAM/task/license) — then invokes `scaffold.sh … --local-llm --local-llm-model <chosen>`. Non-interactive: absent `--local-llm`, no stack. `--local-llm` REQUIRES `--local-llm-model <model>` (no hardcoded default — the model is the source of truth) → omitting it, or `--local-llm-model` without `--local-llm`, or an invalid model → usage exit 64. Skill prose, NOT runtime LLM authoring.
@@ -16,9 +16,9 @@ Add the scaffold-time opt-in: the `/init-project` skill asks whether to install 
 
 ## Investigation targets
 **Required:**
-- `.worktrees/init-project/src/init-project/SKILL.md` — skill prose + the git/`--force`/`--update` prompt patterns to parallel
+- `.worktrees/init-project/plugins/init-project/SKILL.md` — skill prose + the git/`--force`/`--update` prompt patterns to parallel
 - the fn-2 scaffold engine (`scaffold.sh`) — token substitution + how conditional/optional files are handled today
-- `.worktrees/init-project/src/init-project/templates/config.json` — the `services{}` base-URL fields .2 introduces (the repoint target)
+- `.worktrees/init-project/plugins/init-project/templates/config.json` — the `services{}` base-URL fields .2 introduces (the repoint target)
 - fn-2 spec R2 (no leftover tokens), R23 (copy + substitute only), R15 (assistant-workflow prompt pattern)
 
 ## Acceptance

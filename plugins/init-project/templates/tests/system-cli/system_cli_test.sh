@@ -207,11 +207,13 @@ chmod +x "$STUBBIN/docker" "$STUBBIN/dotnet"
 export PATH="$STUBBIN:$PATH"
 export STUB_LOG="$WORK/stub.log"
 
-# Branch A: NO compose stacks present yet -> each script takes its "nothing" path.
+# Branch A: NO compose stacks present yet -> each script takes its "nothing" path
+# (and the observability network-ensure/remove block takes its absent branch).
 # Remove any compose files an earlier section (realm-stamp) may have left behind so
 # this branch genuinely has zero stacks.
 rm -f "$WORK/src/postgres/docker-compose.yml" "$WORK/src/keycloak/docker-compose.yml" \
-      "$WORK/etc/observability/docker-compose.yml"
+      "$WORK/src/otel-collector/docker-compose.yml" "$WORK/src/prometheus/docker-compose.yml" \
+      "$WORK/src/grafana/docker-compose.yml"
 : > "$STUB_LOG"
 for sub in up down status; do
   OUT="$(runner "$WCLI/$sub.sh")"; rc=$?
@@ -219,16 +221,24 @@ for sub in up down status; do
 done
 
 # Branch B: compose stacks PRESENT -> each script iterates + invokes (stubbed) docker.
-mkdir -p "$WORK/src/postgres" "$WORK/src/keycloak" "$WORK/etc/observability"
+# The observability components (otel-collector/prometheus/grafana) are separate
+# compose projects sharing the `observability` network, so up/down also create/remove
+# that network.
+mkdir -p "$WORK/src/postgres" "$WORK/src/keycloak" \
+         "$WORK/src/otel-collector" "$WORK/src/prometheus" "$WORK/src/grafana"
 printf 'services: {}\n' > "$WORK/src/postgres/docker-compose.yml"
 printf 'services: {}\n' > "$WORK/src/keycloak/docker-compose.yml"
-printf 'services: {}\n' > "$WORK/etc/observability/docker-compose.yml"
+printf 'services: {}\n' > "$WORK/src/otel-collector/docker-compose.yml"
+printf 'services: {}\n' > "$WORK/src/prometheus/docker-compose.yml"
+printf 'services: {}\n' > "$WORK/src/grafana/docker-compose.yml"
 : > "$STUB_LOG"
 OUT="$(runner "$WCLI/up.sh")"; rc=$?
 check "up: stacks present -> exit 0 + docker compose up invoked" '[[ $rc -eq 0 ]] && grep -q "up -d" "$STUB_LOG"'
+check "up: ensures shared observability network" 'grep -q "network create observability" "$STUB_LOG"'
 : > "$STUB_LOG"
 OUT="$(runner "$WCLI/down.sh")"; rc=$?
 check "down: stacks present -> exit 0 + docker compose down invoked" '[[ $rc -eq 0 ]] && grep -q " down" "$STUB_LOG"'
+check "down: removes shared observability network" 'grep -q "network rm observability" "$STUB_LOG"'
 : > "$STUB_LOG"
 OUT="$(runner "$WCLI/status.sh")"; rc=$?
 check "status: stacks present -> exit 0 + docker compose ps invoked" '[[ $rc -eq 0 ]] && grep -q " ps" "$STUB_LOG"'

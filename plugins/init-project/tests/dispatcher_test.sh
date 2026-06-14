@@ -9,13 +9,13 @@
 #      test per reject branch (URL-safe alphabet, port range, host/container/
 #      client-id/URL shape) and the realm-stamp / SPA-config stamp mechanisms.
 #
-# Run: bash src/init-project/tests/dispatcher_test.sh
+# Run: bash plugins/init-project/tests/dispatcher_test.sh
 # (For line coverage, tests/coverage.sh wraps this under kcov.)
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-PKG_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"          # src/init-project
+PKG_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"          # plugins/init-project
 SCAFFOLD="$PKG_DIR/scaffold.sh"
 TEMPLATES="$PKG_DIR/templates"
 PASS=0; FAIL=0

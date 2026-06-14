@@ -17,10 +17,10 @@ Wire the LLM services into the config model with an explicit build-config contra
 
 ## Investigation targets
 **Required:**
-- `.worktrees/init-project/src/init-project/templates/config.json` + `config.deploy.json` — current `services.claude-api` shape + `{{VAR-NAME}}` parity + the unrendered-placeholder guard
-- `.worktrees/init-project/src/init-project/templates/src/system-cli/build-config.sh` — which `.env` files it writes today (Api/DataAccess/SPA public config), the `jq --arg` pattern, the deploy-template guard
-- `.worktrees/init-project/src/init-project/templates/docs/config-management.md` — §2 prose + §4 schema table format
-- `.worktrees/init-project/src/init-project/templates/tests/system-cli/system_cli_test.sh` — the `claude-api` opaque-credential fixture to parallel
+- `.worktrees/init-project/plugins/init-project/templates/config.json` + `config.deploy.json` — current `services.claude-api` shape + `{{VAR-NAME}}` parity + the unrendered-placeholder guard
+- `.worktrees/init-project/plugins/init-project/templates/src/system-cli/build-config.sh` — which `.env` files it writes today (Api/DataAccess/SPA public config), the `jq --arg` pattern, the deploy-template guard
+- `.worktrees/init-project/plugins/init-project/templates/docs/config-management.md` — §2 prose + §4 schema table format
+- `.worktrees/init-project/plugins/init-project/templates/tests/system-cli/system_cli_test.sh` — the `claude-api` opaque-credential fixture to parallel
 
 ## Acceptance
 - [ ] Both `claude-api` + `openai-api` present in `config.json` AND `config.deploy.json` with key-set parity; build-config does NOT branch on opt-in (R6)

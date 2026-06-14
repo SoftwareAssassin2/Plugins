@@ -28,37 +28,37 @@
       "name": "ubiquitous-language",
       "displayName": "Ubiquitous Language",
       "description": "Fork of Matt Pocock's ubiquitous-language skill. Extract a DDD-style domain glossary from the current conversation, flagging ambiguities and proposing canonical terms.",
-      "source": "./src/ubiquitous-language"
+      "source": "./plugins/ubiquitous-language"
     },
     {
       "name": "grill-me",
       "displayName": "Grill Me",
       "description": "Fork of Matt Pocock's grill-me skill. Asks the user a series of questions to clarify their request and ensure the assistant's response is on target.",
-      "source": "./src/grill-me"
+      "source": "./plugins/grill-me"
     },
     {
       "name": "handoff",
       "displayName": "Handoff",
       "description": "Fork of Matt Pocock's handoff skill. Facilitates handoffs between different assistants or tools, ensuring context is preserved and the user's request is fulfilled seamlessly.",
-      "source": "./src/handoff"
+      "source": "./plugins/handoff"
     },
     {
       "name": "tdd",
       "displayName": "Test-Driven Development (TDD)",
       "description": "Fork of Matt Pocock's tdd skill. Test-driven development with red-green-refactor loop.",
-      "source": "./src/tdd"
+      "source": "./plugins/tdd"
     },
     {
       "name": "dick",
       "displayName": "Dick Ballsy",
       "description": "Boot Dick Ballsy, a brash, contrarian business-architect advisor who interrogates your business and maintains the business docs (business/strategy/customers/priorities/decisions). Use only when explicitly invoked or accepted from the /init-project hand-off.",
-      "source": "./src/dick"
+      "source": "./plugins/dick"
     },
     {
       "name": "init-project",
       "displayName": "Init Project",
       "description": "Scaffold a brand-new opinionated mono-repo with preferred defaults (root layout, CLAUDE.md, dev container, standards docs, system.sh dispatcher, a starter .NET solution + Angular SPAs, Postgres + Keycloak), then optionally hand off to /dick. Asks only for project name + description.",
-      "source": "./src/init-project"
+      "source": "./plugins/init-project"
     }
   ]
 }

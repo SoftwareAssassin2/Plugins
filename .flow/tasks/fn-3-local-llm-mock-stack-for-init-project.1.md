@@ -24,8 +24,8 @@ Author the build-time-complete compose templates for the local LLM mock: `etc/lo
 
 ## Investigation targets
 **Required:**
-- `.worktrees/init-project/src/init-project/templates/etc/observability/docker-compose.yml` — the analog stack to mirror (if authored by fn-2.5; else fn-2 spec R5)
-- `.worktrees/init-project/src/init-project/templates/tests/system-cli/` — existing shell test harness + kcov + stubbing conventions
+- `.worktrees/init-project/plugins/init-project/templates/etc/observability/docker-compose.yml` — the analog stack to mirror (if authored by fn-2.5; else fn-2 spec R5)
+- `.worktrees/init-project/plugins/init-project/templates/tests/system-cli/` — existing shell test harness + kcov + stubbing conventions
 - fn-2 spec R5 (`etc/` tooling), R23 (build-time-complete), R6 (kcov 100% line + per-branch)
 
 ## Key context

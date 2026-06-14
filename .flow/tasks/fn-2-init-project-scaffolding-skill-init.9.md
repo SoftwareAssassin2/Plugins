@@ -18,7 +18,7 @@ Scaffold the **.NET solution**: `src/system.sln` referencing each per-component 
 ## Investigation targets
 **Required:**
 - `.flow/specs/fn-2-...md` — R10 component list + R26 solution layering
-- `src/init-project/templates/docs/tdd.md` (fn-2….8) — coverage expectations for .NET (coverlet)
+- `plugins/init-project/templates/docs/tdd.md` (fn-2….8) — coverage expectations for .NET (coverlet)
 
 ## Acceptance
 - [ ] `src/system.sln` references Framework, DataAccess, BusinessLogic, Api, SampleApp (each `src/<component>/`)
@@ -32,5 +32,5 @@ Scaffold the **.NET solution**: `src/system.sln` referencing each per-component 
 Authored the build-time-complete .NET starter solution as scaffold templates: a single `src/system.sln` referencing five layered `src/<component>/` projects (Framework, DataAccess, BusinessLogic, Api, removable SampleApp) plus four `tests/<Component>.Tests/` xUnit projects wired with coverlet.msbuild. DataAccess ships `PlatformDbContext` (UseNpgsql) + Npgsql/EF-Design package refs + an `IDesignTimeDbContextFactory` reading `MIGRATOR_CONNECTION_STRING`, with `dotnet-ef` pinned in `.config/dotnet-tools.json`. Verified end-to-end on the host (SDK 10, net9.0 roll-forward): `dotnet build` succeeds, `dotnet test` passes 8/8 with measurable coverage, and `dotnet ef migrations list` exercises the design-time factory. scaffold_test.sh gained 27 structural assertions (90/90 green); Codex impl-review verdict SHIP.
 ## Evidence
 - Commits: 461e19f11d898c7d220b5cf36dd95134639cfbee
-- Tests: bash src/init-project/tests/scaffold_test.sh (90 passed, 0 failed), dotnet build src/system.sln (9/9 projects, 0 errors), DOTNET_ROLL_FORWARD=Major dotnet test src/system.sln (8/8 passed, coverlet coverage measurable), dotnet tool restore + dotnet ef migrations list (design-time factory exercised: reads MIGRATOR_CONNECTION_STRING, builds PlatformDbContext, fail-fast verified when unset)
+- Tests: bash plugins/init-project/tests/scaffold_test.sh (90 passed, 0 failed), dotnet build src/system.sln (9/9 projects, 0 errors), DOTNET_ROLL_FORWARD=Major dotnet test src/system.sln (8/8 passed, coverlet coverage measurable), dotnet tool restore + dotnet ef migrations list (design-time factory exercised: reads MIGRATOR_CONNECTION_STRING, builds PlatformDbContext, fail-fast verified when unset)
 - PRs:

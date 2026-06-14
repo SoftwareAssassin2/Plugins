@@ -14,7 +14,9 @@ cd "$repo_root"
 stacks=(
   "src/postgres/docker-compose.yml"
   "src/keycloak/docker-compose.yml"
-  "etc/observability/docker-compose.yml"
+  "src/otel-collector/docker-compose.yml"
+  "src/prometheus/docker-compose.yml"
+  "src/grafana/docker-compose.yml"
 )
 
 found=0

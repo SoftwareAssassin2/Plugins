@@ -19,8 +19,8 @@ Scaffold the two **Angular SPA** components (`MarketingSite`, `WebApp`) and auth
 **Required:**
 - `.flow/specs/fn-2-...md` — R11 front-end standard
 - the declared Angular version source (root `package.json` (canonical, single source)) — shared with .4/.13
-- `src/init-project/templates/docs/tdd.md` (fn-2….8) — Jest coverage expectation
-- `src/init-project/templates/src/keycloak/realm.template.json` (fn-2….10) + config public-client keys — the public SPA client ids the apps use (the `import/*.json` runtime file is generated/gitignored, not committed)
+- `plugins/init-project/templates/docs/tdd.md` (fn-2….8) — Jest coverage expectation
+- `plugins/init-project/templates/src/keycloak/realm.template.json` (fn-2….10) + config public-client keys — the public SPA client ids the apps use (the `import/*.json` runtime file is generated/gitignored, not committed)
 
 ## Acceptance
 - [ ] This task **owns** the single declared Angular-version source (root `package.json` (canonical, single source)); .4 (CLI install) + .13 (CI) read the SAME version (verified — no drift)
@@ -34,5 +34,5 @@ Scaffold the two **Angular SPA** components (`MarketingSite`, `WebApp`) and auth
 Authored two build-time-complete Angular SPA templates (MarketingSite + WebApp) as static (outputMode: static / SSG) client-side-only apps in a single root Angular workspace (one pinned Angular version source in templates/package.json, one angular.json), plus the docs/front-end.md standard. SCSS, angular-eslint + Prettier, npm, Jest at 100% coverage, path routing with documented S3 error-document->index.html + CloudFront fallback, and runtime-fetched non-secret public config.json (no secrets in dist/). Verified end-to-end on a fresh scaffold (and a clean git export): npm install + ng build static + jest 100% + lint + prettier all pass. Codex impl-review: SHIP.
 ## Evidence
 - Commits: 591b69b, 969bc1d, 0c66330, e6ca6b9, ccdbe23, c736063, 211ba56
-- Tests: bash src/init-project/tests/scaffold_test.sh (112 passed, 0 failed), fresh scaffold: npm install + npm run build (both SPAs -> dist/<app>/browser/index.html, outputMode static), fresh scaffold: npm run test:coverage (jest 100% lines/branches/functions/statements, 4 suites/6 tests per SPA), fresh scaffold: npm run lint (angular-eslint, both SPAs pass), fresh scaffold: npm run format:check (prettier clean), clean git export (git checkout-index) scaffold + build/test/lint to prove committed-tree correctness
+- Tests: bash plugins/init-project/tests/scaffold_test.sh (112 passed, 0 failed), fresh scaffold: npm install + npm run build (both SPAs -> dist/<app>/browser/index.html, outputMode static), fresh scaffold: npm run test:coverage (jest 100% lines/branches/functions/statements, 4 suites/6 tests per SPA), fresh scaffold: npm run lint (angular-eslint, both SPAs pass), fresh scaffold: npm run format:check (prettier clean), clean git export (git checkout-index) scaffold + build/test/lint to prove committed-tree correctness
 - PRs:

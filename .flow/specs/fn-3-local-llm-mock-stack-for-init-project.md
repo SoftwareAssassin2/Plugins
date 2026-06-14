@@ -30,7 +30,7 @@ app (Anthropic SDK) ─┘    :4000                :11434
 
 **Classification:** this is **internal dev tooling** living under `etc/local-llm/`, mirroring the Grafana/OTel observability stack (fn-2 R5). It is **explicitly NOT a `systems[]` component** (it exists only in local dev — nothing deploys it) and **NOT itself a `services{}` external dependency**. It *backs* the `claude-api` + `openai-api` `services{}` entries in local dev.
 
-This is a **new epic that depends on fn-2** and extends fn-2-authored, build-time-complete templates (currently in worktree `.worktrees/init-project/src/init-project/templates/`): `config.json` / `config.deploy.json`, `src/system-cli/system.sh` / `up.sh` / `down.sh` / `build-config.sh`, `_CLAUDE.md`, `docs/dev-container.md`, `docs/config-management.md`, `README.md`, plus the scaffold engine + `SKILL.md`.
+This is a **new epic that depends on fn-2** and extends fn-2-authored, build-time-complete templates (currently in worktree `.worktrees/init-project/plugins/init-project/templates/`): `config.json` / `config.deploy.json`, `src/system-cli/system.sh` / `up.sh` / `down.sh` / `build-config.sh`, `_CLAUDE.md`, `docs/dev-container.md`, `docs/config-management.md`, `README.md`, plus the scaffold engine + `SKILL.md`.
 
 ## Quick commands
 ```bash

@@ -42,8 +42,9 @@ When a component needs a new configuration value:
   but is not part of (e.g. a third-party API). Keyed by service name; the value is
   the credentials/endpoint the operator must supply.
 
-**Exceptions** (NOT `systems[]` entries): `src/system-cli/` (repo tooling),
-`etc/observability/` (internal Grafana + OTel dev tooling), and test projects
+**Exceptions** (NOT `systems[]` entries): `src/system-cli/` (repo tooling), the
+observability stack (`src/otel-collector/`, `src/prometheus/`, `src/grafana/` —
+local dev tooling with no host/port secrets to distribute), and test projects
 under `tests/<Component>.Tests/`. See the root `CLAUDE.md` for the full invariant.
 
 A generic worked example: an image-resizing system has a `Resizer` component

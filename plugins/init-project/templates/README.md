@@ -44,7 +44,7 @@ Common commands:
 | Command | What it does |
 |---|---|
 | `./system.sh build-config` | Distribute `config.json` → per-component `.env`, stamp the Keycloak realm-import file. |
-| `./system.sh up` | Bring up the compose stacks — the `postgres` database, the `keycloak` identity provider, and the observability tooling (Grafana + OTel) under `etc/observability/`. |
+| `./system.sh up` | Bring up the compose stacks — the `postgres` database, the `keycloak` identity provider, and the observability stack (`src/otel-collector/`, `src/prometheus/`, `src/grafana/`). |
 | `./system.sh down` | Stop the compose stacks. |
 | `./system.sh migrate` | Run EF Core database migrations against the `platform` database. |
 | `./system.sh status` | Show the state of the running components. |

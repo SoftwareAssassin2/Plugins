@@ -6,7 +6,7 @@ satisfies: [R4]
 Author the dev container template: `.devcontainer/devcontainer.json` (base image + pinned features) + `.devcontainer/setup.sh` (script-installed tools, Claude Code, Codex CLI, and the 9 enabled plugins). Best-effort optional installs. (Nine integrations = seven marketplace plugins via `claude plugin` + two MCP servers `context7`/`github-mcp-server` via `templates/.mcp.json`.)
 
 **Size:** M
-**Files:** `src/init-project/templates/.devcontainer/devcontainer.json`, `src/init-project/templates/.devcontainer/setup.sh`, `src/init-project/templates/.mcp.json`
+**Files:** `plugins/init-project/templates/.devcontainer/devcontainer.json`, `plugins/init-project/templates/.devcontainer/setup.sh`, `plugins/init-project/templates/.mcp.json`
 
 ## Approach (from docs-scout, pin versions)
 - **Base image:** `mcr.microsoft.com/devcontainers/dotnet:1-9.0`. **Features** (pin major, commit lockfile): `ghcr.io/devcontainers/features/node:2`, `aws-cli:1`, `azure-cli:1`, `github-cli:1`; gcloud via community `ghcr.io/dhoeric/features/google-cloud-cli:1.0.1` (flag non-first-party, pin exact). Angular CLI via npm in setup.sh, **pinned to the single declared Angular version** (the root `package.json` (canonical, single source) source that .12 + .13 also consume — no independent version). **Also add `docker-in-docker` (or `docker-outside-of-docker`) + `jq`** (pinned) — `system.sh up/down` drives `docker compose` and `build-config` parses `config.json` via `jq`; without them the advertised quickstart fails.
@@ -15,7 +15,7 @@ Author the dev container template: `.devcontainer/devcontainer.json` (base image
 
 ## Investigation targets
 **Required:**
-- `src/init-project/templates/docs/dev-container.md` (from fn-2….8) — dep-placement table
+- `plugins/init-project/templates/docs/dev-container.md` (from fn-2….8) — dep-placement table
 - `.claude/settings.json` + `.claude-plugin/marketplace.json` — marketplace/enable shapes
 
 ## Acceptance
@@ -30,5 +30,5 @@ Author the dev container template: `.devcontainer/devcontainer.json` (base image
 Authored the build-time-complete dev container as template files: .devcontainer/devcontainer.json (dotnet:1-9.0 base + pinned node/aws/azure/github-cli features, community gcloud :1.0.1, docker-in-docker, jq, vscode extensions, onCreate setup.sh hook), a token-free executable .devcontainer/setup.sh (set -euo pipefail, idempotent; installs Angular CLI pinned by reading package.json, dotnet-ef via tool manifest, version-pinned DuckDB + Codex CLI, acli, Claude Code; best-effort enables the SoftwareAssassin2/Plugins marketplace + 7 curated plugins), and a build-time-complete .mcp.json declaring context7 + github-mcp-server. settings.json now declares the marketplace remote. +32 scaffold_test.sh assertions (132 -> 164 passing). Codex impl-review: SHIP (after one NEEDS_WORK -> pinned DuckDB/Codex).
 ## Evidence
 - Commits: ff009eb138fec5a724f1d930ec12a72cec1d152a, 3284139522d9b64e72e1444c5e464010f08755e9, f6c7efc1c92ae00a1fd58ee76295f81934ecf763
-- Tests: bash src/init-project/tests/scaffold_test.sh (164 passed, 0 failed), shellcheck src/init-project/templates/.devcontainer/setup.sh (clean), bash -n setup.sh (ok), jq validation of .mcp.json + settings.json + devcontainer.json-after-comment-strip (all valid)
+- Tests: bash plugins/init-project/tests/scaffold_test.sh (164 passed, 0 failed), shellcheck plugins/init-project/templates/.devcontainer/setup.sh (clean), bash -n setup.sh (ok), jq validation of .mcp.json + settings.json + devcontainer.json-after-comment-strip (all valid)
 - PRs:

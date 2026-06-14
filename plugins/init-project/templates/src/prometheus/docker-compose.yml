@@ -1,0 +1,40 @@
+# Prometheus — the metrics store + query backend of the observability stack.
+#
+# This is a src/ component (its own src/prometheus/ folder, brought up/down by
+# `./system.sh up` / `down`). It scrapes the OTel Collector's exposition endpoint
+# (otel-collector:8889) and serves the query API (/api/v1/query_range) that
+# Grafana's provisioned datasource reads — Grafana cannot query the collector's
+# :8889 exposition endpoint directly (that is /metrics text, not a query API).
+#
+# Reaches the collector by service name over the SHARED `observability` Docker
+# network (declared external below, created by `./system.sh up`). It is NOT a
+# config.json systems[] component and NOT an external services{} dependency — local
+# dev tooling promoted to a first-class src/ component. See docs/dev-container.md §3.
+#
+# Image tag is PINNED for reproducibility. The published port is bound to loopback
+# (127.0.0.1) — local dev tooling, never LAN-reachable. A real bring-up happens in
+# the dev container / CI; `docker compose -f src/prometheus/docker-compose.yml config`
+# validates this definition without starting anything.
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-storage:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - observability
+
+volumes:
+  prometheus-storage:
+
+# Shared, externally-managed network (see src/otel-collector/docker-compose.yml).
+networks:
+  observability:
+    external: true
+    name: observability

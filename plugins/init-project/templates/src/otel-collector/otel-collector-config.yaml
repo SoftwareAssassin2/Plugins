@@ -1,8 +1,9 @@
 # OpenTelemetry Collector (contrib) configuration.
 #
 # Receives OTLP over gRPC (:4317) and HTTP (:4318) from instrumented apps, and
-# re-exposes collected metrics in Prometheus exposition format on :8889 for
-# Grafana to scrape (see grafana/provisioning/datasources/datasources.yaml).
+# re-exposes collected metrics in Prometheus exposition format on :8889 for the
+# prometheus service to scrape (see ../prometheus/prometheus.yml; Grafana then
+# queries Prometheus via ../grafana/provisioning/datasources/datasources.yaml).
 # Traces/logs are written to the collector's own stdout via the debug exporter —
 # enough for a local dev loop; promote to a real backend (Tempo/Loki) only if a
 # later spec calls for it.

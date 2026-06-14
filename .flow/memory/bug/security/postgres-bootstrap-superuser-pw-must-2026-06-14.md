@@ -3,7 +3,7 @@ title: Postgres bootstrap superuser pw must not reuse a role secret; revoke PUBL
 date: "2026-06-14"
 track: bug
 category: security
-module: src/init-project/templates/src/postgres
+module: plugins/init-project/templates/src/postgres
 tags: [postgres, least-privilege, docker-compose, rls, scaffold, pg_hba, scram]
 problem_type: security
 symptoms: owner role credential doubles as bootstrap superuser; any future login role can connect to the db

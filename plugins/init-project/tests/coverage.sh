@@ -24,7 +24,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-PKG_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"   # src/init-project
+PKG_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"   # plugins/init-project
 
 require_kcov=0
 [[ "${1:-}" == "--require-kcov" ]] && require_kcov=1

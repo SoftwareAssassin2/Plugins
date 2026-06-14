@@ -19,9 +19,9 @@ Author the remaining `docs/` templates (generalized standards + the keycloak sta
 - **.gitignore** (R22): OS noise; `.worktrees/`; .NET (`bin/`,`obj/`,`.vs/`,`*.user`,`[Tt]est[Rr]esults/`); Node/Angular (`node_modules/`,`dist/`,`.angular/`,`coverage/`,`npm-debug.log*`); generated per-component `.env` (NOT `config.json`); the generated `src/keycloak/import/*-realm.json` runtime realm file; the generated SPA public config `src/*/public/config.json`; `.claude/settings.local.json`. **Does NOT ignore `.flow/bin/`** — flow-next's bundled `flowctl` is a protected artifact that must stay committable.
 
 ## Investigation targets
-**Required:** (raw `tdd.md`/`dev-container.md` sources move `src/project-init/`→`src/init-project/` via fn-2….1; paths below post-rename)
-- `src/init-project/tdd.md`, `dev-container.md` — sources to generalize
-- `src/tdd/SKILL.md` — reconcile tdd.md against
+**Required:** (raw `tdd.md`/`dev-container.md` sources move `plugins/project-init/`→`plugins/init-project/` via fn-2….1; paths below post-rename)
+- `plugins/init-project/tdd.md`, `dev-container.md` — sources to generalize
+- `plugins/tdd/SKILL.md` — reconcile tdd.md against
 - `.flow/specs/fn-2-...md` — R14/R17 content + the H&G Removal Decisions table
 
 ## Acceptance
@@ -30,11 +30,11 @@ Author the remaining `docs/` templates (generalized standards + the keycloak sta
 - [ ] keycloak.md documents self-hosted compose + realm-import + Keycloak-gated DB-auth/RLS
 - [ ] business/strategy/customers/priorities/decisions.md ship as empty TODO stubs (no roadmap.md)
 - [ ] `.gitignore` covers the stack incl. `.worktrees/` and the generated `src/keycloak/import/*-realm.json`; `config.json` NOT ignored; `.flow/bin/` NOT ignored (protected)
-- [ ] Whole-package H&G scan returns nothing: `grep -rEi 'H&G|play\.sh|MonoBehaviour|games\[|platform-(db|api)|PGS|google[_ ]?oauth|oauth2\.googleapis|com\.hg' src/init-project/templates/ src/init-project/SKILL.md` (note: bare `coverlet` is allowed — it's the .NET coverage tool per R30; only Unity/games framing is banned)
+- [ ] Whole-package H&G scan returns nothing: `grep -rEi 'H&G|play\.sh|MonoBehaviour|games\[|platform-(db|api)|PGS|google[_ ]?oauth|oauth2\.googleapis|com\.hg' plugins/init-project/templates/ plugins/init-project/SKILL.md` (note: bare `coverlet` is allowed — it's the .NET coverage tool per R30; only Unity/games framing is banned)
 
 ## Done summary
 Authored the remaining generalized standards docs (architecture.md, tdd.md, dev-container.md, keycloak.md, ubiquitous-language.md), the five empty `## TODO` business-doc stubs owned by /dick (business/strategy/customers/priorities/decisions, no roadmap.md), and the stack-aware `templates/.gitignore` — all H&G-free and indexed by `_CLAUDE.md`'s Standards index. Added scaffold-test assertions covering doc presence and the .gitignore keep/ignore rules (63 tests green); Codex impl-review verdict SHIP.
 ## Evidence
 - Commits: 0311b2ecf23f9b8e6dd2881ee459e09e2564547f
-- Tests: bash src/init-project/tests/scaffold_test.sh (63 passed, 0 failed)
+- Tests: bash plugins/init-project/tests/scaffold_test.sh (63 passed, 0 failed)
 - PRs:

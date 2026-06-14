@@ -3,7 +3,7 @@ title: Dev container setup script installed DuckDB + Codex CLI unpinned
 date: "2026-06-14"
 track: bug
 category: build-errors
-module: src/init-project/templates/.devcontainer/setup.sh
+module: plugins/init-project/templates/.devcontainer/setup.sh
 tags: [devcontainer, reproducibility, version-pinning, scaffold, setup-script]
 problem_type: build-error
 symptoms: "Container builds non-reproducible: DuckDB/Codex tracked latest, drifting over time"
@@ -25,7 +25,7 @@ through: `DUCKDB_VERSION` passed via the installer's `DUCKDB_INSTALL_VERSION`
 env var, and `CODEX_VERSION` via `@openai/codex@<ver>`. This mirrors the
 existing convention where devcontainer FEATURES are pinned in devcontainer.json
 and Angular CLI is pinned by reading the root package.json single source.
-(src/init-project/templates/.devcontainer/setup.sh)
+(plugins/init-project/templates/.devcontainer/setup.sh)
 
 ## Prevention
 When authoring container/setup scripts, pin EVERY externally-installed tool to

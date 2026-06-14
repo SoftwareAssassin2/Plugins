@@ -19,9 +19,9 @@ Make the dispatcher forward args and orchestrate the `etc/local-llm/` stack behi
 
 ## Investigation targets
 **Required:**
-- `.worktrees/init-project/src/init-project/templates/src/system-cli/system.sh` — dispatch + whether it already passes `"$@"`
-- `.worktrees/init-project/src/init-project/templates/src/system-cli/up.sh` — the hardcoded stacks array + `[[ -f ]]` guard + `# Description:` comment + current (lack of) arg handling
-- `.worktrees/init-project/src/init-project/templates/src/system-cli/down.sh` — teardown mirror
+- `.worktrees/init-project/plugins/init-project/templates/src/system-cli/system.sh` — dispatch + whether it already passes `"$@"`
+- `.worktrees/init-project/plugins/init-project/templates/src/system-cli/up.sh` — the hardcoded stacks array + `[[ -f ]]` guard + `# Description:` comment + current (lack of) arg handling
+- `.worktrees/init-project/plugins/init-project/templates/src/system-cli/down.sh` — teardown mirror
 - fn-2 spec R24 (dispatcher contract), R6 (kcov standard)
 
 ## Acceptance

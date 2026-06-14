@@ -1,0 +1,49 @@
+# OpenTelemetry Collector — the telemetry ingest pipeline of the observability stack.
+#
+# This is a src/ component (its own src/otel-collector/ folder, brought up/down by
+# `./system.sh up` / `down`). The observability stack is split across three peer
+# components — src/otel-collector/, src/prometheus/, src/grafana/ — that talk to
+# each other by service name over a SHARED Docker network named `observability`.
+# Because each is its own compose project, that network is declared `external` here
+# and created by `./system.sh up` before these stacks start (see src/system-cli/up.sh).
+#
+# It is NOT a config.json systems[] component (no host/port secrets to distribute)
+# and NOT an external services{} dependency — it is local dev tooling promoted to a
+# first-class src/ component. See docs/dev-container.md §3.
+#
+# Wiring: applications send OTLP (gRPC :4317 / HTTP :4318) to the collector; the
+# collector re-exposes metrics in Prometheus exposition format on :8889, which the
+# `prometheus` service scrapes. Image tags are PINNED for reproducibility. Ports are
+# bound to loopback (127.0.0.1) — local dev tooling, never LAN-reachable.
+#
+# A real bring-up happens in the dev container / CI (docker CLI + docker-in-docker);
+# `docker compose -f src/otel-collector/docker-compose.yml config` validates this
+# definition without starting anything.
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.0
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "127.0.0.1:4317:4317"   # OTLP gRPC receiver
+      - "127.0.0.1:4318:4318"   # OTLP HTTP receiver
+      - "127.0.0.1:8889:8889"   # Prometheus exporter (scraped by the prometheus service)
+      - "127.0.0.1:13133:13133" # health_check extension
+    networks:
+      - observability
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:13133/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+# Shared, externally-managed network so the collector, prometheus, and grafana
+# (each a separate compose project) resolve one another by service name. Created by
+# `./system.sh up`; never owned by a single project's lifecycle.
+networks:
+  observability:
+    external: true
+    name: observability

@@ -3,7 +3,7 @@ title: "Per-request RLS unit-of-work: transaction lifecycle + Keycloak role pitf
 date: "2026-06-14"
 track: bug
 category: integration
-module: src/init-project/templates/src/DataAccess/Rls
+module: plugins/init-project/templates/src/DataAccess/Rls
 tags: [rls, postgres, unit-of-work, ef-core, keycloak, jwt, transaction, cancellation, aspnetcore]
 problem_type: integration
 symptoms: RLS app.roles empty; pooled api connection left with open txn / leaked session settings; double-rollback; authz runs outside session context; commit failure not rolled back
