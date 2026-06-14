@@ -1,0 +1,26 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "bash .claude/statusline.sh"
+  },
+  "extraKnownMarketplaces": {
+    "plugins": {
+      "source": {
+        "source": "github",
+        "repo": "SoftwareAssassin2/Plugins"
+      }
+    }
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/claude-md-reminder.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

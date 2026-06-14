@@ -33,7 +33,8 @@ Author the **CI** templates: GitHub Actions running .NET + Angular + shell build
 - [ ] **Fresh-scaffold proof:** scaffold a temp project, run its generated `tests/system-cli/` harness (with external commands stubbed) under kcov, parse the summary, and confirm 100% line coverage + a test per branch for `system.sh`/`src/system-cli/*.sh` (proves R6 holds on real generated output)
 
 ## Done summary
-_(filled on completion)_
-
+Authored the generated project's CI as build-time-complete templates under templates/.github/: ci.yml (push/PR — .NET coverlet 100% line+branch with SDK 9 pinned, Angular static SSG build + lint + prettier + jest 100% per-app, shell kcov 100%-line via tests/coverage.sh, config.json validation + config↔config.deploy path-set drift; no secret store) and deploy.yml (renders config.deploy.json {{VAR-NAME}} from GitHub secrets, then build-config --config <rendered>). Added .github/scripts/{kcov-gate,config-drift}.sh + generated tests/coverage.sh, and made the generated shell suite cover every system-cli subcommand under kcov via direct-child instrumentation. Codex impl-review: SHIP (R30 met) after two NEEDS_WORK rounds.
 ## Evidence
-_(filled on completion)_
+- Commits: 1dbbbcd, 9cba577, 8c622bc, 911b4eb
+- Tests: bash src/init-project/tests/scaffold_test.sh (265 passed), bash src/init-project/tests/dispatcher_test.sh (61 passed), bash templates/tests/system-cli/system_cli_test.sh (40 passed, plain + kcov coverage mode), actionlint .github/workflows/*.yml (clean), shellcheck .github/scripts/*.sh tests/coverage.sh (clean), config-drift gate + deploy render proven end-to-end on fresh scaffold; kcov per-call collect+merge mechanism runs (24 dirs)
+- PRs:

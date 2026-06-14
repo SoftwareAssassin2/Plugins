@@ -1,0 +1,7 @@
+{
+  "name": "init-project",
+  "displayName": "Init Project",
+  "version": "0.1.0",
+  "description": "Scaffold a brand-new opinionated mono-repo with preferred defaults (root layout, CLAUDE.md, dev container, standards docs, system.sh dispatcher, a starter .NET solution + Angular SPAs, Postgres + Keycloak), then optionally hand off to /dick. Asks only for project name + description.",
+  "author": { "name": "Chris Green (Software Assassin)" }
+}

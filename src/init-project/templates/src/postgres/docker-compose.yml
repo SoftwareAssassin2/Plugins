@@ -1,0 +1,62 @@
+# Postgres service component — the `platform` database with least-privilege roles.
+#
+# This is a SYSTEM COMPONENT (it has a config.json systems[] entry `postgres` and
+# this src/postgres/ folder). It is brought up/down by `./system.sh up` / `down`,
+# which iterate the per-component compose files in dependency order.
+#
+# Configuration flows from the single source `config.json` through
+# `./system.sh build-config`, which writes the gitignored `src/postgres/.env`
+# consumed below via `env_file:`. Run build-config BEFORE `up` so `.env` exists.
+#
+# The image is PINNED for reproducibility. The container's init script
+# (./init/10-roles.sh, mounted into /docker-entrypoint-initdb.d/) bootstraps the
+# FIXED roles owner/migrator/api at FIRST VOLUME INIT — see docs/keycloak.md §4 and
+# docs/config-management.md §3. Rotating a role password requires resetting the
+# volume (the init script only runs on an empty data dir); re-running build-config
+# alone updates .env but NOT the existing roles.
+#
+# A real bring-up happens in the dev container / CI (docker-in-docker). Locally,
+# `docker compose -f src/postgres/docker-compose.yml config` validates this
+# definition without starting anything.
+
+services:
+  postgres:
+    image: postgres:17.2-alpine
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # The official image creates POSTGRES_DB owned by the bootstrap superuser and
+      # runs /docker-entrypoint-initdb.d/* (as the superuser) only on FIRST init.
+      POSTGRES_DB: platform
+      # TRANSIENT bootstrap superuser password — used ONLY to run the init script
+      # at first volume init. It is DISTINCT from every role secret (never reuses
+      # owner/migrator/api passwords, so the owner credential can't be used to log
+      # in as the superuser and bypass the role model). The init script's LAST step
+      # ROTATES this to an unguessable random value, so after bootstrap the known
+      # literal no longer grants superuser access. Combined with loopback-only port
+      # binding, the superuser is effectively unreachable post-init.
+      POSTGRES_PASSWORD: bootstrap-only-rotated-by-init-script
+      # Role passwords consumed by ./init/10-roles.sh (see that script).
+      POSTGRES_OWNER_PASSWORD: ${POSTGRES_OWNER_PASSWORD}
+      POSTGRES_MIGRATOR_PASSWORD: ${POSTGRES_MIGRATOR_PASSWORD}
+      POSTGRES_API_PASSWORD: ${POSTGRES_API_PASSWORD}
+    volumes:
+      # The role-bootstrap init script. Runs ONLY at first volume init (empty data
+      # dir), BEFORE any EF migration — a migration cannot create the role it
+      # connects as. Mounted read-only.
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      # Bound to loopback — local dev only, never LAN-reachable. The in-network
+      # container port is 5432; ${POSTGRES_PORT} is the in-network port reference.
+      - "127.0.0.1:${POSTGRES_PORT}:5432"
+    healthcheck:
+      # `api` is the least-privilege runtime role; readiness = it can authenticate.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:

@@ -1,0 +1,53 @@
+{
+  "systems": [
+    {
+      "name": "postgres",
+      "docker": true,
+      "host": "127.0.0.1",
+      "container_host": "postgres",
+      "container_port": 5432,
+      "port": 5432,
+      "owner_password": "__SCAFFOLD_GEN_URLSAFE__",
+      "migrator_password": "__SCAFFOLD_GEN_URLSAFE__",
+      "api_password": "__SCAFFOLD_GEN_URLSAFE__"
+    },
+    {
+      "name": "keycloak",
+      "docker": true,
+      "host": "127.0.0.1",
+      "container_host": "keycloak",
+      "container_port": 8080,
+      "port": 8080,
+      "realm": "__SCAFFOLD_PROJECT_NAME__",
+      "public_url": "http://127.0.0.1:8080",
+      "admin_user": "admin",
+      "admin_password": "__SCAFFOLD_GEN_URLSAFE__",
+      "webapp_client_id": "webapp",
+      "marketingsite_client_id": "marketingsite",
+      "api_client_id": "api",
+      "api_client_secret": "__SCAFFOLD_GEN_URLSAFE__"
+    },
+    { "name": "Framework" },
+    { "name": "DataAccess" },
+    { "name": "BusinessLogic" },
+    {
+      "name": "Api",
+      "host": "127.0.0.1",
+      "port": 5080
+    },
+    {
+      "name": "MarketingSite",
+      "realm_url": "http://127.0.0.1:8080/realms/__SCAFFOLD_PROJECT_NAME__",
+      "public_client_id": "marketingsite"
+    },
+    {
+      "name": "WebApp",
+      "realm_url": "http://127.0.0.1:8080/realms/__SCAFFOLD_PROJECT_NAME__",
+      "public_client_id": "webapp"
+    },
+    { "name": "SampleApp" }
+  ],
+  "services": {
+    "claude-api": { "api_key": "REPLACE_ME" }
+  }
+}

@@ -1,0 +1,50 @@
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Git worktrees (created under .worktrees/ by convention)
+.worktrees/
+
+# .NET build output
+bin/
+obj/
+.vs/
+*.user
+[Tt]est[Rr]esults/
+# coverlet coverage reports (the 100% gate emits these per test run — transient)
+*.cobertura.xml
+coverage.json
+coverage.opencover.xml
+
+# Node / Angular build output
+node_modules/
+dist/
+.angular/
+out-tsc/
+coverage/
+npm-debug.log*
+
+# Generated per-component runtime config — distributed from config.json by
+# `system.sh build-config`. The source config.json is TRACKED (committed); only
+# the generated downstream artifacts are ignored.
+.env
+*.env
+src/*/.env
+config.deploy.local.json
+
+# Generated SPA public runtime config (stamped from config.json; non-secret but
+# environment-specific — never committed).
+src/*/public/config.json
+
+# Generated Keycloak realm-import file (stamped from realm.template.json by
+# build-config; the ONLY file --import-realm loads). The committed source is
+# src/keycloak/realm.template.json.
+src/keycloak/import/*-realm.json
+
+# Local Claude Code settings (machine-specific overrides).
+.claude/settings.local.json
+
+# NOTE: config.json is intentionally NOT ignored — it is the tracked single
+# source of dev-only configuration (see docs/config-management.md).
+# NOTE: .flow/bin/ is intentionally NOT ignored — flow-next's bundled flowctl is
+# a protected pipeline artifact that must stay committable.

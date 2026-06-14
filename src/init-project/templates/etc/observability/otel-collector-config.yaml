@@ -1,0 +1,47 @@
+# OpenTelemetry Collector (contrib) configuration.
+#
+# Receives OTLP over gRPC (:4317) and HTTP (:4318) from instrumented apps, and
+# re-exposes collected metrics in Prometheus exposition format on :8889 for
+# Grafana to scrape (see grafana/provisioning/datasources/datasources.yaml).
+# Traces/logs are written to the collector's own stdout via the debug exporter —
+# enough for a local dev loop; promote to a real backend (Tempo/Loki) only if a
+# later spec calls for it.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  # Metrics → Prometheus exposition endpoint scraped by Grafana.
+  prometheus:
+    endpoint: 0.0.0.0:8889
+  # Traces/logs → collector stdout (visible via `docker compose logs otel-collector`).
+  debug:
+    verbosity: normal
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

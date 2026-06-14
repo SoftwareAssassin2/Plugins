@@ -1,0 +1,15 @@
+# Grafana datasource provisioning — points at the Prometheus service (which
+# scrapes the OTel Collector's exposition endpoint and serves the query API
+# Grafana needs). Provisioned at startup so a fresh `system.sh up` has a working
+# datasource with no manual setup. (Grafana cannot query the collector's
+# :8889 exposition endpoint directly — that is /metrics text, not a query API.)
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: otel-collector-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true

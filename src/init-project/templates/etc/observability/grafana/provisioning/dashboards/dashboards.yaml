@@ -1,0 +1,16 @@
+# Grafana dashboard provider — loads any dashboard JSON dropped under
+# /etc/grafana/provisioning/dashboards (this same directory, mounted read-only).
+apiVersion: 1
+
+providers:
+  - name: observability
+    orgId: 1
+    folder: Observability
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

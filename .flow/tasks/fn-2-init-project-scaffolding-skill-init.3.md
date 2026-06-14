@@ -30,7 +30,8 @@ Define, in `config-management.md`, a table that downstream tasks (.6/.10/.11/.12
 - [ ] generated secrets match `[A-Za-z0-9_-]+`
 
 ## Done summary
-_(filled on completion)_
-
+Authored the config-management standard: templates/docs/config-management.md (generalized systems[]/services{} model, generalized postgres owner/migrator/api role example, URL-safe secret alphabet + openssl recipe, an authoritative config schema table pinning exact field/env-var names, validators, .env paths and consumers for postgres/keycloak/SPA/Api/services, and the build-config --config deploy handoff). Built templates/config.json to build-time-complete form (systems[] entry for every starter component incl. keycloak public SPA client ids + Api confidential client secret sentinel) and added templates/config.deploy.json mirroring the shape with {{VAR-NAME}} placeholders (identical key-set). Extended scaffold_test.sh with 13 new assertions (44 pass).
 ## Evidence
-_(filled on completion)_
+- Commits: 01ef86323ebd06cfd1ff4b61c11eaa8a95b7c87f, acd9f4d2d19a13c4d99adf24c3eea4befe9f84c9, b964d12cac37df3ca72b4f6a037ab201c9dc430b, 31ae6e797b5b112c5decdb919cbad8e3f7e683be, 55772d271591910a20da513cc6e9ec35e1cb7f36
+- Tests: bash src/init-project/tests/scaffold_test.sh (44 passed, 0 failed)
+- PRs:

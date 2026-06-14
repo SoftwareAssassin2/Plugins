@@ -1,0 +1,4 @@
+# Mount target for the build-config-stamped realm import (src/keycloak/import/
+# <realm>-realm.json). That generated file is gitignored (see ../../../.gitignore);
+# this .gitkeep keeps the directory present in a fresh scaffold so the compose
+# bind-mount target exists before `./system.sh build-config` stamps the import.

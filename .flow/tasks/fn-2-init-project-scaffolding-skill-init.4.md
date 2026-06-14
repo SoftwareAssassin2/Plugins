@@ -27,7 +27,8 @@ Author the dev container template: `.devcontainer/devcontainer.json` (base image
 - [ ] A fresh container build / setup.sh run completes successfully (smoke-tested)
 
 ## Done summary
-_(filled on completion)_
-
+Authored the build-time-complete dev container as template files: .devcontainer/devcontainer.json (dotnet:1-9.0 base + pinned node/aws/azure/github-cli features, community gcloud :1.0.1, docker-in-docker, jq, vscode extensions, onCreate setup.sh hook), a token-free executable .devcontainer/setup.sh (set -euo pipefail, idempotent; installs Angular CLI pinned by reading package.json, dotnet-ef via tool manifest, version-pinned DuckDB + Codex CLI, acli, Claude Code; best-effort enables the SoftwareAssassin2/Plugins marketplace + 7 curated plugins), and a build-time-complete .mcp.json declaring context7 + github-mcp-server. settings.json now declares the marketplace remote. +32 scaffold_test.sh assertions (132 -> 164 passing). Codex impl-review: SHIP (after one NEEDS_WORK -> pinned DuckDB/Codex).
 ## Evidence
-_(filled on completion)_
+- Commits: ff009eb138fec5a724f1d930ec12a72cec1d152a, 3284139522d9b64e72e1444c5e464010f08755e9, f6c7efc1c92ae00a1fd58ee76295f81934ecf763
+- Tests: bash src/init-project/tests/scaffold_test.sh (164 passed, 0 failed), shellcheck src/init-project/templates/.devcontainer/setup.sh (clean), bash -n setup.sh (ok), jq validation of .mcp.json + settings.json + devcontainer.json-after-comment-strip (all valid)
+- PRs:

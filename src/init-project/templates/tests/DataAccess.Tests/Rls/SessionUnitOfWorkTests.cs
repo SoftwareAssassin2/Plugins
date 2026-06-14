@@ -1,0 +1,270 @@
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using DataAccess.Rls;
+using Framework;
+using Xunit;
+
+namespace DataAccess.Tests.Rls;
+
+public class SessionUnitOfWorkTests
+{
+    /// <summary>Records the order of seam calls so the UoW's ordering contract is assertable.</summary>
+    private sealed class RecordingDbSession : IDbSession
+    {
+        public List<string> Calls { get; } = new();
+        public SessionContext? AppliedSession { get; private set; }
+        public int DisposeCount { get; private set; }
+
+        /// <summary>When set, ApplySessionContextAsync throws this after recording the call.</summary>
+        public Exception? ApplyFailure { get; set; }
+
+        /// <summary>When set, CommitTransactionAsync throws this after recording the call.</summary>
+        public Exception? CommitFailure { get; set; }
+
+        public Task BeginTransactionAsync(CancellationToken cancellationToken = default)
+        {
+            Calls.Add("begin");
+            return Task.CompletedTask;
+        }
+
+        public Task ApplySessionContextAsync(SessionContext session, CancellationToken cancellationToken = default)
+        {
+            Calls.Add("apply");
+            AppliedSession = session;
+            if (ApplyFailure is not null)
+            {
+                throw ApplyFailure;
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task CommitTransactionAsync(CancellationToken cancellationToken = default)
+        {
+            Calls.Add("commit");
+            if (CommitFailure is not null)
+            {
+                throw CommitFailure;
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public CancellationToken RollbackToken { get; private set; }
+
+        public Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
+        {
+            Calls.Add("rollback");
+            RollbackToken = cancellationToken;
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private static SessionContext Authenticated() => new("user-1", new[] { "user" });
+
+    [Fact]
+    public void Ctor_NullSession_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new SessionUnitOfWork(null!));
+    }
+
+    [Fact]
+    public async Task BeginAsync_OpensTransactionBeforeApplyingSessionContext()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+
+        await uow.BeginAsync(Authenticated());
+
+        // ORDER IS THE CONTRACT: begin must precede apply.
+        Assert.Equal(new[] { "begin", "apply" }, db.Calls);
+        Assert.Equal("user-1", db.AppliedSession!.UserId);
+    }
+
+    [Fact]
+    public async Task BeginAsync_NullSession_Throws()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => uow.BeginAsync(null!));
+    }
+
+    [Fact]
+    public async Task BeginAsync_ApplyContextFails_RollsBackOpenTransactionAndRethrows()
+    {
+        var boom = new InvalidOperationException("set_config failed");
+        var db = new RecordingDbSession { ApplyFailure = boom };
+        await using var uow = new SessionUnitOfWork(db);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel(); // a canceled apply must still roll back
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => uow.BeginAsync(Authenticated(), cts.Token));
+
+        Assert.Same(boom, thrown);
+        // Transaction was opened then rolled back — never left dangling.
+        Assert.Equal(new[] { "begin", "apply", "rollback" }, db.Calls);
+        // Cleanup uses CancellationToken.None, not the (canceled) caller token.
+        Assert.False(db.RollbackToken.IsCancellationRequested);
+
+        // The caller's catch (e.g. the middleware) rolls back unconditionally; that
+        // must be a SAFE NO-OP here — no double-rollback on the same transaction.
+        await uow.RollbackAsync();
+        Assert.Equal(new[] { "begin", "apply", "rollback" }, db.Calls);
+    }
+
+    [Fact]
+    public async Task BeginAsync_Twice_Throws()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+        await uow.BeginAsync(Authenticated());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => uow.BeginAsync(Authenticated()));
+    }
+
+    [Fact]
+    public async Task CommitAsync_AfterBegin_Commits()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+        await uow.BeginAsync(Authenticated());
+
+        await uow.CommitAsync();
+
+        Assert.Equal(new[] { "begin", "apply", "commit" }, db.Calls);
+    }
+
+    [Fact]
+    public async Task CommitAsync_WithoutBegin_Throws()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => uow.CommitAsync());
+    }
+
+    [Fact]
+    public async Task RollbackAsync_AfterBegin_RollsBack()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+        await uow.BeginAsync(Authenticated());
+
+        await uow.RollbackAsync();
+
+        Assert.Equal(new[] { "begin", "apply", "rollback" }, db.Calls);
+    }
+
+    [Fact]
+    public async Task RollbackAsync_WithoutBegin_IsNoOp()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+
+        await uow.RollbackAsync();
+
+        Assert.Empty(db.Calls);
+    }
+
+    [Fact]
+    public async Task CommitAsync_CommitFails_RollsBackAndRethrows_ThenCallerRollbackNoOps()
+    {
+        var boom = new InvalidOperationException("commit failed");
+        var db = new RecordingDbSession { CommitFailure = boom };
+        await using var uow = new SessionUnitOfWork(db);
+        await uow.BeginAsync(Authenticated());
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => uow.CommitAsync());
+
+        Assert.Same(boom, thrown);
+        // Commit failed -> deterministic rollback (not left to the caller/disposal).
+        Assert.Equal(new[] { "begin", "apply", "commit", "rollback" }, db.Calls);
+        // The caller's catch then rolls back; that must be a safe no-op now.
+        await uow.RollbackAsync();
+        Assert.Equal(new[] { "begin", "apply", "commit", "rollback" }, db.Calls);
+        // Cleanup used None, not the caller token.
+        Assert.False(db.RollbackToken.IsCancellationRequested);
+    }
+
+    [Fact]
+    public async Task CommitAsync_Twice_SecondThrows()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+        await uow.BeginAsync(Authenticated());
+        await uow.CommitAsync();
+
+        // After a successful commit the transaction is no longer open.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => uow.CommitAsync());
+        Assert.Equal(new[] { "begin", "apply", "commit" }, db.Calls);
+    }
+
+    [Fact]
+    public async Task CommitAsync_AfterRollback_Throws()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+        await uow.BeginAsync(Authenticated());
+        await uow.RollbackAsync();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => uow.CommitAsync());
+        Assert.Equal(new[] { "begin", "apply", "rollback" }, db.Calls);
+    }
+
+    [Fact]
+    public async Task RollbackAsync_Twice_SecondIsNoOp()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+        await uow.BeginAsync(Authenticated());
+        await uow.RollbackAsync();
+        await uow.RollbackAsync(); // no second rollback recorded
+
+        Assert.Equal(new[] { "begin", "apply", "rollback" }, db.Calls);
+    }
+
+    [Fact]
+    public async Task RollbackAsync_AfterCommit_IsNoOp()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+        await uow.BeginAsync(Authenticated());
+        await uow.CommitAsync();
+        await uow.RollbackAsync(); // committed already — no rollback
+
+        Assert.Equal(new[] { "begin", "apply", "commit" }, db.Calls);
+    }
+
+    [Fact]
+    public async Task BeginAsync_AfterCompletion_Throws()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+        await uow.BeginAsync(Authenticated());
+        await uow.CommitAsync();
+
+        // Single-use per request: cannot re-begin even after completion.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => uow.BeginAsync(Authenticated()));
+    }
+
+    [Fact]
+    public async Task DisposeAsync_DisposesUnderlyingSessionOnce()
+    {
+        var db = new RecordingDbSession();
+        var uow = new SessionUnitOfWork(db);
+
+        await uow.DisposeAsync();
+        await uow.DisposeAsync(); // idempotent: must not double-dispose the seam.
+
+        Assert.Equal(1, db.DisposeCount);
+    }
+}

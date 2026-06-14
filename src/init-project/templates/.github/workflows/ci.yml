@@ -1,0 +1,158 @@
+# Build/test CI for __SCAFFOLD_PROJECT_NAME__ — enforces the 100% coverage gate
+# (docs/tdd.md) across the .NET, Angular, and shell suites, plus a config key-set
+# drift check. Runs on every push and pull request.
+#
+# This workflow needs NO secret store: it never renders config.deploy.json and never
+# feeds raw {{VAR-NAME}} placeholders to validation. The config job validates the
+# tracked config.json (which carries dev-only generated values, not real secrets).
+# Real-secret rendering lives in the separate deploy.yml.
+#
+# Action versions are PINNED (no floating @v* major-only refs beyond the publisher's
+# release tag) and permissions are least-privilege (read-only contents).
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref to save runner minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dotnet:
+    name: .NET build + 100% coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      # Pin the SDK to 9.x: net9.0 builds natively without relying on an SDK-10
+      # roll-forward. (The dev container targets dotnet 9; CI mirrors that.)
+      - name: Set up .NET SDK 9
+        uses: actions/setup-dotnet@v4.1.0
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Restore
+        run: dotnet restore src/system.sln
+
+      - name: Build (no restore)
+        run: dotnet build src/system.sln --configuration Release --no-restore
+
+      # Enforce the 100% line+branch gate via coverlet.msbuild. Each *.Tests project
+      # scopes coverage to its own assembly (<Include>[Component]*</Include>) and
+      # [ExcludeFromCodeCoverage] drops EF migrations + ASP.NET bootstrap (docs/tdd.md
+      # §5). The MSBuild threshold props FAIL the build below 100% on either metric.
+      # Threshold props are passed to `dotnet test` (do NOT mix with the XPlat
+      # collector path — that would not honour the MSBuild gate).
+      - name: Test with 100% line+branch coverage gate
+        run: >-
+          dotnet test src/system.sln
+          --configuration Release
+          --no-build
+          /p:CollectCoverage=true
+          /p:Threshold=100
+          /p:ThresholdType=line,branch
+          /p:ThresholdStat=total
+
+  angular:
+    name: Angular build + 100% coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Set up Node
+        uses: actions/setup-node@v4.1.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install (clean, lockfile-exact)
+        run: npm ci
+
+      # Static SSG build for both SPAs (outputMode: static -> dist/<app>/browser/).
+      - name: Build both SPAs (static)
+        run: npm run build
+
+      # Assert the static prerender actually produced the entry document per SPA —
+      # a build that silently emits nothing must fail the job.
+      - name: Verify static SSG output
+        run: |
+          for app in MarketingSite WebApp; do
+            f="dist/$app/browser/index.html"
+            if [[ ! -f "$f" ]]; then
+              echo "ERROR: expected static output $f was not produced" >&2
+              exit 1
+            fi
+            echo "ok: $f"
+          done
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Prettier format check
+        run: npm run format:check
+
+      # Jest per-app with coverageThreshold global 100 (branches/functions/lines/
+      # statements). Thresholds do NOT roll up across a monorepo, so each SPA runs
+      # its own jest config; either app under 100% exits non-zero and fails the job.
+      - name: Test with 100% coverage gate (per SPA)
+        run: npm run test:coverage
+
+  shell:
+    name: Shell (system.sh) 100% line coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      # kcov is not preinstalled on the runner and availability varies, so install
+      # it explicitly (apt ships kcov on ubuntu). The shell suite stubs external
+      # commands (docker/dotnet) so it exercises command construction + every branch
+      # without real services.
+      - name: Install kcov + jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends kcov jq
+
+      # Run the generated project's own shell suite under kcov + the 100%-line gate.
+      # tests/coverage.sh runs tests/system-cli/system_cli_test.sh (which asserts the
+      # dispatcher + src/system-cli behaviour AND a test per branch), invoking each
+      # script as a DIRECT kcov child scoped via --include-pattern to system.sh +
+      # src/system-cli (NOT the harness, NOT scaffold.sh — that belongs to the
+      # init-project skill package per docs/tdd.md §2), merges the per-call collect
+      # dirs, and fails below 100% line (or if kcov measured nothing). --require-kcov
+      # makes an absent/non-measuring kcov a hard failure, never a silent pass.
+      - name: Run shell suite under kcov + 100% line gate
+        run: bash tests/coverage.sh --require-kcov
+
+  config:
+    name: config validation + drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends jq
+
+      # Validate the tracked local config by actually running build-config against
+      # it: this exercises the full validator path (URL-safe alphabet, port/host/
+      # client-id shapes, raw-{{VAR}} rejection) and distributes the .env / SPA
+      # config / realm import. It needs NO secret store — config.json carries dev-only
+      # generated values, not real secrets — so it belongs in build/test CI (the
+      # secret-bearing render lives in deploy.yml). Generated .env / public config /
+      # realm import are gitignored, so this leaves the tree clean.
+      - name: Validate config.json via build-config
+        run: ./system.sh build-config --config config.json
+
+      # Structural path-set parity: systems[] matched by .name, services{} by key,
+      # scalar VALUES ignored (so dev secrets vs {{VAR-NAME}} placeholders never trip
+      # it). Fails only on a missing/extra path between the two files.
+      - name: Check config key-set parity
+        run: bash .github/scripts/config-drift.sh config.json config.deploy.json

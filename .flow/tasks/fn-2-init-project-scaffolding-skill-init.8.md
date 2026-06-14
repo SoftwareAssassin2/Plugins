@@ -33,7 +33,8 @@ Author the remaining `docs/` templates (generalized standards + the keycloak sta
 - [ ] Whole-package H&G scan returns nothing: `grep -rEi 'H&G|play\.sh|MonoBehaviour|games\[|platform-(db|api)|PGS|google[_ ]?oauth|oauth2\.googleapis|com\.hg' src/init-project/templates/ src/init-project/SKILL.md` (note: bare `coverlet` is allowed — it's the .NET coverage tool per R30; only Unity/games framing is banned)
 
 ## Done summary
-_(filled on completion)_
-
+Authored the remaining generalized standards docs (architecture.md, tdd.md, dev-container.md, keycloak.md, ubiquitous-language.md), the five empty `## TODO` business-doc stubs owned by /dick (business/strategy/customers/priorities/decisions, no roadmap.md), and the stack-aware `templates/.gitignore` — all H&G-free and indexed by `_CLAUDE.md`'s Standards index. Added scaffold-test assertions covering doc presence and the .gitignore keep/ignore rules (63 tests green); Codex impl-review verdict SHIP.
 ## Evidence
-_(filled on completion)_
+- Commits: 0311b2ecf23f9b8e6dd2881ee459e09e2564547f
+- Tests: bash src/init-project/tests/scaffold_test.sh (63 passed, 0 failed)
+- PRs:

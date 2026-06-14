@@ -28,7 +28,8 @@ Author the root **`templates/_CLAUDE.md`** to its final, complete, H&G-free form
 - [ ] `grep -rE 'H&G|play\.sh|platform-(db|api)' templates/_CLAUDE.md` returns nothing
 
 ## Done summary
-_(filled on completion)_
-
+Authored the build-time-complete `templates/_CLAUDE.md` (mono-repo + component↔config invariant & exceptions, root layout, always-on Standards index, inline brevity/honesty/verify/concision/simplicity directives, linked DDD/TDD/design, doc strategies, neutral business-consult sub-agent directive, and git-commit/branch/worktree policy — all verbatim, H&G-free), plus the `templates/.claude/` set (non-blocking marker-keyed Stop hook, statusline script, and one settings.json wiring both) and the human-facing `templates/README.md`. Verified via scaffold_test.sh (31/31), shellcheck, and a manual scaffold (no leftover tokens, H&G-free).
 ## Evidence
-_(filled on completion)_
+- Commits: afbd08f60201c270719dff9d0e9bf9020c6ecbdb
+- Tests: bash src/init-project/tests/scaffold_test.sh (31 passed), shellcheck templates/.claude/hooks/claude-md-reminder.sh templates/.claude/statusline.sh (clean), manual scaffold into temp dir: no leftover __SCAFFOLD_*__ tokens, H&G-free, Stop hook tested both ways
+- PRs:
