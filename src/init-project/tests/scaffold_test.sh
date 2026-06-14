@@ -115,6 +115,29 @@ check ".config/dotnet-tools.json pins dotnet-ef" 'jq -e ".tools.\"dotnet-ef\".ve
 check "SampleApp marked removable"          'grep -qi "REMOVABLE" "$WORK/demo-app/src/SampleApp/SampleApp.csproj"'
 check ".NET output token-free"              '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$WORK/demo-app/src" "$WORK/demo-app/tests" "$WORK/demo-app/.config"'
 
+# Dispatcher CLI (fn-2 task .6): the system.sh dispatcher lands at the REPO ROOT
+# (script_dir == root, so $script_dir/src/system-cli/<sub>.sh resolves), with the
+# subcommand scripts under src/system-cli/ and the generated-project shell
+# test-harness under tests/system-cli/. Deep behavior (routing, exit codes, the
+# build-config validators) is covered by dispatcher_test.sh; here we only assert
+# the files land in scaffold output, executable + token-free. (src/system-cli/ is
+# the documented invariant exception — repo tooling, not a systems[] component.)
+check "dispatcher system.sh at scaffolded ROOT" '[[ -f "$WORK/demo-app/system.sh" ]]'
+check "system.sh resolves subcommands from repo root (not src/)" 'grep -q "src/system-cli/\$subcommand.sh" "$WORK/demo-app/system.sh"'
+for sub in help build-config up down migrate status; do
+  check "subcommand src/system-cli/$sub.sh present" "[[ -f \"\$WORK/demo-app/src/system-cli/$sub.sh\" ]]"
+  check "subcommand $sub has a # Description: line" "grep -qE '^#[[:space:]]*Description:' \"\$WORK/demo-app/src/system-cli/$sub.sh\""
+done
+check "dispatcher + subcommands executable" 'for s in "$WORK/demo-app/system.sh" "$WORK"/demo-app/src/system-cli/*.sh; do [[ -x "$s" ]] || exit 1; done'
+check "dispatcher CLI output token-free"    '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$WORK/demo-app/system.sh" "$WORK/demo-app/src/system-cli"'
+check "generated-project shell test-harness ships (tests/system-cli/)" '[[ -d "$WORK/demo-app/tests/system-cli" ]] && compgen -G "$WORK/demo-app/tests/system-cli/*.sh" >/dev/null'
+# A fresh scaffold's system.sh actually dispatches a valid subcommand from its root.
+# (Capture the output first — piping `system.sh help` straight into `grep -q` would
+# SIGPIPE the exec'd help.sh and trip pipefail.)
+check "scaffolded system.sh dispatches help (exit 0)" 'HELP_OUT="$( cd "$WORK/demo-app" && bash ./system.sh help )" && grep -q "build-config" <<<"$HELP_OUT"'
+check "scaffolded system.sh no-arg -> usage exit 64"  '( cd "$WORK/demo-app" && bash ./system.sh >/dev/null 2>&1 ); [[ $? -eq 64 ]]'
+check "scaffolded system.sh unknown -> exit 127"      '( cd "$WORK/demo-app" && bash ./system.sh nope >/dev/null 2>&1 ); [[ $? -eq 127 ]]'
+
 # Angular SPA templates (fn-2 task .12): two SPAs (MarketingSite + WebApp) each its
 # own src/<component>/ folder, a single root Angular-version source, and the
 # docs/front-end.md standard — all landing in scaffold output token-free. Light
