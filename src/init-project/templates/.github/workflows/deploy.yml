@@ -1,0 +1,95 @@
+# Deploy-config rendering for __SCAFFOLD_PROJECT_NAME__.
+#
+# This is the SECRET-bearing half of CI (the opposite of ci.yml, which must run with
+# no secret store). It renders config.deploy.json — substituting each {{VAR-NAME}}
+# placeholder from GitHub Actions secrets — into a concrete file, then runs
+# `build-config --config <rendered>` (docs/config-management.md §5 deploy handoff).
+# The same field validation applies to the rendered config.
+#
+# Real secrets enter ONLY here, via ${{ secrets.* }} — never committed to the repo.
+# Triggered manually (or wire to your release/tag flow). Action versions are pinned;
+# permissions are least-privilege.
+name: Deploy config
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  render-config:
+    name: Render config.deploy.json + build-config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends jq
+
+      # Render every {{VAR-NAME}} placeholder from the secret store into a concrete
+      # config file. envsubst-style substitution via jq: build a placeholder->secret
+      # map, then walk all string leaves replacing exact {{NAME}} tokens. After this,
+      # rendered-config.json contains NO raw {{...}} placeholders.
+      #
+      # Add a mapping line per {{VAR-NAME}} present in config.deploy.json. Keep this
+      # in sync with the placeholder set (the ci.yml config job enforces that
+      # config.deploy.json's key set matches config.json, not the secret list).
+      - name: Render config.deploy.json from secrets
+        env:
+          POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
+          POSTGRES_OWNER_PASSWORD: ${{ secrets.POSTGRES_OWNER_PASSWORD }}
+          POSTGRES_MIGRATOR_PASSWORD: ${{ secrets.POSTGRES_MIGRATOR_PASSWORD }}
+          POSTGRES_API_PASSWORD: ${{ secrets.POSTGRES_API_PASSWORD }}
+          KEYCLOAK_HOST: ${{ secrets.KEYCLOAK_HOST }}
+          KEYCLOAK_REALM: ${{ secrets.KEYCLOAK_REALM }}
+          KEYCLOAK_PUBLIC_URL: ${{ secrets.KEYCLOAK_PUBLIC_URL }}
+          KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
+          KEYCLOAK_API_CLIENT_SECRET: ${{ secrets.KEYCLOAK_API_CLIENT_SECRET }}
+          API_HOST: ${{ secrets.API_HOST }}
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+        run: |
+          set -euo pipefail
+          # Collect the {{VAR-NAME}} placeholders actually present in the file
+          # (portable read loop — avoids bash-4+ mapfile, matching repo convention).
+          vars=()
+          while IFS= read -r v; do vars+=("$v"); done < <(
+            grep -oE '\{\{[A-Z0-9_-]+\}\}' config.deploy.json \
+              | sed -E 's/^\{\{(.*)\}\}$/\1/' | sort -u)
+
+          rendered="rendered-config.json"
+          cp config.deploy.json "$rendered"
+          for v in "${vars[@]}"; do
+            # Look up the matching env var (set from the secret store above).
+            val="${!v-}"
+            if [[ -z "$val" ]]; then
+              echo "ERROR: no secret provided for placeholder {{$v}}" >&2
+              exit 1
+            fi
+            # Replace every {{v}} string leaf via jq. split|join is fully LITERAL on
+            # both the placeholder and the value (no regex, so a secret containing
+            # regex/backreference metachars is substituted verbatim and safely).
+            jq --arg ph "{{$v}}" --arg val "$val" \
+              'walk(if type == "string" then split($ph) | join($val) else . end)' \
+              "$rendered" > "$rendered.tmp"
+            mv "$rendered.tmp" "$rendered"
+          done
+
+          # Guard: no raw placeholder may survive into the rendered config.
+          if grep -qE '\{\{[A-Z0-9_-]+\}\}' "$rendered"; then
+            echo "ERROR: unrendered {{VAR-NAME}} placeholders remain in $rendered" >&2
+            grep -oE '\{\{[A-Z0-9_-]+\}\}' "$rendered" | sort -u >&2
+            exit 1
+          fi
+          echo "Rendered $rendered (all placeholders substituted)."
+
+      # Run build-config against the rendered (concrete) config. This validates every
+      # field and distributes the per-component .env / SPA public config / realm
+      # import for the deploy environment.
+      - name: build-config from rendered config
+        run: ./system.sh build-config --config rendered-config.json

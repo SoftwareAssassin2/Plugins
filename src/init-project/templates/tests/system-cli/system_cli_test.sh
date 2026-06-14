@@ -131,8 +131,14 @@ check "external service cred exempt"      '[[ $rc -eq 0 ]]'
 
 echo "== build-config: realm-stamp mechanism =="
 if [[ -f "$ROOT/src/keycloak/realm.template.json" ]]; then
-  cp -R "$ROOT/src/keycloak" "$WORK/src/keycloak" 2>/dev/null || true
+  # Copy the realm template INTO the work keycloak dir. An earlier build-config run
+  # already wrote src/keycloak/.env, so the dir exists — `cp -R src dest` would nest
+  # as dest/keycloak/. Copy the template file (and compose) explicitly to land it at
+  # the path build-config reads (src/keycloak/realm.template.json).
   mkdir -p "$WORK/src/keycloak/import"
+  cp "$ROOT/src/keycloak/realm.template.json" "$WORK/src/keycloak/realm.template.json"
+  [[ -f "$ROOT/src/keycloak/docker-compose.yml" ]] \
+    && cp "$ROOT/src/keycloak/docker-compose.yml" "$WORK/src/keycloak/docker-compose.yml"
   touch "$WORK/src/keycloak/import/stale-realm.json"
   OUT="$( cd "$WORK" && bash "$WBC" 2>&1 )"; rc=$?
   REALM="$(jq -r '(.systems[] | select(.name=="keycloak") | .realm)' "$WORK/config.json")"

@@ -295,6 +295,51 @@ check "front-end.md: S3 error-document fallback + CloudFront caveat" 'grep -qi "
 check "front-end.md: single Angular version rule" 'grep -qiE "single (angular version|source)|one source of truth|root .package.json." "$WORK/demo-app/docs/front-end.md"'
 check "SPA output token-free"                 '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$WORK/demo-app/src/MarketingSite" "$WORK/demo-app/src/WebApp" "$WORK/demo-app/angular.json" "$WORK/demo-app/package.json"'
 
+# CI templates (fn-2 task .13, R30): .github/workflows/{ci,deploy}.yml + the helper
+# gate scripts must land in the scaffold output as build-time-complete, valid YAML,
+# token-free, and REFERENCE REAL targets that exist in the generated project. GitHub
+# Actions does not run here; these are structural/validity + real-target assertions
+# (actual execution happens on push). A python3 YAML parse is the validity check;
+# `actionlint`, when present, is run by the worker directly.
+GHA="$WORK/demo-app/.github"
+check ".github/workflows/ci.yml present"       "[[ -f \"$GHA/workflows/ci.yml\" ]]"
+check ".github/workflows/deploy.yml present"   "[[ -f \"$GHA/workflows/deploy.yml\" ]]"
+check ".github/scripts/kcov-gate.sh present+exec"    "[[ -x \"$GHA/scripts/kcov-gate.sh\" ]]"
+check ".github/scripts/config-drift.sh present+exec" "[[ -x \"$GHA/scripts/config-drift.sh\" ]]"
+check "ci.yml valid YAML"                      "python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' \"$GHA/workflows/ci.yml\""
+check "deploy.yml valid YAML"                  "python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' \"$GHA/workflows/deploy.yml\""
+check ".github output token-free"              "! grep -rqE \"__SCAFFOLD_[A-Z0-9_]+__\" \"$GHA\""
+# CI gates the three real toolchains: .NET solution build, the Angular npm scripts,
+# and the generated shell suite under kcov — each must name a target that EXISTS.
+check "ci.yml builds the real .sln"            "grep -q 'src/system.sln' \"$GHA/workflows/ci.yml\" && [[ -f \"$WORK/demo-app/src/system.sln\" ]]"
+check "ci.yml runs the coverlet 100 line+branch gate" "grep -q 'ThresholdType=line,branch' \"$GHA/workflows/ci.yml\" && grep -q '/p:Threshold=100' \"$GHA/workflows/ci.yml\""
+check "ci.yml pins .NET SDK 9 (net9.0 native, no SDK-10 rollforward)" "grep -qE 'dotnet-version: *\"?9' \"$GHA/workflows/ci.yml\""
+check "ci.yml runs real npm scripts (build/lint/format/coverage)" "grep -q 'npm run build' \"$GHA/workflows/ci.yml\" && grep -q 'npm run lint' \"$GHA/workflows/ci.yml\" && grep -q 'npm run format:check' \"$GHA/workflows/ci.yml\" && grep -q 'npm run test:coverage' \"$GHA/workflows/ci.yml\""
+check "ci.yml verifies static SSG dist/<app>/browser/index.html" "grep -q 'dist/\$app/browser/index.html' \"$GHA/workflows/ci.yml\""
+check "ci.yml runs the generated shell suite under kcov" "grep -q 'tests/system-cli/system_cli_test.sh' \"$GHA/workflows/ci.yml\" && grep -q 'kcov' \"$GHA/workflows/ci.yml\" && [[ -f \"$WORK/demo-app/tests/system-cli/system_cli_test.sh\" ]]"
+check "ci.yml kcov scopes system.sh+src/system-cli (NOT scaffold.sh)" "grep -q 'include-path=.*system.sh' \"$GHA/workflows/ci.yml\" && ! grep -qE 'include-path=.*scaffold.sh' \"$GHA/workflows/ci.yml\""
+check "ci.yml has a config-drift job (needs no secret store)" "grep -q 'config-drift.sh config.json config.deploy.json' \"$GHA/workflows/ci.yml\""
+# The build/test CI must carry NO secret context: no \${{ secrets.* }} reference
+# (which is how raw {{VAR-NAME}} secrets would reach validation) anywhere in ci.yml.
+check "ci.yml uses NO secrets context (build/test needs no secret store)" "! grep -qE '[$][{][{][[:space:]]*secrets\\.' \"$GHA/workflows/ci.yml\""
+check "ci.yml least-privilege permissions (contents: read)" "grep -qE 'permissions:' \"$GHA/workflows/ci.yml\" && grep -qE 'contents: read' \"$GHA/workflows/ci.yml\""
+check "ci.yml pins action versions (no floating @vN-only refs)" "! grep -qE 'uses: .*@v[0-9]+\$' \"$GHA/workflows/ci.yml\""
+# deploy.yml is the SECRET-bearing half: it renders config.deploy.json from the
+# secret store, then runs the real build-config subcommand.
+check "deploy.yml renders config.deploy.json from secrets" "grep -q 'secrets\\.' \"$GHA/workflows/deploy.yml\" && grep -q 'config.deploy.json' \"$GHA/workflows/deploy.yml\""
+check "deploy.yml runs build-config --config <rendered>" "grep -q 'build-config --config rendered-config.json' \"$GHA/workflows/deploy.yml\" && [[ -f \"$WORK/demo-app/src/system-cli/build-config.sh\" ]]"
+check "deploy.yml guards against leftover {{VAR-NAME}}" "grep -q 'unrendered' \"$GHA/workflows/deploy.yml\""
+# The drift gate actually PASSES on the freshly scaffolded config pair (proves the
+# two files share a structural path set on real output, not just in templates).
+check "config-drift gate passes on scaffolded config pair" "( cd \"$WORK/demo-app\" && bash .github/scripts/config-drift.sh config.json config.deploy.json >/dev/null )"
+# The kcov-gate parses a kcov summary and fails below 100% line (schema-shaped test).
+GTMP="$(mktemp -d)"; mkdir -p "$GTMP/kcov-merged"
+printf '{"percent_covered":"100","covered_lines":10,"total_lines":10}' > "$GTMP/kcov-merged/coverage.json"
+check "kcov-gate PASSES at 100% line" "bash \"$GHA/scripts/kcov-gate.sh\" \"$GTMP\" >/dev/null"
+printf '{"percent_covered":"90","covered_lines":9,"total_lines":10}' > "$GTMP/kcov-merged/coverage.json"
+check "kcov-gate FAILS below 100% line" "! bash \"$GHA/scripts/kcov-gate.sh\" \"$GTMP\" >/dev/null 2>&1"
+rm -rf "$GTMP"
+
 # Dev container template (fn-2 task .4): .devcontainer/{devcontainer.json,setup.sh}
 # + a build-time-complete .mcp.json, all landing in scaffold output token-free with
 # valid JSON. A real `devcontainer build` needs the dev container CLI + Docker and is
