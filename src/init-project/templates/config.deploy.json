@@ -5,8 +5,8 @@
       "docker": false,
       "host": "{{POSTGRES_HOST}}",
       "container_host": "{{POSTGRES_HOST}}",
-      "container_port": "{{POSTGRES_PORT}}",
-      "port": "{{POSTGRES_PORT}}",
+      "container_port": 5432,
+      "port": 5432,
       "owner_password": "{{POSTGRES_OWNER_PASSWORD}}",
       "migrator_password": "{{POSTGRES_MIGRATOR_PASSWORD}}",
       "api_password": "{{POSTGRES_API_PASSWORD}}"
@@ -16,8 +16,8 @@
       "docker": false,
       "host": "{{KEYCLOAK_HOST}}",
       "container_host": "{{KEYCLOAK_HOST}}",
-      "container_port": "{{KEYCLOAK_PORT}}",
-      "port": "{{KEYCLOAK_PORT}}",
+      "container_port": 8080,
+      "port": 8080,
       "realm": "{{KEYCLOAK_REALM}}",
       "public_url": "{{KEYCLOAK_PUBLIC_URL}}",
       "admin_user": "admin",
@@ -33,7 +33,7 @@
     {
       "name": "Api",
       "host": "{{API_HOST}}",
-      "port": "{{API_PORT}}"
+      "port": 5080
     },
     {
       "name": "MarketingSite",

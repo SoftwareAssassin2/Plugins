@@ -298,11 +298,17 @@ command. The crucial property — runtime reads only from environment — is pre
 - **Real secrets are never committed.** They enter only via `config.deploy.json`'s
   `{{VAR-NAME}}` placeholders, which the CI/CD pipeline renders from its secret
   store at deploy time, plus the gitignored runtime realm-import file.
-- **`config.deploy.json` mirrors the `config.json` shape** with every secret as a
-  `{{VAR-NAME}}` placeholder. The two files keep an **identical key-set** (a CI
-  diff-check guards drift). `config.deploy.json` is a deployment template and is
-  **NEVER fed to validation directly** — the pipeline renders it to a concrete
-  file first, then runs `build-config --config <rendered>` (§5).
+- **`config.deploy.json` mirrors the `config.json` shape** with every secret (and
+  every deployment-environment string such as a host or realm URL) as a quoted
+  `{{VAR-NAME}}` placeholder. **Structural integer fields — the `*port` fields —
+  stay integer literals**, NOT quoted placeholders, so that a plain text-substituted
+  render stays schema-valid (the schema in §4 requires integer ports `1..65535`; a
+  quoted `"{{PORT}}"` would render to a string and fail validation). Override a
+  deploy port by editing the rendered config, not the template. The two files keep
+  an **identical key-set** (a CI diff-check guards drift). `config.deploy.json` is a
+  deployment template and is **NEVER fed to validation directly** — the pipeline
+  renders it to a concrete file first, then runs `build-config --config <rendered>`
+  (§5).
 - A future multi-tenant or public variant would replace tracked `config.json` with
   a vaulted secret store feeding `build-config` at the same point; the downstream
   contract (per-component `.env`, runtime reads from env only) does not change.
