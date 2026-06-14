@@ -69,6 +69,23 @@ check "config-mgmt: owner/migrator/api"    'grep -q "owner" "$WORK/demo-app/docs
 check "config-mgmt: url-safe alphabet"     'grep -qF "[A-Za-z0-9_-]+" "$WORK/demo-app/docs/config-management.md"'
 check "config-mgmt: no H&G framing"        '! grep -qiE "platform-db|platform-api|flyway|play\.sh|games\[\]|google_oauth|play games|[^a-z]pgs[^a-z]" "$WORK/demo-app/docs/config-management.md"'
 
+# Generalized standards + business-doc stubs + .gitignore (fn-2 task .8). The
+# _CLAUDE.md Standards index links these docs; assert the ones .8 authors all land
+# in scaffold output (front-end.md is task .12's deliverable, asserted there).
+for d in architecture tdd ubiquitous-language keycloak dev-container; do
+  check "standard doc docs/$d.md present" "[[ -f \"\$WORK/demo-app/docs/$d.md\" ]]"
+done
+for d in business strategy customers priorities decisions; do
+  check "business stub docs/$d.md present" "[[ -f \"\$WORK/demo-app/docs/$d.md\" ]]"
+  check "business stub docs/$d.md is a TODO home" "grep -q '## TODO' \"\$WORK/demo-app/docs/$d.md\""
+done
+check "no docs/roadmap.md (priorities replaces it)" '[[ ! -f "$WORK/demo-app/docs/roadmap.md" ]]'
+check ".gitignore present in scaffold output"       '[[ -f "$WORK/demo-app/.gitignore" ]]'
+check ".gitignore ignores .worktrees/ + generated realm" 'grep -q "^\.worktrees/" "$WORK/demo-app/.gitignore" && grep -q "src/keycloak/import/\*-realm.json" "$WORK/demo-app/.gitignore"'
+# config.json and .flow/bin/ must stay tracked — assert no ACTIVE ignore rule
+# (non-comment, non-blank line) matches them. (Comments mentioning them are fine.)
+check ".gitignore keeps config.json + .flow/bin/ tracked" 'RULES=$(grep -vE "^[[:space:]]*(#|$)" "$WORK/demo-app/.gitignore"); ! grep -qE "^config\.json$" <<<"$RULES" && ! grep -qE "\.flow/bin" <<<"$RULES"'
+
 # distinct + url-safe generated secrets (portable read loop — mapfile is bash 4+)
 # 5 sentinels: postgres owner/migrator/api passwords + keycloak admin password +
 # keycloak Api confidential-client secret — each independently generated.
