@@ -67,7 +67,7 @@ check "config-management.md present"       '[[ -f "$WORK/demo-app/docs/config-ma
 check "config-mgmt: systems/services model" 'grep -q "systems\[\]" "$WORK/demo-app/docs/config-management.md" && grep -q "services{}" "$WORK/demo-app/docs/config-management.md"'
 check "config-mgmt: owner/migrator/api"    'grep -q "owner" "$WORK/demo-app/docs/config-management.md" && grep -q "migrator" "$WORK/demo-app/docs/config-management.md"'
 check "config-mgmt: url-safe alphabet"     'grep -qF "[A-Za-z0-9_-]+" "$WORK/demo-app/docs/config-management.md"'
-check "config-mgmt: no H&G framing"        '! grep -qiE "platform-db|platform-api|flyway|play\.sh|games\[\]|google_oauth|pgs" "$WORK/demo-app/docs/config-management.md"'
+check "config-mgmt: no H&G framing"        '! grep -qiE "platform-db|platform-api|flyway|play\.sh|games\[\]|google_oauth|play games|[^a-z]pgs[^a-z]" "$WORK/demo-app/docs/config-management.md"'
 
 # distinct + url-safe generated secrets (portable read loop — mapfile is bash 4+)
 # 5 sentinels: postgres owner/migrator/api passwords + keycloak admin password +
