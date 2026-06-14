@@ -135,6 +135,7 @@ check "session UoW exposes a rollback for the failure path" 'grep -q "RollbackAs
 check "RLS baseline does NOT enable RLS on any table" '! grep -rq "ENABLE ROW LEVEL SECURITY" "$DA/Rls/RlsBaseline.cs"'
 check "per-table RLS template: ENABLE+FORCE keyed off app.user_id" 'grep -q "FORCE ROW LEVEL SECURITY" "$DA/Rls/RlsPolicy.cs" && grep -q "current_setting(.app.user_id., true)" "$DA/Rls/RlsPolicy.cs"'
 check "owner-DDL convention wraps DDL in SET ROLE owner" 'grep -q "SET ROLE" "$DA/Rls/OwnerDdl.cs" && grep -q "RESET ROLE" "$DA/Rls/OwnerDdl.cs"'
+check "MigrationBuilder helper makes owner-wrapped RLS the default path" '[[ -f "$DA/Rls/MigrationBuilderRlsExtensions.cs" ]] && grep -q "EnableRlsForTableAsOwner" "$DA/Rls/MigrationBuilderRlsExtensions.cs"'
 check "session-context applied via parameterised set_config (not SET LOCAL string)" 'grep -q "ApplySessionSql" "$DA/Rls/SessionContextSql.cs" && grep -q "set_config" "$DA/Rls/SessionContextSql.cs" && grep -q "@user_id" "$DA/Rls/SessionContextSql.cs"'
 check "per-request unit-of-work present (opens txn then session context)" '[[ -f "$DA/Rls/SessionUnitOfWork.cs" ]] && grep -q "ISessionUnitOfWork" "$DA/Rls/ISessionUnitOfWork.cs"'
 check "Api wires Keycloak JWT bearer auth"  'grep -q "AddJwtBearer" "$APIDIR/Program.cs"'

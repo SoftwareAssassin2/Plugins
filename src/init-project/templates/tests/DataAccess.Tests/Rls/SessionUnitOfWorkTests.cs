@@ -168,6 +168,67 @@ public class SessionUnitOfWorkTests
     }
 
     [Fact]
+    public async Task CommitAsync_Twice_SecondThrows()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+        await uow.BeginAsync(Authenticated());
+        await uow.CommitAsync();
+
+        // After a successful commit the transaction is no longer open.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => uow.CommitAsync());
+        Assert.Equal(new[] { "begin", "apply", "commit" }, db.Calls);
+    }
+
+    [Fact]
+    public async Task CommitAsync_AfterRollback_Throws()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+        await uow.BeginAsync(Authenticated());
+        await uow.RollbackAsync();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => uow.CommitAsync());
+        Assert.Equal(new[] { "begin", "apply", "rollback" }, db.Calls);
+    }
+
+    [Fact]
+    public async Task RollbackAsync_Twice_SecondIsNoOp()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+        await uow.BeginAsync(Authenticated());
+        await uow.RollbackAsync();
+        await uow.RollbackAsync(); // no second rollback recorded
+
+        Assert.Equal(new[] { "begin", "apply", "rollback" }, db.Calls);
+    }
+
+    [Fact]
+    public async Task RollbackAsync_AfterCommit_IsNoOp()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+        await uow.BeginAsync(Authenticated());
+        await uow.CommitAsync();
+        await uow.RollbackAsync(); // committed already — no rollback
+
+        Assert.Equal(new[] { "begin", "apply", "commit" }, db.Calls);
+    }
+
+    [Fact]
+    public async Task BeginAsync_AfterCompletion_Throws()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+        await uow.BeginAsync(Authenticated());
+        await uow.CommitAsync();
+
+        // Single-use per request: cannot re-begin even after completion.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => uow.BeginAsync(Authenticated()));
+    }
+
+    [Fact]
     public async Task DisposeAsync_DisposesUnderlyingSessionOnce()
     {
         var db = new RecordingDbSession();
