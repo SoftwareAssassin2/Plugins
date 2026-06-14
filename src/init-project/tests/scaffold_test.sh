@@ -86,6 +86,35 @@ check ".gitignore ignores .worktrees/ + generated realm" 'grep -q "^\.worktrees/
 # (non-comment, non-blank line) matches them. (Comments mentioning them are fine.)
 check ".gitignore keeps config.json + .flow/bin/ tracked" 'RULES=$(grep -vE "^[[:space:]]*(#|$)" "$WORK/demo-app/.gitignore"); ! grep -qE "^config\.json$" <<<"$RULES" && ! grep -qE "\.flow/bin" <<<"$RULES"'
 
+# .NET starter solution (fn-2 task .9): single src/system.sln + 5 src/<component>/
+# projects + a pinned dotnet-ef manifest + per-component tests/ projects, all landing
+# in scaffold output token-free. (The actual `dotnet build`/`dotnet ef` smoke is run
+# by the worker against a freshly scaffolded copy — it needs the SDK; these are
+# structural assertions that don't require dotnet.)
+check "src/system.sln present"             '[[ -f "$WORK/demo-app/src/system.sln" ]]'
+check "system.sln references all 5 src projects" 'for p in Framework DataAccess BusinessLogic Api SampleApp; do grep -q "$p\\\\$p.csproj" "$WORK/demo-app/src/system.sln" || exit 1; done'
+check "system.sln references 4 test projects" 'for p in Framework DataAccess BusinessLogic Api; do grep -q "$p.Tests\\\\$p.Tests.csproj" "$WORK/demo-app/src/system.sln" || exit 1; done'
+for p in Framework DataAccess BusinessLogic Api SampleApp; do
+  check ".NET project src/$p/$p.csproj present" "[[ -f \"\$WORK/demo-app/src/$p/$p.csproj\" ]]"
+done
+for p in Framework DataAccess BusinessLogic Api; do
+  check "test project tests/$p.Tests present" "[[ -f \"\$WORK/demo-app/tests/$p.Tests/$p.Tests.csproj\" ]]"
+  check "tests/$p.Tests wires coverlet.msbuild" "grep -q 'coverlet.msbuild' \"\$WORK/demo-app/tests/$p.Tests/$p.Tests.csproj\""
+done
+# Layering: project references point one way down the stack (only spot-check the
+# load-bearing edges, not every file — don't over-fit to exact contents).
+check "Api references BusinessLogic"        'grep -q "BusinessLogic\\\\BusinessLogic.csproj" "$WORK/demo-app/src/Api/Api.csproj"'
+check "BusinessLogic references DataAccess" 'grep -q "DataAccess\\\\DataAccess.csproj" "$WORK/demo-app/src/BusinessLogic/BusinessLogic.csproj"'
+check "DataAccess references Framework"     'grep -q "Framework\\\\Framework.csproj" "$WORK/demo-app/src/DataAccess/DataAccess.csproj"'
+check "DataAccess uses Npgsql EF provider"  'grep -q "Npgsql.EntityFrameworkCore.PostgreSQL" "$WORK/demo-app/src/DataAccess/DataAccess.csproj"'
+check "DataAccess references EF Core Design" 'grep -q "Microsoft.EntityFrameworkCore.Design" "$WORK/demo-app/src/DataAccess/DataAccess.csproj"'
+check "DataAccess ships a DbContext (UseNpgsql)" 'grep -rq "UseNpgsql" "$WORK/demo-app/src/DataAccess/"'
+check "DataAccess ships IDesignTimeDbContextFactory" 'grep -rq "IDesignTimeDbContextFactory" "$WORK/demo-app/src/DataAccess/"'
+check "design-time factory reads MIGRATOR_CONNECTION_STRING" 'grep -rq "MIGRATOR_CONNECTION_STRING" "$WORK/demo-app/src/DataAccess/"'
+check ".config/dotnet-tools.json pins dotnet-ef" 'jq -e ".tools.\"dotnet-ef\".version" "$WORK/demo-app/.config/dotnet-tools.json" >/dev/null'
+check "SampleApp marked removable"          'grep -qi "REMOVABLE" "$WORK/demo-app/src/SampleApp/SampleApp.csproj"'
+check ".NET output token-free"              '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$WORK/demo-app/src" "$WORK/demo-app/tests" "$WORK/demo-app/.config"'
+
 # distinct + url-safe generated secrets (portable read loop — mapfile is bash 4+)
 # 5 sentinels: postgres owner/migrator/api passwords + keycloak admin password +
 # keycloak Api confidential-client secret — each independently generated.

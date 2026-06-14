@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    REMOVABLE SAMPLE. This console app is a throwaway demonstration of the
+    layered solution — it is NOT part of the system. To remove it: delete
+    src/SampleApp/, drop its `{ "name": "SampleApp" }` entry from config.json's
+    systems[], and remove the SampleApp project from src/system.sln
+    (`dotnet sln src/system.sln remove src/SampleApp/SampleApp.csproj`).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>SampleApp</RootNamespace>
+    <AssemblyName>SampleApp</AssemblyName>
+    <Description>Removable starter sample console app for __SCAFFOLD_PROJECT_NAME__.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BusinessLogic\BusinessLogic.csproj" />
+  </ItemGroup>
+
+</Project>
