@@ -86,6 +86,12 @@ check ".gitignore ignores .worktrees/ + generated realm" 'grep -q "^\.worktrees/
 # (non-comment, non-blank line) matches them. (Comments mentioning them are fine.)
 check ".gitignore keeps config.json + .flow/bin/ tracked" 'RULES=$(grep -vE "^[[:space:]]*(#|$)" "$WORK/demo-app/.gitignore"); ! grep -qE "^config\.json$" <<<"$RULES" && ! grep -qE "\.flow/bin" <<<"$RULES"'
 
+# Root etc/ catch-all folder must ship in a fresh scaffold. Empty dirs are not
+# tracked/copyable, so a committed etc/.gitkeep keeps it present (same pattern as
+# src/keycloak/import/.gitkeep) — otherwise the etc/ row in the _CLAUDE.md root
+# layout would name a directory that never lands.
+check "etc/ folder lands via .gitkeep"     '[[ -f "$WORK/demo-app/etc/.gitkeep" ]]'
+
 # .NET starter solution (fn-2 task .9): single src/system.sln + 5 src/<component>/
 # projects + a pinned dotnet-ef manifest + per-component tests/ projects, all landing
 # in scaffold output token-free. (The actual `dotnet build`/`dotnet ef` smoke is run

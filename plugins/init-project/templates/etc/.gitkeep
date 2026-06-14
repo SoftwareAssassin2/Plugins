@@ -1,0 +1,4 @@
+# Keeps the etc/ catch-all directory present in a fresh scaffold while it is empty.
+# Per the root CLAUDE.md layout convention, new directories that don't belong under
+# any other top-level folder default to living here. Remove this .gitkeep once real
+# content lands in etc/.
