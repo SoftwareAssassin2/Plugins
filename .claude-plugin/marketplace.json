@@ -1,6 +1,8 @@
 {
   "name": "plugins",
-  "owner": { "name": "SoftwareAssassin2" },
+  "owner": {
+    "name": "SoftwareAssassin2"
+  },
   "plugins": [
     {
       "name": "preferred-ralph-loops-plugin",
@@ -51,6 +53,12 @@
       "displayName": "Dick Ballsy",
       "description": "Boot Dick Ballsy, a brash, contrarian business-architect advisor who interrogates your business and maintains the business docs (business/strategy/customers/priorities/decisions). Use only when explicitly invoked or accepted from the /init-project hand-off.",
       "source": "./src/dick"
+    },
+    {
+      "name": "init-project",
+      "displayName": "Init Project",
+      "description": "Scaffold a brand-new opinionated mono-repo with preferred defaults (root layout, CLAUDE.md, dev container, standards docs, system.sh dispatcher, a starter .NET solution + Angular SPAs, Postgres + Keycloak), then optionally hand off to /dick. Asks only for project name + description.",
+      "source": "./src/init-project"
     }
   ]
 }

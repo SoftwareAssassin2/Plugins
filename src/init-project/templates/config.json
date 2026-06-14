@@ -1,0 +1,21 @@
+{
+  "systems": [
+    {
+      "name": "postgres",
+      "host": "127.0.0.1",
+      "port": 5432,
+      "owner_password": "__SCAFFOLD_GEN_URLSAFE__",
+      "migrator_password": "__SCAFFOLD_GEN_URLSAFE__",
+      "api_password": "__SCAFFOLD_GEN_URLSAFE__"
+    },
+    {
+      "name": "keycloak",
+      "host": "127.0.0.1",
+      "port": 8080,
+      "admin_password": "__SCAFFOLD_GEN_URLSAFE__"
+    }
+  ],
+  "services": {
+    "claude-api": { "api_key": "REPLACE_ME" }
+  }
+}

@@ -31,7 +31,8 @@ Establish `/init-project` as a registered, invocable skill AND build the bundled
 - [ ] `--update` preserves `config.json` (merges only new non-secret keys, retains secrets + operator edits); `--replace-config` required to rotate/replace it (tested)
 
 ## Done summary
-_(filled on completion)_
-
+Scaffold engine + /init-project skill skeleton. Renamed src/project-init→src/init-project; SKILL.md (name: init-project + argument-hint + orchestration skeleton), plugin.json, marketplace.json entry. scaffold.sh: deterministic copy + __SCAFFOLD_*__ substitution (bash param-expansion, byte-safe), per-occurrence distinct URL-safe secret generation, _CLAUDE.md→CLAUDE.md, .init-project-manifest.json ownership, --force (first-scaffold, refuses prior-manifest) / --update (manifest-gated, config.json by-name merge preserving secrets/edits) / --replace-config, --dry-run, name+description token rejection, leftover-token gate (managed paths only), set -euo pipefail + source-guarded main. Minimal placeholder templates/_CLAUDE.md + templates/config.json (full content in .2/.3).
 ## Evidence
-_(filled on completion)_
+- Commits:
+- Tests: 31/31 pass — src/init-project/tests/scaffold_test.sh (lint: shellcheck -S error clean, bash -n clean)
+- PRs:
