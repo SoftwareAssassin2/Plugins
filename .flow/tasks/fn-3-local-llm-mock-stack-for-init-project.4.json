@@ -1,0 +1,18 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-14T12:09:29.439494Z",
+  "depends_on": [
+    "fn-3-local-llm-mock-stack-for-init-project.1",
+    "fn-3-local-llm-mock-stack-for-init-project.2",
+    "fn-3-local-llm-mock-stack-for-init-project.3"
+  ],
+  "id": "fn-3-local-llm-mock-stack-for-init-project.4",
+  "priority": null,
+  "spec": "fn-3-local-llm-mock-stack-for-init-project",
+  "spec_path": ".flow/tasks/fn-3-local-llm-mock-stack-for-init-project.4.md",
+  "status": "todo",
+  "title": "Scaffold-time opt-in install + interactive model selection (SKILL.md + engine)",
+  "updated_at": "2026-06-14T12:15:45.680762Z"
+}

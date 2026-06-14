@@ -1,0 +1,25 @@
+{
+  "branch_name": "fn-3-local-llm-mock-stack-for-init-project",
+  "created_at": "2026-06-14T12:07:58.741150Z",
+  "depends_on_epics": [
+    "fn-2-init-project-scaffolding-skill-init"
+  ],
+  "id": "fn-3-local-llm-mock-stack-for-init-project",
+  "next_task": 1,
+  "plan_review_status": "unknown",
+  "plan_reviewed_at": null,
+  "spec_path": ".flow/specs/fn-3-local-llm-mock-stack-for-init-project.md",
+  "status": "open",
+  "title": "Local LLM mock stack for /init-project (LiteLLM + Ollama)",
+  "tracker": {
+    "baseHashFlow": null,
+    "baseHashTracker": null,
+    "id": null,
+    "identifier": null,
+    "lastSyncedAt": null,
+    "mergeBaseFlow": null,
+    "mergeBaseTracker": null,
+    "url": null
+  },
+  "updated_at": "2026-06-14T12:14:23.700115Z"
+}
