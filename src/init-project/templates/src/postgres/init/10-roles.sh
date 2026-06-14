@@ -75,8 +75,11 @@ $$;
 ALTER ROLE api WITH PASSWORD :'api_pw';
 
 -- The platform database is owned by owner so all DDL (run via SET ROLE owner) is
--- owner-owned. Connect privilege for the two LOGIN roles.
+-- owner-owned. Revoke the default PUBLIC connect (Postgres grants CONNECT to
+-- PUBLIC by default) so ONLY the explicitly-granted least-privilege roles can
+-- connect — no future login role inherits connect implicitly.
 ALTER DATABASE platform OWNER TO owner;
+REVOKE CONNECT ON DATABASE platform FROM PUBLIC;
 GRANT CONNECT ON DATABASE platform TO migrator;
 GRANT CONNECT ON DATABASE platform TO api;
 
