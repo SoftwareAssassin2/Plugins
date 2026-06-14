@@ -67,11 +67,15 @@ builder.Services.AddAuthorization();
 var app = builder.Build();
 
 app.UseAuthentication();
-app.UseAuthorization();
 
 // Opens the per-request unit of work for authenticated requests (transaction +
-// SET LOCAL app.user_id) so row-level security scopes every query.
+// SET LOCAL app.user_id) so row-level security scopes every query. It MUST sit
+// AFTER authentication (it reads the validated principal) and BEFORE
+// authorization + endpoints, so any DB-backed authorization policy and all
+// request work run inside the session-context transaction.
 app.UseMiddleware<SessionUnitOfWorkMiddleware>();
+
+app.UseAuthorization();
 
 app.MapGet("/health", () => HealthStatus.Live());
 

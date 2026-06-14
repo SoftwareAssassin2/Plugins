@@ -45,11 +45,12 @@ public sealed class SessionUnitOfWork : ISessionUnitOfWork
         }
         catch
         {
-            // The transaction is already rolled back here, so reset _begun BEFORE
-            // rethrowing: that makes a subsequent RollbackAsync/CommitAsync from the
-            // caller's catch a safe no-op (no double-rollback on the same txn) while
-            // still surfacing the original failure.
-            await _session.RollbackTransactionAsync(cancellationToken).ConfigureAwait(false);
+            // Roll back with CancellationToken.None, NOT the caller's token — if the
+            // apply failed due to cancellation, the token is already canceled and
+            // cleanup must still run. Reset _begun BEFORE rethrowing so a subsequent
+            // RollbackAsync/CommitAsync from the caller's catch is a safe no-op (no
+            // double-rollback on the same txn) while still surfacing the failure.
+            await _session.RollbackTransactionAsync(CancellationToken.None).ConfigureAwait(false);
             _begun = false;
             throw;
         }

@@ -66,9 +66,12 @@ public sealed class SessionUnitOfWorkMiddleware
             // Deterministically close the transaction on ANY failure (begin,
             // request work, or commit) so the pooled `api` connection is never
             // returned with an open transaction / lingering RLS session settings.
-            // RollbackAsync is a no-op if nothing began (BeginAsync also self-heals
-            // a mid-begin failure), so this is always safe. Rethrow to surface it.
-            await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            // Roll back with CancellationToken.None, NOT the request token — on a
+            // client disconnect / cancellation the request token is already
+            // canceled, and cleanup must still run. RollbackAsync is a no-op if
+            // nothing began (BeginAsync self-heals a mid-begin failure), so this is
+            // always safe. Rethrow to surface the original failure.
+            await unitOfWork.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             throw;
         }
     }

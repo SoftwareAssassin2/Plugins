@@ -44,9 +44,12 @@ public class SessionUnitOfWorkTests
             return Task.CompletedTask;
         }
 
+        public CancellationToken RollbackToken { get; private set; }
+
         public Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
         {
             Calls.Add("rollback");
+            RollbackToken = cancellationToken;
             return Task.CompletedTask;
         }
 
@@ -93,12 +96,16 @@ public class SessionUnitOfWorkTests
         var boom = new InvalidOperationException("set_config failed");
         var db = new RecordingDbSession { ApplyFailure = boom };
         await using var uow = new SessionUnitOfWork(db);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel(); // a canceled apply must still roll back
 
-        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => uow.BeginAsync(Authenticated()));
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => uow.BeginAsync(Authenticated(), cts.Token));
 
         Assert.Same(boom, thrown);
         // Transaction was opened then rolled back — never left dangling.
         Assert.Equal(new[] { "begin", "apply", "rollback" }, db.Calls);
+        // Cleanup uses CancellationToken.None, not the (canceled) caller token.
+        Assert.False(db.RollbackToken.IsCancellationRequested);
 
         // The caller's catch (e.g. the middleware) rolls back unconditionally; that
         // must be a SAFE NO-OP here — no double-rollback on the same transaction.

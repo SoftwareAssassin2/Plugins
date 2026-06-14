@@ -32,9 +32,12 @@ public class SessionUnitOfWorkMiddlewareTests
             return Task.CompletedTask;
         }
 
+        public CancellationToken RollbackToken { get; private set; }
+
         public Task RollbackAsync(CancellationToken cancellationToken = default)
         {
             Calls.Add("rollback");
+            RollbackToken = cancellationToken;
             return Task.CompletedTask;
         }
 
@@ -113,6 +116,24 @@ public class SessionUnitOfWorkMiddlewareTests
         Assert.Same(boom, thrown);
         // Began, ran next (threw), rolled back — never committed.
         Assert.Equal(new[] { "begin", "next", "rollback" }, uow.Calls);
+    }
+
+    [Fact]
+    public async Task InvokeCore_RollbackUsesNoneToken_NotTheCanceledRequestToken()
+    {
+        var uow = new RecordingUnitOfWork();
+        var session = new SessionContext("user-1", Array.Empty<string>());
+        using var cts = new CancellationTokenSource();
+        cts.Cancel(); // simulate a client disconnect: request token already canceled
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            SessionUnitOfWorkMiddleware.InvokeCoreAsync(
+                session, uow,
+                () => throw new InvalidOperationException("boom"),
+                cts.Token));
+
+        // Cleanup must NOT inherit the canceled request token.
+        Assert.False(uow.RollbackToken.IsCancellationRequested);
     }
 
     [Fact]
