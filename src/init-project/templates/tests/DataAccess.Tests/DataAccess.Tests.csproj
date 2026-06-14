@@ -6,6 +6,12 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- Scope the 100% coverage gate (docs/tdd.md) to THIS suite's component under
+         test. Transitively-referenced assemblies are each covered by their OWN
+         suite, so they must not dilute or fail this one. [ExcludeFromCodeCoverage]
+         still drops bootstrap/generated code (EF migrations, design-time factory)
+         inside the included assembly. -->
+    <Include>[DataAccess]*</Include>
   </PropertyGroup>
 
   <ItemGroup>

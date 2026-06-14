@@ -11,6 +11,10 @@ obj/
 .vs/
 *.user
 [Tt]est[Rr]esults/
+# coverlet coverage reports (the 100% gate emits these per test run — transient)
+*.cobertura.xml
+coverage.json
+coverage.opencover.xml
 
 # Node / Angular build output
 node_modules/

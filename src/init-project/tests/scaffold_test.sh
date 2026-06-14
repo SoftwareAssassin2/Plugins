@@ -115,6 +115,33 @@ check ".config/dotnet-tools.json pins dotnet-ef" 'jq -e ".tools.\"dotnet-ef\".ve
 check "SampleApp marked removable"          'grep -qi "REMOVABLE" "$WORK/demo-app/src/SampleApp/SampleApp.csproj"'
 check ".NET output token-free"              '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$WORK/demo-app/src" "$WORK/demo-app/tests" "$WORK/demo-app/.config"'
 
+# EF migrations + RLS baseline + Keycloak-gated DB auth (fn-2 task .11). The initial
+# EF migration (code-first) ships in DataAccess with the owner-wrapped RLS baseline;
+# the per-table RLS policy template + session-context unit-of-work live in DataAccess;
+# the JWT/Keycloak auth + UoW middleware live in Api. Structural assertions only here
+# (the real `dotnet ef` smoke + the LIVE RLS isolation proof against the .10 postgres
+# container are run by the worker — they need the SDK + Docker). The decision-bearing
+# UoW/RLS/claim-extraction LOGIC is covered to 100% by the .NET suites; here we assert
+# the FIXTURES land in scaffold output token-free.
+DA="$WORK/demo-app/src/DataAccess"
+APIDIR="$WORK/demo-app/src/Api"
+check "DataAccess ships an initial EF migration" 'compgen -G "$DA/Migrations/*_*.cs" >/dev/null'
+check "DataAccess ships the EF model snapshot"   '[[ -f "$DA/Migrations/PlatformDbContextModelSnapshot.cs" ]]'
+check "initial migration excluded from coverage gate" 'grep -rq "ExcludeFromCodeCoverage" "$DA/Migrations/"'
+check "RLS baseline: ALTER DEFAULT PRIVILEGES for owner -> api" 'grep -rq "ALTER DEFAULT PRIVILEGES FOR ROLE owner" "$DA/Rls/"'
+check "RLS baseline does NOT enable RLS on any table" '! grep -rq "ENABLE ROW LEVEL SECURITY" "$DA/Rls/RlsBaseline.cs"'
+check "per-table RLS template: ENABLE+FORCE keyed off app.user_id" 'grep -q "FORCE ROW LEVEL SECURITY" "$DA/Rls/RlsPolicy.cs" && grep -q "current_setting(.app.user_id., true)" "$DA/Rls/RlsPolicy.cs"'
+check "owner-DDL convention wraps DDL in SET ROLE owner" 'grep -q "SET ROLE" "$DA/Rls/OwnerDdl.cs" && grep -q "RESET ROLE" "$DA/Rls/OwnerDdl.cs"'
+check "session-context applied via parameterised set_config (not SET LOCAL string)" 'grep -q "ApplySessionSql" "$DA/Rls/SessionContextSql.cs" && grep -q "set_config" "$DA/Rls/SessionContextSql.cs" && grep -q "@user_id" "$DA/Rls/SessionContextSql.cs"'
+check "per-request unit-of-work present (opens txn then session context)" '[[ -f "$DA/Rls/SessionUnitOfWork.cs" ]] && grep -q "ISessionUnitOfWork" "$DA/Rls/ISessionUnitOfWork.cs"'
+check "Api wires Keycloak JWT bearer auth"  'grep -q "AddJwtBearer" "$APIDIR/Program.cs"'
+check "Api wires the session unit-of-work middleware" 'grep -q "SessionUnitOfWorkMiddleware" "$APIDIR/Program.cs"'
+check "Api maps Keycloak sub claim -> session user id" 'grep -rq "SubjectClaimType" "$APIDIR/Auth/"'
+check "Api connects as least-privilege api role (API_CONNECTION_STRING)" 'grep -q "API_CONNECTION_STRING" "$APIDIR/Program.cs"'
+check ".11 tests land: DataAccess RLS + Api auth suites" 'compgen -G "$WORK/demo-app/tests/DataAccess.Tests/Rls/*.cs" >/dev/null && compgen -G "$WORK/demo-app/tests/Api.Tests/Auth/*.cs" >/dev/null'
+check "coverage gate scoped per-component (Include filter)" 'grep -q "<Include>\[DataAccess\]" "$WORK/demo-app/tests/DataAccess.Tests/DataAccess.Tests.csproj"'
+check ".11 output token-free"               '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$DA" "$APIDIR" "$WORK/demo-app/tests/DataAccess.Tests" "$WORK/demo-app/tests/Api.Tests"'
+
 # Dispatcher CLI (fn-2 task .6): the system.sh dispatcher lands at the REPO ROOT
 # (script_dir == root, so $script_dir/src/system-cli/<sub>.sh resolves), with the
 # subcommand scripts under src/system-cli/ and the generated-project shell
