@@ -127,10 +127,13 @@ role names, and writes them under these exact env-var names:
 
 Generated per-component `.env`: `src/postgres/.env` (postgres fields above),
 `src/DataAccess/.env` (`MIGRATOR_CONNECTION_STRING`), `src/Api/.env`
-(`API_CONNECTION_STRING` + the keycloak/Api fields below). The host, port, role,
-password, and `platform` db name are never hardcoded in `build-config`, the compose
-file, the init script, or migration SQL — they flow from `config.json` (the role
-and db names being fixed scaffold constants).
+(`API_CONNECTION_STRING` + the keycloak/Api fields below). Only the **host, ports,
+and generated passwords** flow from `config.json`. The **role names
+(`owner`/`migrator`/`api`) and the database name (`platform`) are FIXED scaffold
+constants** — they are NOT in `config.json` and are used as literals consistently
+across `build-config`'s connection-string assembly, the postgres init SQL, the EF
+migration SQL, and the RLS policies (fixed names are precisely what lets the static
+migration SQL reference them literally — see §3).
 
 ### `keycloak` (`systems[]` entry `keycloak`)
 
