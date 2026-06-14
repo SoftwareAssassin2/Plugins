@@ -36,6 +36,12 @@ public class SessionUnitOfWorkTests
             return Task.CompletedTask;
         }
 
+        public Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
+        {
+            Calls.Add("rollback");
+            return Task.CompletedTask;
+        }
+
         public ValueTask DisposeAsync()
         {
             DisposeCount++;
@@ -102,6 +108,29 @@ public class SessionUnitOfWorkTests
         await using var uow = new SessionUnitOfWork(db);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => uow.CommitAsync());
+    }
+
+    [Fact]
+    public async Task RollbackAsync_AfterBegin_RollsBack()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+        await uow.BeginAsync(Authenticated());
+
+        await uow.RollbackAsync();
+
+        Assert.Equal(new[] { "begin", "apply", "rollback" }, db.Calls);
+    }
+
+    [Fact]
+    public async Task RollbackAsync_WithoutBegin_IsNoOp()
+    {
+        var db = new RecordingDbSession();
+        await using var uow = new SessionUnitOfWork(db);
+
+        await uow.RollbackAsync();
+
+        Assert.Empty(db.Calls);
     }
 
     [Fact]

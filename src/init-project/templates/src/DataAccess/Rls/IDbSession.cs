@@ -26,4 +26,7 @@ public interface IDbSession : IAsyncDisposable
 
     /// <summary>Commits the open transaction.</summary>
     Task CommitTransactionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Rolls back the open transaction (the failure-path counterpart of commit).</summary>
+    Task RollbackTransactionAsync(CancellationToken cancellationToken = default);
 }

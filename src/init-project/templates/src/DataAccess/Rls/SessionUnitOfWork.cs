@@ -51,6 +51,18 @@ public sealed class SessionUnitOfWork : ISessionUnitOfWork
     }
 
     /// <inheritdoc />
+    public async Task RollbackAsync(CancellationToken cancellationToken = default)
+    {
+        // No-op before begin so a catch-all rollback is always safe to call.
+        if (!_begun)
+        {
+            return;
+        }
+
+        await _session.RollbackTransactionAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         if (_disposed)

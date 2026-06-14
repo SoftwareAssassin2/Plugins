@@ -32,6 +32,12 @@ public class SessionUnitOfWorkMiddlewareTests
             return Task.CompletedTask;
         }
 
+        public Task RollbackAsync(CancellationToken cancellationToken = default)
+        {
+            Calls.Add("rollback");
+            return Task.CompletedTask;
+        }
+
         public ValueTask DisposeAsync()
         {
             Calls.Add("dispose");
@@ -90,6 +96,23 @@ public class SessionUnitOfWorkMiddlewareTests
 
         Assert.Equal(new[] { "begin", "next", "commit" }, uow.Calls);
         Assert.Equal("user-1", uow.BegunWith!.UserId);
+    }
+
+    [Fact]
+    public async Task InvokeCore_Authenticated_NextThrows_RollsBackAndRethrows()
+    {
+        var uow = new RecordingUnitOfWork();
+        var session = new SessionContext("user-1", Array.Empty<string>());
+        var boom = new InvalidOperationException("request failed");
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            SessionUnitOfWorkMiddleware.InvokeCoreAsync(
+                session, uow,
+                () => { uow.Calls.Add("next"); throw boom; }));
+
+        Assert.Same(boom, thrown);
+        // Began, ran next (threw), rolled back — never committed.
+        Assert.Equal(new[] { "begin", "next", "rollback" }, uow.Calls);
     }
 
     [Fact]

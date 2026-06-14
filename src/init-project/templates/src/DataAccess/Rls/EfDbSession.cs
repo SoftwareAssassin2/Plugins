@@ -50,6 +50,15 @@ public sealed class EfDbSession : IDbSession
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
+    {
+        var transaction = _context.Database.CurrentTransaction;
+        if (transaction is not null)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         var transaction = _context.Database.CurrentTransaction;

@@ -24,6 +24,17 @@ public interface ISessionUnitOfWork : IAsyncDisposable
     /// </summary>
     Task BeginAsync(SessionContext session, CancellationToken cancellationToken = default);
 
-    /// <summary>Commits the request transaction. No-op if none is open.</summary>
+    /// <summary>
+    /// Commits the request transaction. Throws <see cref="InvalidOperationException"/>
+    /// if called before <see cref="BeginAsync"/> — a commit without a begun unit is
+    /// a programming error, not a silent no-op.
+    /// </summary>
     Task CommitAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Rolls back the request transaction on a failure path. Safe to call even if
+    /// the unit never began (no-op) so middleware can roll back unconditionally in
+    /// a <c>catch</c> without re-checking lifecycle state.
+    /// </summary>
+    Task RollbackAsync(CancellationToken cancellationToken = default);
 }

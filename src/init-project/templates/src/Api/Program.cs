@@ -46,10 +46,21 @@ builder.Services
         }
 
         options.Audience = apiClientId;
-        // Keycloak surfaces realm roles under a custom claim; map the subject and
-        // roles onto the standard claim types SessionContextFactory reads.
+        // Map the subject onto the claim type SessionContextFactory reads. Roles
+        // live in Keycloak's `realm_access.roles` JSON array, NOT as individual
+        // role claims — setting RoleClaimType alone would NOT expand them, so we
+        // flatten them into ClaimTypes.Role claims on validation (see
+        // KeycloakRoleClaims) and point RoleClaimType at that standard type.
         options.TokenValidationParameters.NameClaimType = SessionContextFactory.SubjectClaimType;
         options.TokenValidationParameters.RoleClaimType = SessionContextFactory.RoleClaimType;
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = context =>
+            {
+                KeycloakRoleClaims.PopulateRoleClaims(context.Principal?.Identity as System.Security.Claims.ClaimsIdentity);
+                return Task.CompletedTask;
+            },
+        };
     });
 builder.Services.AddAuthorization();
 

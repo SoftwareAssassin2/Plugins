@@ -17,6 +17,26 @@ public class RlsBaselineTests
     }
 
     [Fact]
+    public void OwnerSql_InstallsNamedSessionContextHelper_GrantedToApi()
+    {
+        var sql = RlsBaseline.OwnerSql();
+
+        Assert.Equal("app_current_user_id", RlsBaseline.HelperFunctionName);
+        Assert.Contains("CREATE OR REPLACE FUNCTION public.app_current_user_id()", sql);
+        Assert.Contains("current_setting('app.user_id', true)", sql);
+        Assert.Contains("GRANT EXECUTE ON FUNCTION public.app_current_user_id() TO api;", sql);
+    }
+
+    [Fact]
+    public void HelperFunctionSql_IsStableAndReturnsText()
+    {
+        var sql = RlsBaseline.HelperFunctionSql();
+
+        Assert.Contains("RETURNS text LANGUAGE sql STABLE", sql);
+        Assert.Contains("current_setting('app.user_id', true)", sql);
+    }
+
+    [Fact]
     public void OwnerSql_DoesNotEnableRlsOnAnyTable()
     {
         var sql = RlsBaseline.OwnerSql();
@@ -42,6 +62,7 @@ public class RlsBaselineTests
     {
         var sql = RlsBaseline.DownOwnerSql();
 
+        Assert.Contains("DROP FUNCTION IF EXISTS public.app_current_user_id();", sql);
         Assert.Contains("REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM api;", sql);
         Assert.Contains("REVOKE USAGE, SELECT ON SEQUENCES FROM api;", sql);
         Assert.Contains("REVOKE USAGE ON SCHEMA public FROM api;", sql);
