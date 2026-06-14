@@ -179,6 +179,50 @@ check "front-end.md: S3 error-document fallback + CloudFront caveat" 'grep -qi "
 check "front-end.md: single Angular version rule" 'grep -qiE "single (angular version|source)|one source of truth|root .package.json." "$WORK/demo-app/docs/front-end.md"'
 check "SPA output token-free"                 '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$WORK/demo-app/src/MarketingSite" "$WORK/demo-app/src/WebApp" "$WORK/demo-app/angular.json" "$WORK/demo-app/package.json"'
 
+# Dev container template (fn-2 task .4): .devcontainer/{devcontainer.json,setup.sh}
+# + a build-time-complete .mcp.json, all landing in scaffold output token-free with
+# valid JSON. A real `devcontainer build` needs the dev container CLI + Docker and is
+# deferred to CI; these are STRUCTURAL/validity assertions only. (devcontainer.json is
+# JSONC — strip // line comments before piping to jq; none of our string values
+# contain //.) The setup.sh shellcheck/bash -n lint is run by the worker directly.
+DCJ="$WORK/demo-app/.devcontainer/devcontainer.json"
+check ".devcontainer/devcontainer.json present" "[[ -f \"$DCJ\" ]]"
+check ".devcontainer/setup.sh present + executable" "[[ -x \"$WORK/demo-app/.devcontainer/setup.sh\" ]]"
+check ".mcp.json present" '[[ -f "$WORK/demo-app/.mcp.json" ]]'
+check "devcontainer.json valid JSONC (parses after comment strip)" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e . >/dev/null"
+check "devcontainer base image is dotnet:1-9.0" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.image==\"mcr.microsoft.com/devcontainers/dotnet:1-9.0\"' >/dev/null"
+# Pinned features: node + the official cloud CLIs + community gcloud (:1.0.1) + jq + docker-in-docker.
+check "devcontainer pins node:2 feature"   "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.features | has(\"ghcr.io/devcontainers/features/node:2\")' >/dev/null"
+check "devcontainer pins aws/azure/github CLI features" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.features | has(\"ghcr.io/devcontainers/features/aws-cli:1\") and has(\"ghcr.io/devcontainers/features/azure-cli:1\") and has(\"ghcr.io/devcontainers/features/github-cli:1\")' >/dev/null"
+check "devcontainer pins community gcloud :1.0.1" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.features | has(\"ghcr.io/dhoeric/features/google-cloud-cli:1.0.1\")' >/dev/null"
+check "devcontainer adds docker-in-docker"  "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.features | has(\"ghcr.io/devcontainers/features/docker-in-docker:2\")' >/dev/null"
+check "devcontainer installs jq via feature" "sed -E 's@//.*\$@@' \"$DCJ\" | grep -q 'jq'"
+check "devcontainer wires onCreate setup.sh" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.onCreateCommand | test(\"setup.sh\")' >/dev/null"
+check "devcontainer name token-substituted" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.name==\"demo-app\"' >/dev/null"
+check "devcontainer declares vscode extensions" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '(.customizations.vscode.extensions|length)>0' >/dev/null"
+# setup.sh installs the script-only tools (Angular CLI, DuckDB, acli, Claude Code, Codex CLI)
+# and best-effort enables the marketplace by its REMOTE git URL (never local ./src).
+SUP="$WORK/demo-app/.devcontainer/setup.sh"
+check "setup.sh installs Angular CLI"      "grep -q '@angular/cli' \"$SUP\""
+check "setup.sh pins Angular CLI from package.json (no hard-coded version)" "grep -q 'angular_version' \"$SUP\" && ! grep -qE '@angular/cli@[0-9]' \"$SUP\""
+check "setup.sh restores dotnet-ef via tool manifest" "grep -q 'dotnet tool restore' \"$SUP\""
+check "setup.sh installs DuckDB"           "grep -qi 'duckdb' \"$SUP\""
+check "setup.sh installs Atlassian acli"   "grep -q 'acli' \"$SUP\""
+check "setup.sh installs Claude Code (install.sh)" "grep -q 'claude.ai/install.sh' \"$SUP\""
+check "setup.sh installs Codex CLI"        "grep -qi 'codex' \"$SUP\""
+check "setup.sh does NOT add ankitpokhrel jira-cli" "! grep -qi 'ankitpokhrel' \"$SUP\""
+check "setup.sh adds marketplace by REMOTE git url (not ./src)" "grep -q 'SoftwareAssassin2/Plugins' \"$SUP\" && ! grep -q 'claude plugin marketplace add ./' \"$SUP\""
+check "setup.sh best-effort enables 7 marketplace plugins" "for p in dick grill-me handoff tdd ubiquitous-language preferred-browser-automation-plugin preferred-ralph-loops-plugin; do grep -q \"\$p\" \"$SUP\" || exit 1; done"
+check "setup.sh uses set -euo pipefail"    "grep -q 'set -euo pipefail' \"$SUP\""
+check "setup.sh isolates best-effort steps (warn-not-fail)" "grep -q 'best-effort' \"$SUP\""
+# .mcp.json is the build-time-complete source for the two MCP servers (NOT claude plugin install).
+check ".mcp.json valid JSON"               'jq -e . "$WORK/demo-app/.mcp.json" >/dev/null'
+check ".mcp.json declares context7 + github-mcp-server" 'jq -e ".mcpServers | has(\"context7\") and has(\"github-mcp-server\")" "$WORK/demo-app/.mcp.json" >/dev/null'
+check "setup.sh does NOT install MCP servers as plugins" "! grep -qE 'claude plugin install +(context7|github-mcp-server)' \"$SUP\""
+# .claude/settings.json declares the marketplace remote (coexists with .mcp.json).
+check "settings.json declares marketplace remote (SoftwareAssassin2/Plugins)" 'jq -e ".extraKnownMarketplaces.plugins.source.repo==\"SoftwareAssassin2/Plugins\"" "$WORK/demo-app/.claude/settings.json" >/dev/null'
+check "dev container output token-free"    '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$WORK/demo-app/.devcontainer" "$WORK/demo-app/.mcp.json"'
+
 # distinct + url-safe generated secrets (portable read loop — mapfile is bash 4+)
 # 5 sentinels: postgres owner/migrator/api passwords + keycloak admin password +
 # keycloak Api confidential-client secret — each independently generated.
