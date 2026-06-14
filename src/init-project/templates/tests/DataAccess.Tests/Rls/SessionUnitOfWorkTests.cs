@@ -99,6 +99,11 @@ public class SessionUnitOfWorkTests
         Assert.Same(boom, thrown);
         // Transaction was opened then rolled back — never left dangling.
         Assert.Equal(new[] { "begin", "apply", "rollback" }, db.Calls);
+
+        // The caller's catch (e.g. the middleware) rolls back unconditionally; that
+        // must be a SAFE NO-OP here — no double-rollback on the same transaction.
+        await uow.RollbackAsync();
+        Assert.Equal(new[] { "begin", "apply", "rollback" }, db.Calls);
     }
 
     [Fact]
