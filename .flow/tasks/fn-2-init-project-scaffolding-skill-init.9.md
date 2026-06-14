@@ -29,7 +29,8 @@ Scaffold the **.NET solution**: `src/system.sln` referencing each per-component 
 - [ ] Per-project test projects scaffolded under `tests/<Component>.Tests/` (NOT `src/`) + `coverlet.msbuild` wired; `dotnet test` runs and coverage is measurable (so fn-2….13's 100% gate is meaningful)
 
 ## Done summary
-_(filled on completion)_
-
+Authored the build-time-complete .NET starter solution as scaffold templates: a single `src/system.sln` referencing five layered `src/<component>/` projects (Framework, DataAccess, BusinessLogic, Api, removable SampleApp) plus four `tests/<Component>.Tests/` xUnit projects wired with coverlet.msbuild. DataAccess ships `PlatformDbContext` (UseNpgsql) + Npgsql/EF-Design package refs + an `IDesignTimeDbContextFactory` reading `MIGRATOR_CONNECTION_STRING`, with `dotnet-ef` pinned in `.config/dotnet-tools.json`. Verified end-to-end on the host (SDK 10, net9.0 roll-forward): `dotnet build` succeeds, `dotnet test` passes 8/8 with measurable coverage, and `dotnet ef migrations list` exercises the design-time factory. scaffold_test.sh gained 27 structural assertions (90/90 green); Codex impl-review verdict SHIP.
 ## Evidence
-_(filled on completion)_
+- Commits: 461e19f11d898c7d220b5cf36dd95134639cfbee
+- Tests: bash src/init-project/tests/scaffold_test.sh (90 passed, 0 failed), dotnet build src/system.sln (9/9 projects, 0 errors), DOTNET_ROLL_FORWARD=Major dotnet test src/system.sln (8/8 passed, coverlet coverage measurable), dotnet tool restore + dotnet ef migrations list (design-time factory exercised: reads MIGRATOR_CONNECTION_STRING, builds PlatformDbContext, fail-fast verified when unset)
+- PRs:
