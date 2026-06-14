@@ -34,7 +34,8 @@ Author the **`system.sh` dispatcher** + `src/system-cli/` subcommands, including
 - [ ] `build-config` provides the generic stamping **mechanism** (config→`.env`, realm-file stamp, SPA public-config stamp); the **Keycloak realm-stamp** integration+test is owned by fn-2….10 and the **SPA public-config stamp** by fn-2….12 (this task ships the capability, those tasks wire+verify their specific stamps)
 
 ## Done summary
-_(filled on completion)_
-
+Authored the build-time-complete `system.sh` dispatcher template (lands at the scaffolded repo root so `$script_dir/src/system-cli/<sub>.sh` resolves), its `help/build-config/up/down/migrate/status` subcommands, a kcov line-coverage wrapper that degrades cleanly when kcov is absent, the skill-package dispatcher test suite, and the generated-project shell test-harness shipped for fn-2....13 CI. `build-config` distributes `config.json` into per-component `.env` (with the migrator/api connection strings + keycloak values per the docs/config-management.md §4 schema), stamps each SPA's non-secret public config, and stamps the gitignored Keycloak realm import (clean-prior-on-rename), validating every URL-safe secret + structural field with exit 64 on violation.
 ## Evidence
-_(filled on completion)_
+- Commits: cfb31bfe4a6d726a5d9b2e8daaac2a815faa2f60
+- Tests: bash src/init-project/tests/scaffold_test.sh (132 passed), bash src/init-project/tests/dispatcher_test.sh (60 passed), bash src/init-project/tests/coverage.sh (kcov-absent degrade, exit 0; both suites run), bash <scaffolded>/tests/system-cli/system_cli_test.sh (30 passed, from clean git export), shellcheck -S error all new/changed scripts (clean), scaffold from `git checkout-index` clean export: dispatch help->0, no-arg->64, underscore->64, unknown->127; build-config distributes .env+SPA config, realm-stamp skips gracefully
+- PRs:
