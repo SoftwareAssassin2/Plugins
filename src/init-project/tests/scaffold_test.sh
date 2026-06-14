@@ -125,6 +125,14 @@ for SPA in MarketingSite WebApp; do
   check "SPA src/$SPA app component present" "[[ -f \"\$WORK/demo-app/src/$SPA/src/app/app.ts\" ]]"
   check "SPA src/$SPA jest.config.js present" "[[ -f \"\$WORK/demo-app/src/$SPA/jest.config.js\" ]]"
   check "SPA src/$SPA jest coverage gate 100" "grep -q 'branches: 100' \"\$WORK/demo-app/src/$SPA/jest.config.js\""
+  # The committed sample public/config.json MUST land in scaffold output so a fresh
+  # scaffold builds/serves before build-config runs. (It is force-tracked in the
+  # template tree: templates/.gitignore ignores src/*/public/config.json, which
+  # would otherwise silently drop the committed sample from the plugin repo.) It must
+  # carry ONLY non-secret public fields (realmUrl + clientId) — never a secret.
+  check "SPA src/$SPA public/config.json present" "[[ -f \"\$WORK/demo-app/src/$SPA/public/config.json\" ]]"
+  check "SPA src/$SPA public config is non-secret (realmUrl+clientId only)" \
+    "jq -e '(keys|sort)==[\"clientId\",\"realmUrl\"]' \"\$WORK/demo-app/src/$SPA/public/config.json\" >/dev/null"
 done
 # Single Angular-version source: the ROOT package.json holds @angular/* — and there
 # is NO per-SPA package.json pinning a divergent Angular version (one source of truth).

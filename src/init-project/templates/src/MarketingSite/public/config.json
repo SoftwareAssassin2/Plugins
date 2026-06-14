@@ -1,0 +1,4 @@
+{
+  "realmUrl": "http://127.0.0.1:8080/realms/__SCAFFOLD_PROJECT_NAME__",
+  "clientId": "marketingsite"
+}
