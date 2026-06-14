@@ -32,6 +32,14 @@ try() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# ---- pinned tool versions --------------------------------------------------
+# Pin every script-installed tool to an EXACT version so a fresh container build
+# is reproducible (the devcontainer features are pinned in devcontainer.json;
+# these are the script-only installs). Bump deliberately. The Angular CLI is the
+# one exception — it is pinned by READING the root package.json (single source).
+DUCKDB_VERSION="v1.4.2"      # DuckDB CLI (https://github.com/duckdb/duckdb/releases)
+CODEX_VERSION="0.5.0"        # OpenAI Codex CLI (npm @openai/codex)
+
 # Pin the Angular CLI to the SAME exact version the root package.json declares —
 # the single source of truth (owned by the SPA task). Never hard-code a second
 # copy here: read it back so CLI and project deps can never drift.
@@ -77,8 +85,9 @@ install_duckdb() {
     ok "duckdb already present ($(duckdb --version 2>/dev/null || echo present))"
     return 0
   fi
-  # Official install script; installs into ~/.duckdb/cli/latest and symlinks.
-  curl -fsSL https://install.duckdb.org | bash
+  # Official install script, PINNED via DUCKDB_INSTALL_VERSION so the build is
+  # reproducible (never silently tracks "latest"). Installs into ~/.duckdb/cli.
+  curl -fsSL https://install.duckdb.org | DUCKDB_INSTALL_VERSION="$DUCKDB_VERSION" bash
   # The installer adds duckdb to ~/.duckdb/cli/latest; expose it on PATH for this
   # shell and via a profile drop-in so future shells (and `ng`/`dotnet`) see it.
   if [[ -x "$HOME/.duckdb/cli/latest/duckdb" ]]; then
@@ -128,9 +137,10 @@ install_codex_cli() {
     ok "codex already present"
     return 0
   fi
-  # OpenAI Codex CLI ships on npm; install globally (node feature provides npm).
-  npm install -g @openai/codex
-  ok "Codex CLI installed"
+  # OpenAI Codex CLI ships on npm; install globally PINNED (node feature provides
+  # npm). Exact version keeps the build reproducible; bump CODEX_VERSION to update.
+  npm install -g "@openai/codex@$CODEX_VERSION"
+  ok "Codex CLI $CODEX_VERSION installed"
 }
 
 # ---- best-effort: Claude Code marketplace + plugins ------------------------
