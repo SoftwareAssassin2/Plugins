@@ -29,10 +29,14 @@ services:
       # The official image creates POSTGRES_DB owned by the bootstrap superuser and
       # runs /docker-entrypoint-initdb.d/* (as the superuser) only on FIRST init.
       POSTGRES_DB: platform
-      # Bootstrap superuser password (local-dev only). The least-privilege
-      # owner/migrator/api roles are created by the init script below; application
-      # components never connect as this superuser.
-      POSTGRES_PASSWORD: ${POSTGRES_OWNER_PASSWORD}
+      # TRANSIENT bootstrap superuser password — used ONLY to run the init script
+      # at first volume init. It is DISTINCT from every role secret (never reuses
+      # owner/migrator/api passwords, so the owner credential can't be used to log
+      # in as the superuser and bypass the role model). The init script's LAST step
+      # ROTATES this to an unguessable random value, so after bootstrap the known
+      # literal no longer grants superuser access. Combined with loopback-only port
+      # binding, the superuser is effectively unreachable post-init.
+      POSTGRES_PASSWORD: bootstrap-only-rotated-by-init-script
       # Role passwords consumed by ./init/10-roles.sh (see that script).
       POSTGRES_OWNER_PASSWORD: ${POSTGRES_OWNER_PASSWORD}
       POSTGRES_MIGRATOR_PASSWORD: ${POSTGRES_MIGRATOR_PASSWORD}

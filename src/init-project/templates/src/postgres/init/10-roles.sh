@@ -94,4 +94,23 @@ GRANT USAGE ON SCHEMA public TO api;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 SQL
 
-echo "postgres init: bootstrapped roles owner/migrator/api on database platform"
+# Lock down the bootstrap superuser: rotate its password to an unguessable random
+# value AFTER the roles are created. The superuser was only needed transiently to
+# run this init script; no component connects as it. Rotating away from the known
+# bootstrap literal means that literal no longer grants superuser access — the
+# owner/migrator/api roles (with their own distinct passwords) are the only usable
+# logins. The rotated value is never persisted anywhere (intentionally lost).
+#
+# The superuser name is POSTGRES_USER when set, else the image default `postgres`.
+# The random value is 64 hex chars (/dev/urandom) — alphanumeric only, so it is
+# safe to embed in the SQL literal without any quoting hazard. (psql `:'var'`
+# interpolation does NOT work with `-c`, so the value is built in shell and the
+# statement is fed on stdin.)
+SUPERUSER="${POSTGRES_USER:-postgres}"
+BOOTSTRAP_THROWAWAY="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+psql -v ON_ERROR_STOP=1 --username "$SUPERUSER" --dbname "platform" <<SQL2
+ALTER ROLE "$SUPERUSER" WITH PASSWORD '$BOOTSTRAP_THROWAWAY';
+SQL2
+unset BOOTSTRAP_THROWAWAY
+
+echo "postgres init: bootstrapped roles owner/migrator/api on database platform (bootstrap superuser password rotated to a discarded random value)"
