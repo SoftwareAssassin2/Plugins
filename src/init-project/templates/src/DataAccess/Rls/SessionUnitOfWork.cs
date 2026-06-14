@@ -70,10 +70,24 @@ public sealed class SessionUnitOfWork : ISessionUnitOfWork
                 "Cannot commit: no open transaction (it never began or was already committed/rolled back).");
         }
 
-        // Clear _open before the call so a failed commit doesn't leave the unit
-        // claiming an open transaction (the failure path rolls back via the caller).
+        try
+        {
+            await _session.CommitTransactionAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // A failed commit must still close the transaction deterministically —
+            // do NOT leave it for the caller (which would no-op once _open clears).
+            // Roll back with CancellationToken.None (a canceled commit token must
+            // not also cancel cleanup), then clear _open and rethrow.
+            await _session.RollbackTransactionAsync(CancellationToken.None).ConfigureAwait(false);
+            _open = false;
+            throw;
+        }
+
+        // Clear _open only AFTER a successful commit — so a later RollbackAsync from
+        // the caller's catch is a safe no-op.
         _open = false;
-        await _session.CommitTransactionAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

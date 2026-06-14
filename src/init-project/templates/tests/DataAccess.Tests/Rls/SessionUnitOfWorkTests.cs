@@ -20,6 +20,9 @@ public class SessionUnitOfWorkTests
         /// <summary>When set, ApplySessionContextAsync throws this after recording the call.</summary>
         public Exception? ApplyFailure { get; set; }
 
+        /// <summary>When set, CommitTransactionAsync throws this after recording the call.</summary>
+        public Exception? CommitFailure { get; set; }
+
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default)
         {
             Calls.Add("begin");
@@ -41,6 +44,11 @@ public class SessionUnitOfWorkTests
         public Task CommitTransactionAsync(CancellationToken cancellationToken = default)
         {
             Calls.Add("commit");
+            if (CommitFailure is not null)
+            {
+                throw CommitFailure;
+            }
+
             return Task.CompletedTask;
         }
 
@@ -165,6 +173,26 @@ public class SessionUnitOfWorkTests
         await uow.RollbackAsync();
 
         Assert.Empty(db.Calls);
+    }
+
+    [Fact]
+    public async Task CommitAsync_CommitFails_RollsBackAndRethrows_ThenCallerRollbackNoOps()
+    {
+        var boom = new InvalidOperationException("commit failed");
+        var db = new RecordingDbSession { CommitFailure = boom };
+        await using var uow = new SessionUnitOfWork(db);
+        await uow.BeginAsync(Authenticated());
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => uow.CommitAsync());
+
+        Assert.Same(boom, thrown);
+        // Commit failed -> deterministic rollback (not left to the caller/disposal).
+        Assert.Equal(new[] { "begin", "apply", "commit", "rollback" }, db.Calls);
+        // The caller's catch then rolls back; that must be a safe no-op now.
+        await uow.RollbackAsync();
+        Assert.Equal(new[] { "begin", "apply", "commit", "rollback" }, db.Calls);
+        // Cleanup used None, not the caller token.
+        Assert.False(db.RollbackToken.IsCancellationRequested);
     }
 
     [Fact]
