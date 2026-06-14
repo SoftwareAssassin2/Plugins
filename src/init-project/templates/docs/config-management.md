@@ -63,8 +63,8 @@ a security baseline so that no component ever connects as the superuser:
 | Role | Login | Used by | Purpose |
 |---|---|---|---|
 | `owner` | NOLOGIN | (assumed via `SET ROLE`) | Owns all objects. DDL runs under this role. |
-| `migrator` | LOGIN | `system.sh migrate` (EF Core, design-time) | Member of `owner`; runs migrations, issuing `SET ROLE owner` for owner-privileged DDL. EF cannot connect as a NOLOGIN role, so it logs in as `migrator`. |
-| `api` | LOGIN | the `Api` component at runtime | Least-privilege runtime connection. Constrained by row-level security; the `Api` sets per-request session context (`app.user_id`/`app.roles`) and RLS policies key off `current_setting('app.*')`. |
+| `migrator` | LOGIN | `system.sh migrate` (EF Core, design-time); `system.sh psql` (default) | Member of `owner`; runs migrations, issuing `SET ROLE owner` for owner-privileged DDL. EF cannot connect as a NOLOGIN role, so it logs in as `migrator`. |
+| `api` | LOGIN | the `Api` component at runtime; `system.sh psql --role api` | Least-privilege runtime connection. Constrained by row-level security; the `Api` sets per-request session context (`app.user_id`/`app.roles`) and RLS policies key off `current_setting('app.*')`. |
 
 **The role names `owner` / `migrator` / `api` and the database name `platform` are
 FIXED scaffold constants** — they are NOT in `config.json`. This lets the static
@@ -81,6 +81,14 @@ schema table in §4 for exact field and env-var names.
 > updates the `.env` but NOT the existing DB roles — the init script sets them only
 > at first volume init. Rotation therefore requires resetting the postgres volume.
 > Treat local-dev role passwords as fixed-per-volume.
+
+**Interactive access.** `./system.sh psql <database>` opens a `psql` shell against
+the database, reading the host/port and role password from `config.json` (passed via
+`PGPASSWORD`, never on the argv). It connects as `migrator` by default — full schema
+access for interactive work; `owner` is NOLOGIN and cannot connect. Pass `--role api`
+to connect as the RLS-constrained runtime role (to reproduce what the `Api` sees), and
+any trailing args are forwarded to `psql` (e.g. `./system.sh psql platform -c 'SELECT 1'`).
+Requires the `postgresql-client` package, installed in the dev container.
 
 ## 4. Config schema (authoritative)
 

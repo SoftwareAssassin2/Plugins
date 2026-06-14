@@ -34,7 +34,7 @@ SYS="$ROOT/system.sh"
 
 check "system.sh lands at scaffolded repo root"   '[[ -f "$SYS" ]]'
 check "system.sh is executable"                    '[[ -x "$SYS" ]]'
-check "src/system-cli/ subcommands land"           '[[ -f "$ROOT/src/system-cli/help.sh" && -f "$ROOT/src/system-cli/build-config.sh" && -f "$ROOT/src/system-cli/up.sh" && -f "$ROOT/src/system-cli/down.sh" && -f "$ROOT/src/system-cli/migrate.sh" && -f "$ROOT/src/system-cli/status.sh" ]]'
+check "src/system-cli/ subcommands land"           '[[ -f "$ROOT/src/system-cli/help.sh" && -f "$ROOT/src/system-cli/build-config.sh" && -f "$ROOT/src/system-cli/up.sh" && -f "$ROOT/src/system-cli/down.sh" && -f "$ROOT/src/system-cli/migrate.sh" && -f "$ROOT/src/system-cli/status.sh" && -f "$ROOT/src/system-cli/psql.sh" ]]'
 check "dispatcher output token-free"               '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$SYS" "$ROOT/src/system-cli"'
 
 # Path resolution: `help` must route from the scaffolded root (script_dir == root).
@@ -83,7 +83,7 @@ check "help falls back to (no description)"        'grep -qE "nodesc[[:space:]]+
 rm -f "$ROOT/src/system-cli/nodesc.sh"
 
 # Every shipped subcommand carries a `# Description:` line.
-for sub in help build-config up down migrate status; do
+for sub in help build-config up down migrate status psql; do
   check "subcommand $sub has a # Description: line" \
     "grep -qE '^#[[:space:]]*Description:' \"\$ROOT/src/system-cli/$sub.sh\""
 done

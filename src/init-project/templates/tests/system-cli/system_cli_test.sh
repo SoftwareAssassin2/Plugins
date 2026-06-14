@@ -247,6 +247,63 @@ printf 'MIGRATOR_CONNECTION_STRING=Host=localhost;Username=migrator\n' > "$WORK/
 OUT="$(runner "$WCLI/migrate.sh")"; rc=$?
 check "migrate: full env -> exit 0 + dotnet ef invoked" '[[ $rc -eq 0 ]] && grep -q "ef database update" "$STUB_LOG"'
 
+echo "== psql subcommand — psql STUBBED, config-driven connection =="
+# psql.sh execs `psql`; stub it to record argv + PGPASSWORD and exit 0 so we assert
+# the constructed connection (host/port/role/db from config.json) and that the
+# password travels via the environment, never on the argv. jq stays real (config
+# reads). The scaffold config.json's role passwords are the __SCAFFOLD_GEN_URLSAFE__
+# placeholder — URL-safe, so it reads back unchanged here.
+cat > "$STUBBIN/psql" <<'STUB'
+#!/usr/bin/env bash
+echo "STUB psql $*" >> "${STUB_LOG:-/dev/null}"
+echo "PGPASSWORD=${PGPASSWORD:-}" >> "${STUB_LOG:-/dev/null}"
+exit 0
+STUB
+chmod +x "$STUBBIN/psql"
+
+# Branch: missing database arg -> usage, exit 64.
+OUT="$(runner "$WCLI/psql.sh")"; rc=$?
+check "psql: missing database -> exit 64"          '[[ $rc -eq 64 ]] && grep -q "usage:" <<<"$OUT"'
+
+# Branch: valid db -> exec psql as migrator against configured host/port/db.
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/psql.sh" platform)"; rc=$?
+check "psql: connects as migrator to the named db" '[[ $rc -eq 0 ]] && grep -q "U migrator" "$STUB_LOG" && grep -q "d platform" "$STUB_LOG"'
+check "psql: targets configured host/port"         'grep -q "h 127.0.0.1" "$STUB_LOG" && grep -q "p 5432" "$STUB_LOG"'
+check "psql: password passed via PGPASSWORD env"   'grep -q "PGPASSWORD=__SCAFFOLD_GEN_URLSAFE__" "$STUB_LOG"'
+
+# Branch: --role api -> connects as the api role (api_password).
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/psql.sh" --role api platform)"; rc=$?
+check "psql: --role api connects as api"           '[[ $rc -eq 0 ]] && grep -q "U api" "$STUB_LOG"'
+
+# Branch: passthrough args after the db name reach psql verbatim.
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/psql.sh" platform -c "SELECT 1")"; rc=$?
+check "psql: forwards passthrough args to psql"    '[[ $rc -eq 0 ]] && grep -q "c SELECT 1" "$STUB_LOG"'
+
+# Branch: owner is NOLOGIN -> exit 64.
+OUT="$(runner "$WCLI/psql.sh" --role owner platform)"; rc=$?
+check "psql: --role owner rejected -> exit 64"     '[[ $rc -eq 64 ]] && grep -q "NOLOGIN" <<<"$OUT"'
+
+# Branch: invalid role -> exit 64.
+OUT="$(runner "$WCLI/psql.sh" --role bogus platform)"; rc=$?
+check "psql: invalid --role -> exit 64"            '[[ $rc -eq 64 ]]'
+
+# Branch: unknown flag -> exit 64.
+OUT="$(runner "$WCLI/psql.sh" --bogus platform)"; rc=$?
+check "psql: unknown flag -> exit 64"              '[[ $rc -eq 64 ]]'
+
+# Branch: invalid database name -> exit 64.
+OUT="$(runner "$WCLI/psql.sh" "bad;name")"; rc=$?
+check "psql: invalid db name -> exit 64"           '[[ $rc -eq 64 ]]'
+
+# Branch: missing --config file -> exit 64.
+OUT="$(runner "$WCLI/psql.sh" --config /nonexistent.json platform)"; rc=$?
+check "psql: missing --config file -> exit 64"     '[[ $rc -eq 64 ]]'
+
+rm -f "$STUBBIN/psql"
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]

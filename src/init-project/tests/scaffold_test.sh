@@ -155,7 +155,7 @@ check ".11 output token-free"               '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+_
 # the documented invariant exception — repo tooling, not a systems[] component.)
 check "dispatcher system.sh at scaffolded ROOT" '[[ -f "$WORK/demo-app/system.sh" ]]'
 check "system.sh resolves subcommands from repo root (not src/)" 'grep -q "src/system-cli/\$subcommand.sh" "$WORK/demo-app/system.sh"'
-for sub in help build-config up down migrate status; do
+for sub in help build-config up down migrate status psql; do
   check "subcommand src/system-cli/$sub.sh present" "[[ -f \"\$WORK/demo-app/src/system-cli/$sub.sh\" ]]"
   check "subcommand $sub has a # Description: line" "grep -qE '^#[[:space:]]*Description:' \"\$WORK/demo-app/src/system-cli/$sub.sh\""
 done
@@ -374,6 +374,7 @@ check "devcontainer pins aws/azure/github CLI features" "sed -E 's@//.*\$@@' \"$
 check "devcontainer pins community gcloud :1.0.1" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.features | has(\"ghcr.io/dhoeric/features/google-cloud-cli:1.0.1\")' >/dev/null"
 check "devcontainer adds docker-in-docker"  "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.features | has(\"ghcr.io/devcontainers/features/docker-in-docker:2\")' >/dev/null"
 check "devcontainer installs jq via feature" "sed -E 's@//.*\$@@' \"$DCJ\" | grep -q 'jq'"
+check "devcontainer installs postgresql-client (psql) via feature" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.features.\"ghcr.io/devcontainers-extra/features/apt-get-packages:1\".packages | test(\"postgresql-client\")' >/dev/null"
 check "devcontainer wires onCreate setup.sh" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.onCreateCommand | test(\"setup.sh\")' >/dev/null"
 check "devcontainer name token-substituted" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.name==\"demo-app\"' >/dev/null"
 check "devcontainer declares vscode extensions" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '(.customizations.vscode.extensions|length)>0' >/dev/null"
