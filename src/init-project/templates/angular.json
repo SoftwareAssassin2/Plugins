@@ -21,6 +21,8 @@
           "builder": "@angular/build:application",
           "options": {
             "browser": "src/MarketingSite/src/main.ts",
+            "index": "src/MarketingSite/src/index.html",
+            "outputPath": "dist/MarketingSite",
             "tsConfig": "src/MarketingSite/tsconfig.app.json",
             "inlineStyleLanguage": "scss",
             "assets": [
@@ -96,6 +98,8 @@
           "builder": "@angular/build:application",
           "options": {
             "browser": "src/WebApp/src/main.ts",
+            "index": "src/WebApp/src/index.html",
+            "outputPath": "dist/WebApp",
             "tsConfig": "src/WebApp/tsconfig.app.json",
             "inlineStyleLanguage": "scss",
             "assets": [
