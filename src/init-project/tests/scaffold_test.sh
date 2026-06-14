@@ -155,11 +155,23 @@ check "grafana dashboards provider present" '[[ -f "$OBS/grafana/provisioning/da
 check "observability lives OUTSIDE .devcontainer/" '[[ ! -e "$WORK/demo-app/.devcontainer/observability" ]]'
 # Pure dev tooling: NO config.json systems[] entry (the documented invariant exception).
 check "observability is NOT a config.json systems[] entry" '! jq -e "[.systems[].name] | index(\"observability\")" "$WORK/demo-app/config.json" >/dev/null'
-# Compose defines BOTH services with PINNED image tags (no floating :latest).
+# Compose defines the named services with PINNED image tags (no floating :latest).
+# Grafana queries via a Prometheus service that scrapes the collector exporter
+# (Grafana cannot query the collector's exposition endpoint directly).
 check "compose defines grafana + otel-collector services" 'python3 -c "import yaml,sys; s=yaml.safe_load(open(\"$OBS/docker-compose.yml\"))[\"services\"]; sys.exit(0 if (\"grafana\" in s and \"otel-collector\" in s) else 1)"'
+check "compose defines prometheus query backend" 'python3 -c "import yaml,sys; s=yaml.safe_load(open(\"$OBS/docker-compose.yml\"))[\"services\"]; sys.exit(0 if \"prometheus\" in s else 1)"'
 check "compose images pinned (no :latest)" 'python3 -c "import yaml,sys; s=yaml.safe_load(open(\"$OBS/docker-compose.yml\"))[\"services\"]; imgs=[v[\"image\"] for v in s.values()]; sys.exit(0 if all((\":\" in i and not i.endswith(\":latest\")) for i in imgs) else 1)"'
 check "grafana image is grafana/grafana pinned" 'grep -qE "grafana/grafana:[0-9]" "$OBS/docker-compose.yml"'
 check "collector image is otel contrib pinned" 'grep -qE "otel/opentelemetry-collector-contrib:[0-9]" "$OBS/docker-compose.yml"'
+check "prometheus image is prom/prometheus pinned" 'grep -qE "prom/prometheus:v?[0-9]" "$OBS/docker-compose.yml"'
+# Dev tooling must bind to loopback only (anonymous-admin Grafana must not be LAN-reachable).
+check "compose published ports bound to 127.0.0.1" 'python3 -c "import yaml,sys; s=yaml.safe_load(open(\"$OBS/docker-compose.yml\"))[\"services\"]; ports=[p for v in s.values() for p in v.get(\"ports\",[])]; sys.exit(0 if ports and all(str(p).startswith(\"127.0.0.1:\") for p in ports) else 1)"'
+# No hardcoded container_name (would collide across two scaffolded projects).
+check "compose does NOT hardcode container_name" '! grep -qE "^[[:space:]]*container_name:" "$OBS/docker-compose.yml"'
+# Prometheus scrapes the collector exporter; datasource points at prometheus (not the collector).
+check "prometheus scrapes otel-collector:8889" 'grep -q "otel-collector:8889" "$OBS/prometheus/prometheus.yml"'
+check "grafana datasource points at prometheus" 'grep -q "http://prometheus:9090" "$OBS/grafana/provisioning/datasources/datasources.yaml"'
+check "prometheus scrape config valid YAML" 'python3 -c "import yaml,sys; c=yaml.safe_load(open(\"$OBS/prometheus/prometheus.yml\")); sys.exit(0 if \"scrape_configs\" in c else 1)"'
 # OTel collector config is valid YAML with the standard receivers/exporters/service shape.
 check "otel config valid YAML + OTLP receiver" 'python3 -c "import yaml,sys; c=yaml.safe_load(open(\"$OBS/otel-collector-config.yaml\")); sys.exit(0 if \"otlp\" in c[\"receivers\"] and \"pipelines\" in c[\"service\"] else 1)"'
 # Grafana provisioning is valid YAML; the starter dashboard is valid JSON.
