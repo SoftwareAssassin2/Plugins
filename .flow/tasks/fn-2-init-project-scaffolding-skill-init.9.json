@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-14T00:32:23.681334Z",
+  "depends_on": [
+    "fn-2-init-project-scaffolding-skill-init.1"
+  ],
+  "id": "fn-2-init-project-scaffolding-skill-init.9",
+  "priority": null,
+  "spec": "fn-2-init-project-scaffolding-skill-init",
+  "spec_path": ".flow/tasks/fn-2-init-project-scaffolding-skill-init.9.md",
+  "status": "todo",
+  "title": ".NET solution scaffold (system.sln + layered projects)",
+  "updated_at": "2026-06-14T00:35:02.524785Z"
+}

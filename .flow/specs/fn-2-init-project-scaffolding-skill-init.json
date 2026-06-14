@@ -11,8 +11,8 @@
   ],
   "id": "fn-2-init-project-scaffolding-skill-init",
   "next_task": 1,
-  "plan_review_status": "unknown",
-  "plan_reviewed_at": null,
+  "plan_review_status": "ship",
+  "plan_reviewed_at": "2026-06-14T07:08:21.176571Z",
   "spec_path": ".flow/specs/fn-2-init-project-scaffolding-skill-init.md",
   "status": "open",
   "title": "init-project scaffolding skill (/init-project)",
@@ -26,5 +26,5 @@
     "mergeBaseTracker": null,
     "url": null
   },
-  "updated_at": "2026-06-14T00:24:40.994784Z"
+  "updated_at": "2026-06-14T07:08:21.176852Z"
 }

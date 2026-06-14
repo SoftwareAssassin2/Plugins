@@ -1,0 +1,19 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-14T00:32:23.982569Z",
+  "depends_on": [
+    "fn-2-init-project-scaffolding-skill-init.9",
+    "fn-2-init-project-scaffolding-skill-init.10",
+    "fn-2-init-project-scaffolding-skill-init.3",
+    "fn-2-init-project-scaffolding-skill-init.6"
+  ],
+  "id": "fn-2-init-project-scaffolding-skill-init.11",
+  "priority": null,
+  "spec": "fn-2-init-project-scaffolding-skill-init",
+  "spec_path": ".flow/tasks/fn-2-init-project-scaffolding-skill-init.11.md",
+  "status": "todo",
+  "title": "EF Core migrations + RLS baseline + Keycloak-gated DB auth",
+  "updated_at": "2026-06-14T00:35:43.256591Z"
+}

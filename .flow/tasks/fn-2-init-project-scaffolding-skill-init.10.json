@@ -1,0 +1,18 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-14T00:32:23.827330Z",
+  "depends_on": [
+    "fn-2-init-project-scaffolding-skill-init.1",
+    "fn-2-init-project-scaffolding-skill-init.3",
+    "fn-2-init-project-scaffolding-skill-init.6"
+  ],
+  "id": "fn-2-init-project-scaffolding-skill-init.10",
+  "priority": null,
+  "spec": "fn-2-init-project-scaffolding-skill-init",
+  "spec_path": ".flow/tasks/fn-2-init-project-scaffolding-skill-init.10.md",
+  "status": "todo",
+  "title": "Postgres + Keycloak services + realm import",
+  "updated_at": "2026-06-14T00:35:02.664723Z"
+}

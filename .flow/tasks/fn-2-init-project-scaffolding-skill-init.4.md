@@ -3,35 +3,27 @@ satisfies: [R4]
 ---
 
 ## Description
-Author the scaffolded **dev container** template: `.devcontainer/devcontainer.json` (pinned features) + `.devcontainer/setup.sh` (script-installed tools, Claude Code, and this marketplace's plugins). Optional installs are best-effort so one failure doesn't abort the lifecycle.
+Author the dev container template: `.devcontainer/devcontainer.json` (base image + pinned features) + `.devcontainer/setup.sh` (script-installed tools, Claude Code, Codex CLI, and the 9 enabled plugins). Best-effort optional installs. (Nine integrations = seven marketplace plugins via `claude plugin` + two MCP servers `context7`/`github-mcp-server` via `templates/.mcp.json`.)
 
 **Size:** M
-**Files:** `src/init-project/templates/.devcontainer/devcontainer.json`, `src/init-project/templates/.devcontainer/setup.sh`
+**Files:** `src/init-project/templates/.devcontainer/devcontainer.json`, `src/init-project/templates/.devcontainer/setup.sh`, `src/init-project/templates/.mcp.json`
 
-## Approach (from docs-scout)
-- **devcontainer.json `features`** (pin to major, commit lockfile): `ghcr.io/devcontainers/features/dotnet:2`, `aws-cli:1`, `azure-cli:1`, `github-cli:1`; gcloud via community `ghcr.io/dhoeric/features/google-cloud-cli:1` (flag as non-first-party).
-- **setup.sh** (`set -e` for required steps; optional steps wrapped `|| echo warn`):
-  - DuckDB CLI (install script, pin version)
-  - **Atlassian CLI (`acli`)** — covers both Jira and Confluence (no separate Jira CLI)
-  - Claude Code via `curl -fsSL https://claude.ai/install.sh | bash` (NOT the deprecated npm package)
-  - **Codex CLI** (OpenAI) — install via its official method (npm `@openai/codex` or the published binary/installer; pin the version); best-effort
-  - **Register this marketplace and enable its five plugins** — `dick`, `grill-me`, `handoff`, `tdd`, `ubiquitous-language` — via `claude plugin marketplace add` + `claude plugin install <plugin>@<marketplace>` (best-effort; verify subcommand syntax against the installed CLI version).
-- VS Code extensions under `customizations.vscode.extensions`.
-- Toolchain stays in `.devcontainer/`; observability services go to fn-2….5, NOT here.
-
-## Notes
-- The five plugins come from THIS marketplace. `grill-me`/`handoff`/`tdd`/`ubiquitous-language` already exist and are registered; `dick` is delivered by fn-1 (spec dependency) — until fn-1….1 lands, the `dick` enable line should be best-effort like the others.
+## Approach (from docs-scout, pin versions)
+- **Base image:** `mcr.microsoft.com/devcontainers/dotnet:1-9.0`. **Features** (pin major, commit lockfile): `ghcr.io/devcontainers/features/node:2`, `aws-cli:1`, `azure-cli:1`, `github-cli:1`; gcloud via community `ghcr.io/dhoeric/features/google-cloud-cli:1.0.1` (flag non-first-party, pin exact). Angular CLI via npm in setup.sh, **pinned to the single declared Angular version** (the root `package.json` (canonical, single source) source that .12 + .13 also consume — no independent version). **Also add `docker-in-docker` (or `docker-outside-of-docker`) + `jq`** (pinned) — `system.sh up/down` drives `docker compose` and `build-config` parses `config.json` via `jq`; without them the advertised quickstart fails.
+- **setup.sh** (`set -e` required steps; optional wrapped `|| echo warn`): Angular CLI (`npm i -g @angular/cli`), DuckDB CLI (install script, pin), **Atlassian CLI `acli`** (Jira + Confluence), Claude Code (`curl -fsSL https://claude.ai/install.sh | bash`), **Codex CLI** (official install, pin); MCP servers `context7` + `github-mcp-server` are declared in a **build-time `templates/.mcp.json`** (committed, complete — NOT written at runtime by setup.sh; coexists with `.claude/settings.json` from fn-2….2). Then register the marketplace by its **published git remote** (`SoftwareAssassin2/Plugins` — NOT the local `./src/` sources, which a scaffolded project does not contain) + best-effort enable the **seven marketplace plugins** (`dick`, `grill-me`, `handoff`, `tdd`, `ubiquitous-language`, Playwright `preferred-browser-automation-plugin`, flow-next `preferred-ralph-loops-plugin`) via `claude plugin marketplace add <remote>` + `claude plugin install`, AND configure two **MCP servers** — `context7` and GitHub MCP (`github-mcp-server`) — via `.mcp.json`/settings (NOT `claude plugin install`). The committed **`templates/.mcp.json` is the canonical outcome** for the MCP servers (build-time-complete); the `claude plugin`/CLI enable steps are **best-effort/advisory smoke only** (CLI syntax may drift — failures are non-fatal warnings, never blockers).
+- VS Code extensions under `customizations.vscode.extensions`. Toolchain stays in `.devcontainer/`; services (postgres/keycloak/observability) are compose stacks outside it.
 
 ## Investigation targets
 **Required:**
-- `src/project-init/dev-container.md` — dep-placement table (where each kind lands)
-- `.claude/settings.json` — existing marketplace/plugin enablement shape
-- `.claude-plugin/marketplace.json` — this marketplace's name/source for the `marketplace add` line
+- `src/init-project/templates/docs/dev-container.md` (from fn-2….8) — dep-placement table
+- `.claude/settings.json` + `.claude-plugin/marketplace.json` — marketplace/enable shapes
 
 ## Acceptance
-- [ ] devcontainer.json installs .NET, AWS, Azure, gh (official features) + gcloud (community feature), versions pinned
-- [ ] setup.sh installs DuckDB, Atlassian CLI (`acli`, covering Jira + Confluence), Claude Code (via install.sh), Codex CLI
-- [ ] setup.sh registers this marketplace and best-effort-enables `dick`, `grill-me`, `handoff`, `tdd`, `ubiquitous-language`; optional failures are non-fatal
+- [ ] devcontainer.json: base `devcontainers/dotnet:1-9.0` + pinned node/aws-cli/azure-cli/github-cli (official) + gcloud (community `:1.0.1`)
+- [ ] setup.sh installs Angular CLI, DuckDB, `acli`, Claude Code (install.sh), Codex CLI
+- [ ] setup.sh adds the marketplace by **remote git URL** (not local ./src) + best-effort enables 7 marketplace plugins (`claude plugin`); configures 2 MCP servers (`context7`, GitHub MCP via `.mcp.json`/settings); failures isolated/non-fatal
+- [ ] devcontainer adds docker-in-docker (or -outside-of-docker) + `jq` (pinned); Angular CLI pinned by **reading** the single declared version source (owned by .12 — this task depends on .12; does NOT duplicate the version)
+- [ ] `templates/.mcp.json` declares `context7` + `github-mcp-server` (build-time-complete; coexists with `.claude/settings.json`)
 - [ ] A fresh container build / setup.sh run completes successfully (smoke-tested)
 
 ## Done summary

@@ -1,30 +1,29 @@
 ---
-satisfies: [R7]
+satisfies: [R7, R15]
 ---
 
 ## Description
-Wire the **final, opt-in `/dick` hand-off** into the `/init-project` skill: after the skeleton is scaffolded, offer to boot `/dick` (fn-1) against the fresh project, and degrade gracefully when `/dick` is not installed.
+Author the SKILL.md orchestration **tail**: the **git/GitHub final phase** and the opt-in **`/dick` hand-off**, run after the scaffold completes.
 
-**Size:** S
-**Files:** `src/init-project/SKILL.md` (orchestration tail)
-
-## Dependencies
-- Task-level: fn-2….1 (skill skeleton must exist). Cross-epic: this spec depends on fn-1 (the `/dick` epic) at the spec level — `/dick` must be a registered skill (fn-1….1) for the happy path.
+**Size:** M
+**Files:** `src/init-project/SKILL.md` (orchestration tail; depends on fn-2….1 skeleton)
 
 ## Approach
-- As the LAST step of the skill, prompt the user: boot `/dick` now? (opt-in, default no surprise actions).
-- If yes and `/dick` resolves → invoke it pointed at the scaffolded project.
-- If `/dick` is not installed/registered → print a clear, non-fatal message (how to install it later) and exit success. Never hard-fail the scaffold because the optional hand-off is unavailable.
+- **Git/GitHub phase (R15):** prompt — create a GitHub repo? (name?) / auto-commit after setup? / run `/init` after setup?; `git init` the project; optionally `gh repo create`; **activate the status line (branch + model + % context used)** — the statusline script + settings are authored in fn-2….2's `templates/.claude/`; this phase points at it without clobbering the Stop-hook settings; optionally run `/init` (opt-in; it must **not clobber** the scaffolded `CLAUDE.md`/`.claude/` without explicit confirmation — if the host can't guarantee that, print the command instead of running it); then an optional initial commit (captures the scaffold + the optional `/init` output) — the **terminal `/dick` hand-off runs AFTER** this commit (committing Dick's later doc edits is a printed follow-up command, never auto-run). All prompts default safe/no-op; declined repo or absent `gh` degrades gracefully.
+- **These are assistant-workflow steps** — the skill instructs the agent (prompt → hand off to `/init`/`/dick` where the host supports it, else print the exact command); it does NOT directly execute slash commands.
+- **/dick hand-off (R7):** the **terminal** step (after the git phase + optional commit), offer to boot `/dick` (fn-1). If accepted and `/dick` resolves → hand off to it (terminal — do NOT assume control returns); print the exact follow-up command to commit Dick's doc edits. If `/dick` is unavailable → clear non-fatal message, still report overall success. Honors fn-1's hand-off contract (optional business-context arg; graceful no-context start).
+- **Ordering (single, unambiguous):** scaffold → `git init` + status line → optional `/init` → optional **initial commit** (captures scaffold + `/init`) → **terminal `/dick` hand-off LAST**. Because `/dick` is persona-locked until "goodbye" and may not return control, the commit runs BEFORE it; committing `/dick`'s later doc edits is a **printed follow-up command**, never relied-on auto-continuation. The git-commit policy in the scaffolded `_CLAUDE.md` (R21) governs the *generated project's* future commits; this phase's own initial commit is explicitly user-opted.
 
 ## Investigation targets
 **Required:**
-- `src/init-project/SKILL.md` (from fn-2….1) — orchestration body to append to
-- `src/handoff/SKILL.md` — pattern for one skill referencing/handing to another
+- `src/init-project/SKILL.md` (fn-2….1) — orchestration body to append to
+- `src/dick/SKILL.md` — fn-1 hand-off contract (invocation form, optional context arg)
 
 ## Acceptance
-- [ ] `/init-project` offers to boot `/dick` as its final step (opt-in)
-- [ ] On accept with `/dick` present, `/dick` is invoked against the scaffolded project
-- [ ] On `/dick` absent, the skill emits a clear non-fatal message and still reports overall success
+- [ ] Git phase prompts (repo/name/auto-commit/run-`/init`), `git init`s, optional `gh repo create`, **activates** the status line (authored in fn-2….2; no clobbering the Stop hook), optional `/init`, optional initial commit — **commit runs before** the terminal `/dick` hand-off; post-`/dick` commit is a printed follow-up
+- [ ] Absent `gh` or declined repo degrades gracefully (non-fatal)
+- [ ] Final opt-in `/dick` hand-off invokes `/dick` when present; clear non-fatal message + overall success when absent
+- [ ] `/init` is run only when the host can preserve/confirm existing scaffolded files; otherwise the skill prints the exact command (never clobbers `CLAUDE.md`/`.claude/`)
 
 ## Done summary
 _(filled on completion)_

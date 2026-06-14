@@ -3,26 +3,24 @@ satisfies: [R5]
 ---
 
 ## Description
-Scaffold a separate **observability compose stack** template (Grafana + OpenTelemetry Collector) that lives OUTSIDE `.devcontainer/`, consistent with the dev-container philosophy that runtime services are not part of the dev environment. Brought up via the project's dispatcher CLI.
+Author the **observability** compose stack template (Grafana + OpenTelemetry Collector) — an **internal tooling** stack under `etc/observability/`, OUTSIDE `.devcontainer/` AND outside the `src/<component>`/`systems[]` invariant (dev tooling, not a system component nor a `services{}` external dep), brought up by `system.sh up`.
 
 **Size:** M
-**Files:** `src/init-project/templates/etc/observability/docker-compose.yml` (path TBD per generalized layout), OTel Collector config, Grafana provisioning dirs (`datasources/`, `dashboards/`)
+**Files:** `src/init-project/templates/etc/observability/docker-compose.yml` (path per generalized layout), OTel Collector config, Grafana provisioning (`datasources/`, `dashboards/`)
 
 ## Approach (from docs-scout)
-- Grafana: `grafana/grafana` image, mount `provisioning/{datasources,dashboards}` → `/etc/grafana/provisioning`.
-- OTel Collector: `otel/opentelemetry-collector-contrib`, config at `/etc/otelcol-contrib/config.yaml`, expose 4317/4318/13133.
-- Wire a dispatcher subcommand (fn-2….6) to bring the stack up/down (e.g. `./<name>.sh observability-up`).
-- Keep this OUT of `.devcontainer/` per `dev-container.md` service-container rule.
+- Grafana: `grafana/grafana` (pin), mount `provisioning/{datasources,dashboards}` → `/etc/grafana/provisioning`.
+- OTel Collector: `otel/opentelemetry-collector-contrib` (pin), config at `/etc/otelcol-contrib/config.yaml`, expose 4317/4318/13133.
+- Orchestrated by `system.sh up`/`down` (fn-2….6) **hardcoded** (it's tooling, not a `systems[]` component, so it has no `systems[]` entry); lives under `etc/observability/`, OUTSIDE `.devcontainer/`.
 
 ## Investigation targets
 **Required:**
-- `src/project-init/dev-container.md:26` — service-containers-live-outside rule (the principle this task honors)
+- `src/init-project/templates/docs/dev-container.md` (fn-2….8) — services-live-outside rule
 
 ## Acceptance
-- [ ] Compose stack template defines Grafana + OTel Collector with pinned images
-- [ ] Grafana provisioning + OTel config files included and referenced correctly
-- [ ] Stack is launchable via a dispatcher subcommand; lives outside `.devcontainer/`
-- [ ] `docker compose config` validates the template (smoke test)
+- [ ] Compose stack defines Grafana + OTel Collector with pinned images + config files
+- [ ] Launchable via `system.sh up`; lives under `etc/observability/`, outside `.devcontainer/` and outside the `systems[]` invariant (hardcoded in up/down, no `systems[]` entry)
+- [ ] `docker compose config` validates the template
 
 ## Done summary
 _(filled on completion)_

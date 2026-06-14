@@ -4,7 +4,8 @@
   "claimed_at": null,
   "created_at": "2026-06-13T10:02:47.034248Z",
   "depends_on": [
-    "fn-2-init-project-scaffolding-skill-init.1"
+    "fn-2-init-project-scaffolding-skill-init.1",
+    "fn-2-init-project-scaffolding-skill-init.12"
   ],
   "id": "fn-2-init-project-scaffolding-skill-init.4",
   "priority": null,
@@ -12,5 +13,5 @@
   "spec_path": ".flow/tasks/fn-2-init-project-scaffolding-skill-init.4.md",
   "status": "todo",
   "title": "Dev container template (devcontainer.json + setup.sh toolset + plugins)",
-  "updated_at": "2026-06-13T21:04:03.852087Z"
+  "updated_at": "2026-06-14T01:31:52.802373Z"
 }
