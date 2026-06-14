@@ -47,11 +47,35 @@ check "manifest valid json"               'jq -e . "$WORK/demo-app/.init-project
 check "manifest paths relative"           '! jq -r ".files[].path" "$WORK/demo-app/.init-project-manifest.json" | grep -qE "^/|\.\."'
 check "claude-api stays REPLACE_ME"       'jq -e ".services.\"claude-api\".api_key==\"REPLACE_ME\"" "$WORK/demo-app/config.json" >/dev/null'
 
+# config.json prepopulated with a systems[] entry for EVERY starter component
+STARTER='["Framework","DataAccess","BusinessLogic","Api","MarketingSite","WebApp","postgres","keycloak","SampleApp"]'
+check "all starter components in systems[]" 'jq -e --argjson want "$STARTER" "([.systems[].name]) as \$have | (\$want - \$have)==[]" "$WORK/demo-app/config.json" >/dev/null'
+check "keycloak public SPA client ids"     'jq -e ".systems[1] | .webapp_client_id==\"webapp\" and .marketingsite_client_id==\"marketingsite\"" "$WORK/demo-app/config.json" >/dev/null'
+check "keycloak Api confidential client"   'jq -e ".systems[1] | .api_client_id==\"api\" and (.api_client_secret|test(\"^[A-Za-z0-9_-]+\$\"))" "$WORK/demo-app/config.json" >/dev/null'
+check "keycloak realm stamped (name)"      'jq -e ".systems[1].realm==\"demo-app\"" "$WORK/demo-app/config.json" >/dev/null'
+
+# config.deploy.json: shape mirror, {{VAR-NAME}} secrets, identical key-set
+check "config.deploy.json valid json"      'jq -e . "$WORK/demo-app/config.deploy.json" >/dev/null'
+check "deploy secrets are placeholders"    'jq -e "(.systems[0].owner_password|test(\"^\\\\{\\\\{.*\\\\}\\\\}\$\")) and (.systems[1].api_client_secret|test(\"^\\\\{\\\\{.*\\\\}\\\\}\$\")) and (.services.\"claude-api\".api_key|test(\"^\\\\{\\\\{.*\\\\}\\\\}\$\"))" "$WORK/demo-app/config.deploy.json" >/dev/null'
+check "deploy has no scaffold tokens"      '! grep -qE "__SCAFFOLD_[A-Z0-9_]+__" "$WORK/demo-app/config.deploy.json"'
+# Key-set parity: recursive sorted leaf-paths must match between the two files.
+LP='[paths(scalars==scalars) | map(tostring) | join(".")] | sort'
+check "config/deploy key-set parity"       'diff <(jq -S "$LP" "$WORK/demo-app/config.json") <(jq -S "$LP" "$WORK/demo-app/config.deploy.json") >/dev/null'
+
+# config-management standard doc shipped, generalized (no H&G framing)
+check "config-management.md present"       '[[ -f "$WORK/demo-app/docs/config-management.md" ]]'
+check "config-mgmt: systems/services model" 'grep -q "systems\[\]" "$WORK/demo-app/docs/config-management.md" && grep -q "services{}" "$WORK/demo-app/docs/config-management.md"'
+check "config-mgmt: owner/migrator/api"    'grep -q "owner" "$WORK/demo-app/docs/config-management.md" && grep -q "migrator" "$WORK/demo-app/docs/config-management.md"'
+check "config-mgmt: url-safe alphabet"     'grep -qF "[A-Za-z0-9_-]+" "$WORK/demo-app/docs/config-management.md"'
+check "config-mgmt: no H&G framing"        '! grep -qiE "platform-db|platform-api|flyway|play\.sh|games\[\]|google_oauth|pgs" "$WORK/demo-app/docs/config-management.md"'
+
 # distinct + url-safe generated secrets (portable read loop — mapfile is bash 4+)
+# 5 sentinels: postgres owner/migrator/api passwords + keycloak admin password +
+# keycloak Api confidential-client secret — each independently generated.
 SECS=()
-while IFS= read -r line; do SECS+=("$line"); done < <(jq -r '.systems[0].owner_password,.systems[0].migrator_password,.systems[0].api_password,.systems[1].admin_password' "$WORK/demo-app/config.json")
-check "4 generated secrets"               '[[ ${#SECS[@]} -eq 4 ]]'
-check "secrets distinct"                  '[[ $(printf "%s\n" "${SECS[@]}" | sort -u | wc -l) -eq 4 ]]'
+while IFS= read -r line; do SECS+=("$line"); done < <(jq -r '.systems[0].owner_password,.systems[0].migrator_password,.systems[0].api_password,.systems[1].admin_password,.systems[1].api_client_secret' "$WORK/demo-app/config.json")
+check "5 generated secrets"               '[[ ${#SECS[@]} -eq 5 ]]'
+check "secrets distinct"                  '[[ $(printf "%s\n" "${SECS[@]}" | sort -u | wc -l) -eq 5 ]]'
 check "secrets url-safe"                  '! printf "%s\n" "${SECS[@]}" | grep -qE "[^A-Za-z0-9_-]"'
 
 # refuse non-empty / invalid name / dry-run

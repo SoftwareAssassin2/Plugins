@@ -2,52 +2,52 @@
   "systems": [
     {
       "name": "postgres",
-      "docker": true,
-      "host": "127.0.0.1",
+      "docker": false,
+      "host": "{{POSTGRES_HOST}}",
       "container_host": "postgres",
       "container_port": 5432,
       "port": 5432,
-      "owner_password": "__SCAFFOLD_GEN_URLSAFE__",
-      "migrator_password": "__SCAFFOLD_GEN_URLSAFE__",
-      "api_password": "__SCAFFOLD_GEN_URLSAFE__"
+      "owner_password": "{{POSTGRES_OWNER_PASSWORD}}",
+      "migrator_password": "{{POSTGRES_MIGRATOR_PASSWORD}}",
+      "api_password": "{{POSTGRES_API_PASSWORD}}"
     },
     {
       "name": "keycloak",
-      "docker": true,
-      "host": "127.0.0.1",
+      "docker": false,
+      "host": "{{KEYCLOAK_HOST}}",
       "container_host": "keycloak",
       "container_port": 8080,
       "port": 8080,
-      "realm": "__SCAFFOLD_PROJECT_NAME__",
-      "public_url": "http://127.0.0.1:8080",
+      "realm": "{{KEYCLOAK_REALM}}",
+      "public_url": "{{KEYCLOAK_PUBLIC_URL}}",
       "admin_user": "admin",
-      "admin_password": "__SCAFFOLD_GEN_URLSAFE__",
+      "admin_password": "{{KEYCLOAK_ADMIN_PASSWORD}}",
       "webapp_client_id": "webapp",
       "marketingsite_client_id": "marketingsite",
       "api_client_id": "api",
-      "api_client_secret": "__SCAFFOLD_GEN_URLSAFE__"
+      "api_client_secret": "{{KEYCLOAK_API_CLIENT_SECRET}}"
     },
     { "name": "Framework" },
     { "name": "DataAccess" },
     { "name": "BusinessLogic" },
     {
       "name": "Api",
-      "host": "127.0.0.1",
+      "host": "{{API_HOST}}",
       "port": 5080
     },
     {
       "name": "MarketingSite",
-      "realm_url": "http://127.0.0.1:8080/realms/__SCAFFOLD_PROJECT_NAME__",
+      "realm_url": "{{KEYCLOAK_PUBLIC_URL}}/realms/{{KEYCLOAK_REALM}}",
       "public_client_id": "marketingsite"
     },
     {
       "name": "WebApp",
-      "realm_url": "http://127.0.0.1:8080/realms/__SCAFFOLD_PROJECT_NAME__",
+      "realm_url": "{{KEYCLOAK_PUBLIC_URL}}/realms/{{KEYCLOAK_REALM}}",
       "public_client_id": "webapp"
     },
     { "name": "SampleApp" }
   ],
   "services": {
-    "claude-api": { "api_key": "REPLACE_ME" }
+    "claude-api": { "api_key": "{{CLAUDE_API_KEY}}" }
   }
 }
