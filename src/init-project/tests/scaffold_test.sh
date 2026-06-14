@@ -138,6 +138,9 @@ done
 # is NO per-SPA package.json pinning a divergent Angular version (one source of truth).
 check "root package.json pins @angular/core"  'jq -e ".dependencies.\"@angular/core\"" "$WORK/demo-app/package.json" >/dev/null'
 check "root package.json pins @angular/build"  'jq -e ".devDependencies.\"@angular/build\"" "$WORK/demo-app/package.json" >/dev/null'
+# R11: the Angular major + builder are PINNED EXACTLY (no ^/~ ranges) so a fresh
+# local install and CI cannot drift to a different patch/minor over time.
+check "Angular deps pinned exactly (no ^/~)" 'jq -e "[ (.dependencies + .devDependencies) | to_entries[] | select(.key|startswith(\"@angular/\")) | .value ] | all(test(\"^[0-9]\"))" "$WORK/demo-app/package.json" >/dev/null'
 check "no per-SPA package.json (single Angular source)" '! [[ -f "$WORK/demo-app/src/MarketingSite/package.json" || -f "$WORK/demo-app/src/WebApp/package.json" ]]'
 # Root Angular workspace: one angular.json defining BOTH SPA projects, static output.
 check "root angular.json defines both SPAs"   'jq -e ".projects.MarketingSite and .projects.WebApp" "$WORK/demo-app/angular.json" >/dev/null'

@@ -59,18 +59,22 @@ handling beyond using path-based routing.
 
 ## 3. Single Angular version — one source of truth
 
-There is **exactly one** Angular version for the whole repo, declared once in the
-**root `package.json`** (`@angular/*` runtime deps + `@angular/build` /
-`@angular/cli` builder deps). This single source is what the SPAs build against,
-what the dev-container Angular CLI install targets, and what CI installs (see
+There is **exactly one** Angular version for the whole repo, **pinned to exact
+versions** (no `^`/`~` ranges) in the **root `package.json`**: the Angular major +
+the `@angular/build` application-builder are the version-sensitive pieces (the
+`outputMode: static` build profile depends on them), so they are pinned exactly
+across all `@angular/*` runtime deps, `@angular/build` / `@angular/cli`, and
+`@angular/compiler-cli`. This single source is what the SPAs build against, what the
+dev-container Angular CLI install targets, and what CI installs (see
 [dev-container.md](dev-container.md) and the CI workflow under
 `.github/workflows/`). There is **no per-SPA `package.json`** pinning Angular — the
 two SPAs share the root install (one `node_modules`, one `npm install` at the repo
-root), so the version cannot drift between them or between app/CLI/CI.
+root), so the version cannot drift between them or between app/CLI/CI, and an exact
+pin keeps a fresh local install and CI byte-identical.
 
-When upgrading Angular, change the versions in the **root `package.json` only**, run
-one `npm install`, and rebuild both SPAs. Never introduce a second dependency
-manifest that pins Angular.
+When upgrading Angular, change the exact versions in the **root `package.json`
+only**, run one `npm install`, and rebuild both SPAs. Never introduce a second
+dependency manifest that pins Angular, and never loosen the Angular pins to ranges.
 
 The two SPAs are configured as two projects in a single root **`angular.json`**;
 shared compiler settings live in the root **`tsconfig.json`**, which each SPA's
