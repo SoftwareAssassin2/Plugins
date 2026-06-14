@@ -26,7 +26,8 @@ Author the SKILL.md orchestration **tail**: the **git/GitHub final phase** and t
 - [ ] `/init` is run only when the host can preserve/confirm existing scaffolded files; otherwise the skill prints the exact command (never clobbers `CLAUDE.md`/`.claude/`)
 
 ## Done summary
-_(filled on completion)_
-
+Authored the SKILL.md orchestration tail for /init-project: a scaffold-exit gate (64 validation / 65 collision surfaced, non-zero stops), a git/GitHub final phase (git init -b main, status-line confirm without clobbering the Stop hook, optional gh repo create with graceful degradation, clobber-safe optional /init, optional user-opted initial commit on main as the deliberate bootstrap exception), and a terminal opt-in /dick hand-off run LAST with non-fatal graceful behavior when /dick is absent and a printed follow-up commit for Dick's doc edits.
 ## Evidence
-_(filled on completion)_
+- Commits: 9f90f98a66435f1f8073a582ea5c7ad01877745e, 46a7f1b3b0c40e2ad4bf00b33a371a9baabf236b, 15490e8d4d21d6bcd9f1e661c89e31288c211fc6
+- Tests: src/init-project/tests/scaffold_test.sh (63 passed, 0 failed)
+- PRs:
