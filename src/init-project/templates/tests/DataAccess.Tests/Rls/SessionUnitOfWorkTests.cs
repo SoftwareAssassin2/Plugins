@@ -17,6 +17,9 @@ public class SessionUnitOfWorkTests
         public SessionContext? AppliedSession { get; private set; }
         public int DisposeCount { get; private set; }
 
+        /// <summary>When set, ApplySessionContextAsync throws this after recording the call.</summary>
+        public Exception? ApplyFailure { get; set; }
+
         public Task BeginTransactionAsync(CancellationToken cancellationToken = default)
         {
             Calls.Add("begin");
@@ -27,6 +30,11 @@ public class SessionUnitOfWorkTests
         {
             Calls.Add("apply");
             AppliedSession = session;
+            if (ApplyFailure is not null)
+            {
+                throw ApplyFailure;
+            }
+
             return Task.CompletedTask;
         }
 
@@ -77,6 +85,20 @@ public class SessionUnitOfWorkTests
         await using var uow = new SessionUnitOfWork(db);
 
         await Assert.ThrowsAsync<ArgumentNullException>(() => uow.BeginAsync(null!));
+    }
+
+    [Fact]
+    public async Task BeginAsync_ApplyContextFails_RollsBackOpenTransactionAndRethrows()
+    {
+        var boom = new InvalidOperationException("set_config failed");
+        var db = new RecordingDbSession { ApplyFailure = boom };
+        await using var uow = new SessionUnitOfWork(db);
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => uow.BeginAsync(Authenticated()));
+
+        Assert.Same(boom, thrown);
+        // Transaction was opened then rolled back — never left dangling.
+        Assert.Equal(new[] { "begin", "apply", "rollback" }, db.Calls);
     }
 
     [Fact]

@@ -34,8 +34,20 @@ public sealed class SessionUnitOfWork : ISessionUnitOfWork
         // ORDER IS THE CONTRACT: BEGIN, then SET LOCAL. A local setting only holds
         // inside an open transaction (and is pooling-safe only that way).
         await _session.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        await _session.ApplySessionContextAsync(session, cancellationToken).ConfigureAwait(false);
+
+        // Mark begun the instant the transaction is open — BEFORE applying the
+        // session context — so a failure while issuing SET LOCAL still rolls the
+        // transaction back rather than leaking it (RollbackAsync keys off _begun).
         _begun = true;
+        try
+        {
+            await _session.ApplySessionContextAsync(session, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await _session.RollbackTransactionAsync(cancellationToken).ConfigureAwait(false);
+            throw;
+        }
     }
 
     /// <inheritdoc />
