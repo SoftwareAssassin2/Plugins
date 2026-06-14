@@ -1,0 +1,55 @@
+# Keycloak service component — self-hosted identity provider with a committed realm.
+#
+# This is a SYSTEM COMPONENT (config.json systems[] entry `keycloak` + this
+# src/keycloak/ folder). Brought up/down by `./system.sh up` / `down`. See
+# docs/keycloak.md for the authoritative identity standard.
+#
+# Realm: defined ONCE in the committed src/keycloak/realm.template.json (dev-only
+# DUMMY secrets, NOT mounted). `./system.sh build-config` stamps the gitignored
+# runtime import src/keycloak/import/<realm>-realm.json (real secrets injected from
+# config.json) — the ONLY file --import-realm loads. Run build-config BEFORE `up`
+# so both src/keycloak/.env and the import file exist.
+#
+# KNOWN --import-realm CAVEAT (docs/keycloak.md §2): the import applies on a fresh
+# start; with a persisted DB it is not re-applied to an existing realm. This dev
+# stack runs Keycloak with the in-memory dev datastore (start-dev), so each `up`
+# from a clean container re-imports — to pick up realm.template.json edits, recreate
+# the container. Production uses an external DB + the deploy realm handoff.
+#
+# The image is PINNED for reproducibility. A real bring-up needs Docker (dev
+# container / CI); locally `docker compose -f src/keycloak/docker-compose.yml config`
+# validates this definition without starting anything.
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0.7
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Bootstrap admin (local dev) — sourced from the generated .env.
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # Newer Keycloak prefers the KC_BOOTSTRAP_ADMIN_* names; set both so the pin
+      # can move without breaking the bootstrap admin.
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # Dev-mode HTTP (no TLS termination locally). The public base URL the issuer
+      # and SPA OIDC config use comes from config.json -> .env.
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+    command: ["start-dev", "--import-realm"]
+    volumes:
+      # The gitignored, build-config-stamped runtime realm import. Keycloak loads
+      # every *-realm.json under this dir on a fresh start. Mounted read-only.
+      - ./import:/opt/keycloak/data/import:ro
+    ports:
+      # Bound to loopback — local dev only. In-network container port is 8080.
+      - "127.0.0.1:${KEYCLOAK_PORT}:8080"
+    healthcheck:
+      # The management/health endpoint is exposed on 9000 in recent Keycloak.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s

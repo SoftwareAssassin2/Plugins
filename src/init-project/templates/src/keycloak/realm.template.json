@@ -1,0 +1,79 @@
+{
+  "realm": "scaffold-realm-placeholder",
+  "id": "scaffold-realm-placeholder",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "_comment_secrets": "COMMITTED TEMPLATE — dev-only DUMMY secrets. NOT mounted into Keycloak. `./system.sh build-config` stamps the gitignored src/keycloak/import/<realm>-realm.json with the real realm name, client ids, and Api secret from config.json (deterministic jq field replacement keyed on clientId == webapp/marketingsite/api). NEVER commit a real secret here. See docs/keycloak.md §2.",
+  "roles": {
+    "realm": [
+      {
+        "name": "user",
+        "description": "Baseline authenticated application user."
+      },
+      {
+        "name": "admin",
+        "description": "Administrative user with elevated privileges."
+      }
+    ]
+  },
+  "defaultRoles": ["user"],
+  "clients": [
+    {
+      "clientId": "webapp",
+      "name": "WebApp",
+      "description": "Public SPA front-end (authenticated application). PKCE, no secret.",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": ["http://127.0.0.1/*", "http://localhost/*"],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://127.0.0.1/*##http://localhost/*"
+      }
+    },
+    {
+      "clientId": "marketingsite",
+      "name": "MarketingSite",
+      "description": "Public SPA marketing front-end. PKCE, no secret.",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": ["http://127.0.0.1/*", "http://localhost/*"],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://127.0.0.1/*##http://localhost/*"
+      }
+    },
+    {
+      "clientId": "api",
+      "name": "Api",
+      "description": "Confidential backend HTTP API client. Has a generated secret and its own service account (the only backend service in the starter).",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "dev-dummy-api-secret-replaced-by-build-config",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "redirectUris": ["http://127.0.0.1/*", "http://localhost/*"],
+      "webOrigins": ["+"]
+    }
+  ]
+}

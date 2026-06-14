@@ -184,8 +184,18 @@ OUT="$( cd "$ROOT" && bash "$BUILD_CONFIG" --config "$MISSING" 2>&1 )"; rc=$?
 check "missing required field -> exit 64"         '[[ $rc -eq 64 ]] && grep -q "missing config field" <<<"$OUT"'
 
 echo "== build-config: realm-stamp mechanism + clean-prior-on-rename =="
-# realm.template.json is owned by the keycloak task; with none present, stamping skips.
+# The keycloak task (.10) now ships a COMMITTED realm.template.json, so a fresh
+# scaffold has one and build-config STAMPS it (the previous "skip when absent"
+# default no longer holds for the scaffold). Assert the committed template stamps.
 OUT="$( cd "$ROOT" && bash "$BUILD_CONFIG" 2>&1 )"; rc=$?
+check "committed realm template stamped on fresh scaffold" '[[ $rc -eq 0 ]] && grep -q "stamped src/keycloak/import/" <<<"$OUT" && [[ -f "$ROOT/src/keycloak/import/demo-app-realm.json" ]]'
+
+# The skip-when-absent branch still exists in build-config — exercise it in
+# ISOLATION against a copy with no realm.template.json (so it doesn't depend on the
+# scaffold lacking one). A separate config dir with no src/keycloak/.
+NOTPL="$WORK/no-realm"; mkdir -p "$NOTPL"
+cp "$ROOT/config.json" "$NOTPL/config.json"
+OUT="$( cd "$NOTPL" && bash "$BUILD_CONFIG" 2>&1 )"; rc=$?
 check "no realm template -> stamp skipped, no failure" '[[ $rc -eq 0 ]] && grep -q "skipping realm stamp" <<<"$OUT"'
 
 # Provide a minimal template and verify deterministic stamping + stale cleanup.

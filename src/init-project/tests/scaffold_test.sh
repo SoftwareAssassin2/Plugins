@@ -179,6 +179,50 @@ check "grafana datasources valid YAML" 'python3 -c "import yaml; yaml.safe_load(
 check "grafana dashboard JSON valid" 'jq -e . "$OBS/grafana/provisioning/dashboards/otel-collector.json" >/dev/null'
 check "observability output token-free" '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$OBS"'
 
+# Postgres + Keycloak service components (fn-2 task .10): each its own src/<component>/
+# with a PINNED-image compose stack launched by `system.sh up`. postgres ships a
+# role-bootstrap init script (owner/migrator/api created BEFORE EF migrations);
+# keycloak ships a committed realm TEMPLATE (dummy secrets) that build-config stamps
+# into a gitignored runtime import. Structural assertions only here — the real
+# `docker compose config` + live bring-up + build-config realm-stamp proof are run by
+# the worker (need Docker). The build-config UNIT contract (stamp_realm_import jq
+# fields, validators) is covered by dispatcher_test.sh; here we assert the FIXTURES.
+PG="$WORK/demo-app/src/postgres"
+KC="$WORK/demo-app/src/keycloak"
+check "src/postgres/docker-compose.yml present" '[[ -f "$PG/docker-compose.yml" ]]'
+check "src/postgres role-bootstrap init script present + executable" '[[ -x "$PG/init/10-roles.sh" ]]'
+check "postgres image pinned (no :latest)" 'grep -qE "image:[[:space:]]*postgres:[0-9]" "$PG/docker-compose.yml" && ! grep -qE "postgres:latest" "$PG/docker-compose.yml"'
+check "postgres compose sets POSTGRES_DB platform" 'grep -qE "POSTGRES_DB:[[:space:]]*platform" "$PG/docker-compose.yml"'
+check "postgres compose mounts initdb.d (init runs at first volume init)" 'grep -q "/docker-entrypoint-initdb.d" "$PG/docker-compose.yml"'
+check "postgres compose env_file the generated .env" 'grep -qE "^[[:space:]]*-[[:space:]]*\.env" "$PG/docker-compose.yml"'
+check "postgres port bound to 127.0.0.1 (loopback)" 'grep -qE "127\.0\.0\.1:.*:5432" "$PG/docker-compose.yml"'
+check "postgres compose no hardcoded container_name" '! grep -qE "^[[:space:]]*container_name:" "$PG/docker-compose.yml"'
+check "postgres init bootstraps owner/migrator/api roles" 'grep -q "CREATE ROLE owner" "$PG/init/10-roles.sh" && grep -q "CREATE ROLE migrator" "$PG/init/10-roles.sh" && grep -q "CREATE ROLE api" "$PG/init/10-roles.sh"'
+check "postgres init: owner NOLOGIN, migrator/api LOGIN" 'grep -q "CREATE ROLE owner NOLOGIN" "$PG/init/10-roles.sh" && grep -q "CREATE ROLE migrator LOGIN" "$PG/init/10-roles.sh" && grep -q "CREATE ROLE api LOGIN" "$PG/init/10-roles.sh"'
+check "postgres init: migrator is member of owner (SET ROLE path)" 'grep -q "GRANT owner TO migrator" "$PG/init/10-roles.sh"'
+check "postgres init: api least-privilege (no create on public)" 'grep -q "REVOKE CREATE ON SCHEMA public FROM PUBLIC" "$PG/init/10-roles.sh"'
+check "postgres init reads role passwords from env (not config.json)" 'grep -q "POSTGRES_OWNER_PASSWORD" "$PG/init/10-roles.sh" && grep -q "POSTGRES_MIGRATOR_PASSWORD" "$PG/init/10-roles.sh" && grep -q "POSTGRES_API_PASSWORD" "$PG/init/10-roles.sh"'
+check "postgres init script syntactically valid" 'bash -n "$PG/init/10-roles.sh"'
+# keycloak service: compose + committed realm TEMPLATE.
+check "src/keycloak/docker-compose.yml present" '[[ -f "$KC/docker-compose.yml" ]]'
+check "src/keycloak/realm.template.json present + valid JSON" '[[ -f "$KC/realm.template.json" ]] && jq -e . "$KC/realm.template.json" >/dev/null'
+check "keycloak image pinned (no :latest)" 'grep -qE "image:[[:space:]]*quay.io/keycloak/keycloak:[0-9]" "$KC/docker-compose.yml" && ! grep -qE "keycloak:latest" "$KC/docker-compose.yml"'
+check "keycloak starts with --import-realm" 'grep -q -- "--import-realm" "$KC/docker-compose.yml"'
+check "keycloak mounts the import dir (runtime stamped realm)" 'grep -q "/opt/keycloak/data/import" "$KC/docker-compose.yml"'
+check "keycloak import dir exists (mount target, .gitkeep)" '[[ -f "$KC/import/.gitkeep" ]]'
+check "keycloak port bound to 127.0.0.1 (loopback)" 'grep -qE "127\.0\.0\.1:.*:8080" "$KC/docker-compose.yml"'
+check "keycloak compose no hardcoded container_name" '! grep -qE "^[[:space:]]*container_name:" "$KC/docker-compose.yml"'
+# Realm template content (R27): public SPA clients + confidential Api + service account.
+check "realm template clientIds match stamp contract (webapp/marketingsite/api)" 'jq -e "([.clients[].clientId] | sort) == [\"api\",\"marketingsite\",\"webapp\"]" "$KC/realm.template.json" >/dev/null'
+check "realm: WebApp + MarketingSite are PUBLIC SPA clients (no svc account)" 'jq -e "[.clients[] | select(.clientId==\"webapp\" or .clientId==\"marketingsite\") | (.publicClient==true and .serviceAccountsEnabled==false)] | all and (length==2)" "$KC/realm.template.json" >/dev/null'
+check "realm: Api is confidential + serviceAccountsEnabled true" 'jq -e ".clients[] | select(.clientId==\"api\") | (.publicClient==false and .serviceAccountsEnabled==true)" "$KC/realm.template.json" >/dev/null'
+check "realm: Api carries a (dummy) secret to be stamped" 'jq -e ".clients[] | select(.clientId==\"api\") | (.secret|type==\"string\" and length>0)" "$KC/realm.template.json" >/dev/null'
+check "realm template carries DEV-DUMMY Api secret (never a real/generated secret)" 'S=$(jq -r ".clients[]|select(.clientId==\"api\").secret" "$KC/realm.template.json"); [[ "$S" == *dummy* ]]'
+check "realm defines a baseline role set" 'jq -e "(.roles.realm|length)>0" "$KC/realm.template.json" >/dev/null'
+# The generated runtime import is gitignored; the committed template + dirs are NOT.
+check ".gitignore ignores generated realm import (already asserted above too)" 'grep -q "src/keycloak/import/\*-realm.json" "$WORK/demo-app/.gitignore"'
+check "service component output token-free" '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$PG" "$KC"'
+
 # Angular SPA templates (fn-2 task .12): two SPAs (MarketingSite + WebApp) each its
 # own src/<component>/ folder, a single root Angular-version source, and the
 # docs/front-end.md standard — all landing in scaffold output token-free. Light
