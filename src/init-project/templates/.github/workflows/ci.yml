@@ -131,7 +131,7 @@ jobs:
         run: bash tests/coverage.sh --require-kcov
 
   config:
-    name: config.json / config.deploy.json drift
+    name: config validation + drift
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -140,6 +140,16 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends jq
+
+      # Validate the tracked local config by actually running build-config against
+      # it: this exercises the full validator path (URL-safe alphabet, port/host/
+      # client-id shapes, raw-{{VAR}} rejection) and distributes the .env / SPA
+      # config / realm import. It needs NO secret store — config.json carries dev-only
+      # generated values, not real secrets — so it belongs in build/test CI (the
+      # secret-bearing render lives in deploy.yml). Generated .env / public config /
+      # realm import are gitignored, so this leaves the tree clean.
+      - name: Validate config.json via build-config
+        run: ./system.sh build-config --config config.json
 
       # Structural path-set parity: systems[] matched by .name, services{} by key,
       # scalar VALUES ignored (so dev secrets vs {{VAR-NAME}} placeholders never trip

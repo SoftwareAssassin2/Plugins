@@ -321,6 +321,7 @@ check "ci.yml runs the generated shell suite via tests/coverage.sh --require-kco
 check "coverage.sh runs the real shell suite + the kcov-gate" "grep -q 'system_cli_test.sh' \"$WORK/demo-app/tests/coverage.sh\" && grep -q 'kcov-gate.sh' \"$WORK/demo-app/tests/coverage.sh\" && [[ -f \"$WORK/demo-app/tests/system-cli/system_cli_test.sh\" ]]"
 check "coverage.sh kcov scopes system.sh+src/system-cli (via the suite, NOT scaffold.sh)" "grep -q 'include-pattern=/system.sh,/src/system-cli/' \"$WORK/demo-app/tests/system-cli/system_cli_test.sh\" && ! grep -qE 'include-pattern=[^ ]*scaffold' \"$WORK/demo-app/tests/system-cli/system_cli_test.sh\""
 check "ci.yml has a config-drift job (needs no secret store)" "grep -q 'config-drift.sh config.json config.deploy.json' \"$GHA/workflows/ci.yml\""
+check "ci.yml validates config.json via build-config (no secret store)" "grep -q 'build-config --config config.json' \"$GHA/workflows/ci.yml\""
 # The build/test CI must carry NO secret context: no \${{ secrets.* }} reference
 # (which is how raw {{VAR-NAME}} secrets would reach validation) anywhere in ci.yml.
 check "ci.yml uses NO secrets context (build/test needs no secret store)" "! grep -qE '[$][{][{][[:space:]]*secrets\\.' \"$GHA/workflows/ci.yml\""
@@ -334,6 +335,11 @@ check "deploy.yml guards against leftover {{VAR-NAME}}" "grep -q 'unrendered' \"
 # The drift gate actually PASSES on the freshly scaffolded config pair (proves the
 # two files share a structural path set on real output, not just in templates).
 check "config-drift gate passes on scaffolded config pair" "( cd \"$WORK/demo-app\" && bash .github/scripts/config-drift.sh config.json config.deploy.json >/dev/null )"
+# Drift gate catches an EXTRA empty container (no scalar leaves) — a node that a
+# scalar-only path set would miss.
+DTMP="$(mktemp -d)"; jq '.systems[0].extra={}' "$WORK/demo-app/config.deploy.json" > "$DTMP/d.json"
+check "config-drift catches an extra empty {} node" "! ( cd \"$WORK/demo-app\" && bash .github/scripts/config-drift.sh config.json \"$DTMP/d.json\" >/dev/null 2>&1 )"
+rm -rf "$DTMP"
 # The kcov-gate parses a kcov summary and fails below 100% line (schema-shaped test).
 GTMP="$(mktemp -d)"; mkdir -p "$GTMP/kcov-merged"
 printf '{"percent_covered":"100","covered_lines":10,"total_lines":10}' > "$GTMP/kcov-merged/coverage.json"

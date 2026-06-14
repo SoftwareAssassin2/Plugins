@@ -28,18 +28,22 @@ done
 #   - leaf-only paths are emitted (container nodes are implied by their children)
 paths_of() {
   # Re-key systems[] by .name so paths are name-addressed (order-independent), then
-  # emit the path of every SCALAR leaf, value dropped. We do NOT use paths(scalars):
-  # paths(f) filters on the truthiness of f, so a false leaf is silently dropped
-  # (a jq gotcha). Instead we enumerate every path and keep those whose node is a
-  # scalar by TYPE, which correctly covers false / null / 0 / empty-string.
+  # emit the path of every LEAF, value dropped. A leaf is a scalar OR an EMPTY
+  # container ({} / []) — an empty container has no child paths, so without this it
+  # would be invisible and an extra/missing empty node would slip past the gate.
+  # We do NOT use paths(scalars): paths(f) filters on the truthiness of f, so a
+  # false leaf is silently dropped (a jq gotcha). Instead we enumerate every path
+  # and keep those whose node is a scalar by TYPE (covers false/null/0/"") or an
+  # empty array/object.
   jq -r '
     (if (.systems | type) == "array"
        then .systems |= (map({ (.name // "?"): . }) | add)
        else . end)
     | . as $root
     | [ paths as $p
-        | ($root | getpath($p) | type) as $t
-        | select($t != "array" and $t != "object")
+        | ($root | getpath($p)) as $node
+        | ($node | type) as $t
+        | select(($t != "array" and $t != "object") or ($node | length) == 0)
         | $p | map(tostring) | join(".") ]
     | sort | .[]
   ' "$1"

@@ -35,7 +35,8 @@ cp -R "$ROOT/src/system-cli" "$WORK/src/system-cli"
 cp "$ROOT/config.json" "$WORK/config.json"
 chmod +x "$WORK/system.sh" "$WORK"/src/system-cli/*.sh
 WSYS="$WORK/system.sh"
-WBC="$WORK/src/system-cli/build-config.sh"
+WCLI="$WORK/src/system-cli"             # subcommand dir (build-config, up, down, ...)
+WBC="$WCLI/build-config.sh"
 
 # Coverage mode (opt-in): when SYSTEM_CLI_KCOV_DIR is set, each script invocation
 # runs as a DIRECT kcov child (kcov instruments only its immediate target reliably —
@@ -183,6 +184,68 @@ else
   OUT="$(runner "$WBC")"; rc=$?
   check "no realm template -> stamp skipped" '[[ $rc -eq 0 ]] && grep -q "skipping realm stamp" <<<"$OUT"'
 fi
+
+echo "== service subcommands (up/down/status) — external commands STUBBED =="
+# The compose subcommands shell out to `docker` and `dotnet`; we never want a real
+# daemon in tests/CI. Put a stub `docker`/`dotnet` first on PATH that records its
+# args and always succeeds, so the suite exercises COMMAND CONSTRUCTION + every
+# branch of these scripts (both the "ran N stacks" and "nothing present" paths)
+# without any real service. This is what gives kcov 100% LINE coverage over the
+# generated src/system-cli/*.sh subcommands.
+STUBBIN="$WORK/stubbin"; mkdir -p "$STUBBIN"
+cat > "$STUBBIN/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "STUB docker $*" >> "${STUB_LOG:-/dev/null}"
+exit 0
+STUB
+cat > "$STUBBIN/dotnet" <<'STUB'
+#!/usr/bin/env bash
+echo "STUB dotnet $*" >> "${STUB_LOG:-/dev/null}"
+exit 0
+STUB
+chmod +x "$STUBBIN/docker" "$STUBBIN/dotnet"
+export PATH="$STUBBIN:$PATH"
+export STUB_LOG="$WORK/stub.log"
+
+# Branch A: NO compose stacks present yet -> each script takes its "nothing" path.
+# Remove any compose files an earlier section (realm-stamp) may have left behind so
+# this branch genuinely has zero stacks.
+rm -f "$WORK/src/postgres/docker-compose.yml" "$WORK/src/keycloak/docker-compose.yml" \
+      "$WORK/etc/observability/docker-compose.yml"
+: > "$STUB_LOG"
+for sub in up down status; do
+  OUT="$(runner "$WCLI/$sub.sh")"; rc=$?
+  check "$sub: no stacks present -> exit 0 + notice" '[[ $rc -eq 0 ]] && grep -qE "no compose stacks present|no compose stacks" <<<"$OUT"'
+done
+
+# Branch B: compose stacks PRESENT -> each script iterates + invokes (stubbed) docker.
+mkdir -p "$WORK/src/postgres" "$WORK/src/keycloak" "$WORK/etc/observability"
+printf 'services: {}\n' > "$WORK/src/postgres/docker-compose.yml"
+printf 'services: {}\n' > "$WORK/src/keycloak/docker-compose.yml"
+printf 'services: {}\n' > "$WORK/etc/observability/docker-compose.yml"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh")"; rc=$?
+check "up: stacks present -> exit 0 + docker compose up invoked" '[[ $rc -eq 0 ]] && grep -q "up -d" "$STUB_LOG"'
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/down.sh")"; rc=$?
+check "down: stacks present -> exit 0 + docker compose down invoked" '[[ $rc -eq 0 ]] && grep -q " down" "$STUB_LOG"'
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/status.sh")"; rc=$?
+check "status: stacks present -> exit 0 + docker compose ps invoked" '[[ $rc -eq 0 ]] && grep -q " ps" "$STUB_LOG"'
+
+echo "== migrate subcommand — dotnet STUBBED, env-gated branches =="
+# migrate.sh: (1) missing src/DataAccess/.env -> exit 64; (2) .env present but no
+# MIGRATOR_CONNECTION_STRING -> exit 64; (3) full env -> runs (stubbed) dotnet.
+rm -f "$WORK/src/DataAccess/.env"
+OUT="$(runner "$WCLI/migrate.sh")"; rc=$?
+check "migrate: missing .env -> exit 64" '[[ $rc -eq 64 ]] && grep -q "run .*build-config" <<<"$OUT"'
+mkdir -p "$WORK/src/DataAccess"; printf 'OTHER=x\n' > "$WORK/src/DataAccess/.env"
+OUT="$(runner "$WCLI/migrate.sh")"; rc=$?
+check "migrate: .env without MIGRATOR_CONNECTION_STRING -> exit 64" '[[ $rc -eq 64 ]]'
+printf 'MIGRATOR_CONNECTION_STRING=Host=localhost;Username=migrator\n' > "$WORK/src/DataAccess/.env"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/migrate.sh")"; rc=$?
+check "migrate: full env -> exit 0 + dotnet ef invoked" '[[ $rc -eq 0 ]] && grep -q "ef database update" "$STUB_LOG"'
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
