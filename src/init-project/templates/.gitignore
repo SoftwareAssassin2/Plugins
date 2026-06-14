@@ -16,6 +16,7 @@ obj/
 node_modules/
 dist/
 .angular/
+out-tsc/
 coverage/
 npm-debug.log*
 

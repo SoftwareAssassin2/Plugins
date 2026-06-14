@@ -1,0 +1,45 @@
+{
+  "name": "__SCAFFOLD_PROJECT_NAME__",
+  "version": "0.0.0",
+  "description": "__SCAFFOLD_PROJECT_DESCRIPTION__",
+  "private": true,
+  "packageManager": "npm@11.12.0",
+  "scripts": {
+    "build": "npm run build:marketingsite && npm run build:webapp",
+    "build:marketingsite": "ng build MarketingSite",
+    "build:webapp": "ng build WebApp",
+    "test": "npm run test:marketingsite && npm run test:webapp",
+    "test:marketingsite": "jest --config src/MarketingSite/jest.config.js",
+    "test:webapp": "jest --config src/WebApp/jest.config.js",
+    "test:coverage": "jest --config src/MarketingSite/jest.config.js --coverage && jest --config src/WebApp/jest.config.js --coverage",
+    "lint": "ng lint MarketingSite && ng lint WebApp",
+    "format": "prettier --write \"src/**/*.{ts,html,scss}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,html,scss}\""
+  },
+  "dependencies": {
+    "@angular/common": "^21.2.0",
+    "@angular/compiler": "^21.2.0",
+    "@angular/core": "^21.2.0",
+    "@angular/forms": "^21.2.0",
+    "@angular/platform-browser": "^21.2.0",
+    "@angular/platform-browser-dynamic": "^21.2.0",
+    "@angular/router": "^21.2.0",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^21.2.3",
+    "@angular/cli": "^21.2.3",
+    "@angular/compiler-cli": "^21.2.0",
+    "@eslint/js": "^9.0.0",
+    "@types/jest": "^30.0.0",
+    "angular-eslint": "^21.2.0",
+    "eslint": "^9.0.0",
+    "jest": "^30.0.0",
+    "jest-environment-jsdom": "^30.0.0",
+    "jest-preset-angular": "^16.2.0",
+    "prettier": "^3.8.1",
+    "typescript": "~5.9.2",
+    "typescript-eslint": "^8.0.0"
+  }
+}

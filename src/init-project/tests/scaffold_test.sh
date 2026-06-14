@@ -115,6 +115,33 @@ check ".config/dotnet-tools.json pins dotnet-ef" 'jq -e ".tools.\"dotnet-ef\".ve
 check "SampleApp marked removable"          'grep -qi "REMOVABLE" "$WORK/demo-app/src/SampleApp/SampleApp.csproj"'
 check ".NET output token-free"              '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$WORK/demo-app/src" "$WORK/demo-app/tests" "$WORK/demo-app/.config"'
 
+# Angular SPA templates (fn-2 task .12): two SPAs (MarketingSite + WebApp) each its
+# own src/<component>/ folder, a single root Angular-version source, and the
+# docs/front-end.md standard — all landing in scaffold output token-free. Light
+# STRUCTURAL assertions only (the real `npm install` + `ng build` static + `jest`
+# 100% smoke is run by the worker against a freshly scaffolded copy — it needs Node;
+# don't over-fit to file contents here).
+for SPA in MarketingSite WebApp; do
+  check "SPA src/$SPA app component present" "[[ -f \"\$WORK/demo-app/src/$SPA/src/app/app.ts\" ]]"
+  check "SPA src/$SPA jest.config.js present" "[[ -f \"\$WORK/demo-app/src/$SPA/jest.config.js\" ]]"
+  check "SPA src/$SPA jest coverage gate 100" "grep -q 'branches: 100' \"\$WORK/demo-app/src/$SPA/jest.config.js\""
+done
+# Single Angular-version source: the ROOT package.json holds @angular/* — and there
+# is NO per-SPA package.json pinning a divergent Angular version (one source of truth).
+check "root package.json pins @angular/core"  'jq -e ".dependencies.\"@angular/core\"" "$WORK/demo-app/package.json" >/dev/null'
+check "root package.json pins @angular/build"  'jq -e ".devDependencies.\"@angular/build\"" "$WORK/demo-app/package.json" >/dev/null'
+check "no per-SPA package.json (single Angular source)" '! [[ -f "$WORK/demo-app/src/MarketingSite/package.json" || -f "$WORK/demo-app/src/WebApp/package.json" ]]'
+# Root Angular workspace: one angular.json defining BOTH SPA projects, static output.
+check "root angular.json defines both SPAs"   'jq -e ".projects.MarketingSite and .projects.WebApp" "$WORK/demo-app/angular.json" >/dev/null'
+check "both SPAs build outputMode static"     'jq -e "(.projects.MarketingSite.architect.build.options.outputMode==\"static\") and (.projects.WebApp.architect.build.options.outputMode==\"static\")" "$WORK/demo-app/angular.json" >/dev/null'
+# front-end.md standard shipped + linked from _CLAUDE.md Standards index (the link is
+# authored by task .2/.8; this asserts the doc itself lands here in .12).
+check "docs/front-end.md present"             '[[ -f "$WORK/demo-app/docs/front-end.md" ]]'
+check "front-end.md: static/S3 + no-SSR"      'grep -qi "outputMode" "$WORK/demo-app/docs/front-end.md" && grep -qi "S3" "$WORK/demo-app/docs/front-end.md"'
+check "front-end.md: S3 error-document fallback + CloudFront caveat" 'grep -qi "error document" "$WORK/demo-app/docs/front-end.md" && grep -qi "cloudfront" "$WORK/demo-app/docs/front-end.md"'
+check "front-end.md: single Angular version rule" 'grep -qiE "single (angular version|source)|one source of truth|root .package.json." "$WORK/demo-app/docs/front-end.md"'
+check "SPA output token-free"                 '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$WORK/demo-app/src/MarketingSite" "$WORK/demo-app/src/WebApp" "$WORK/demo-app/angular.json" "$WORK/demo-app/package.json"'
+
 # distinct + url-safe generated secrets (portable read loop — mapfile is bash 4+)
 # 5 sentinels: postgres owner/migrator/api passwords + keycloak admin password +
 # keycloak Api confidential-client secret — each independently generated.

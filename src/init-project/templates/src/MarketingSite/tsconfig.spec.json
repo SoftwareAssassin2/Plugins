@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../out-tsc/spec-MarketingSite",
+    "module": "commonjs",
+    "types": ["jest", "node"]
+  },
+  "include": ["src/**/*.d.ts", "src/**/*.spec.ts"]
+}
