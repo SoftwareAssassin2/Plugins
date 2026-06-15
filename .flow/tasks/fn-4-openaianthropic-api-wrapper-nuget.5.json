@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-15T07:47:39.603612Z",
+  "depends_on": [
+    "fn-4-openaianthropic-api-wrapper-nuget.4"
+  ],
+  "id": "fn-4-openaianthropic-api-wrapper-nuget.5",
+  "priority": null,
+  "spec": "fn-4-openaianthropic-api-wrapper-nuget",
+  "spec_path": ".flow/tasks/fn-4-openaianthropic-api-wrapper-nuget.5.md",
+  "status": "todo",
+  "title": "Plugin-repo NuGet publish CI (path-scoped, tag-prefixed, OIDC) + repo README",
+  "updated_at": "2026-06-15T08:24:22.710821Z"
+}
