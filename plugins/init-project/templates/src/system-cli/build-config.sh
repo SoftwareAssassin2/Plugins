@@ -343,18 +343,29 @@ stamp_litellm_config() {
   # --- template structural validation (pre-stamp) ---------------------------
   grep -q '@@LLM_MODEL@@' "$template" \
     || die "litellm template missing @@LLM_MODEL@@ token: $template" 65
-  local open_cnt close_cnt
+  local open_cnt close_cnt open_ln close_ln
   open_cnt="$(grep -c '^[[:space:]]*# >>> embeddings[[:space:]]*$' "$template")"
   close_cnt="$(grep -c '^[[:space:]]*# <<< embeddings[[:space:]]*$' "$template")"
   [[ "$open_cnt" -eq 1 && "$close_cnt" -eq 1 ]] \
     || die "litellm template embeddings markers must appear exactly once each (open=$open_cnt close=$close_cnt): $template" 65
+  # Open must precede close (a reversed/overlapping pair is structurally invalid).
+  open_ln="$(grep -n '^[[:space:]]*# >>> embeddings[[:space:]]*$' "$template" | head -1 | cut -d: -f1)"
+  close_ln="$(grep -n '^[[:space:]]*# <<< embeddings[[:space:]]*$' "$template" | head -1 | cut -d: -f1)"
+  [[ "$open_ln" -lt "$close_ln" ]] \
+    || die "litellm template embeddings open marker must precede the close marker (open=$open_ln close=$close_ln): $template" 65
 
   local tmp; tmp="$(mktemp)"
 
   if [[ -n "$embed" ]]; then
-    # Embeddings KEPT: the block must carry the @@LLM_EMBED_MODEL@@ token.
-    grep -q '@@LLM_EMBED_MODEL@@' "$template" \
-      || { rm -f "$tmp"; die "litellm template missing @@LLM_EMBED_MODEL@@ within the embeddings block: $template" 65; }
+    # Embeddings KEPT: the @@LLM_EMBED_MODEL@@ token must live INSIDE the sentinel
+    # block (a token outside the markers would leave the kept block tokenless and
+    # generate a bad local-embed entry). Extract the block BODY (between the markers,
+    # markers excluded) and require the token there.
+    awk '
+      /^[[:space:]]*# >>> embeddings[[:space:]]*$/ { inblk=1; next }
+      /^[[:space:]]*# <<< embeddings[[:space:]]*$/ { inblk=0; next }
+      inblk { print }' "$template" | grep -q '@@LLM_EMBED_MODEL@@' \
+      || { rm -f "$tmp"; die "litellm template missing @@LLM_EMBED_MODEL@@ inside the embeddings block: $template" 65; }
     # Strip ONLY the two marker comment lines; keep the block body.
     if ! grep -vE '^[[:space:]]*# (>>>|<<<) embeddings[[:space:]]*$' "$template" \
          | LLM_MODEL="$model" LLM_EMBED_MODEL="$embed" awk '
@@ -375,7 +386,9 @@ stamp_litellm_config() {
   fi
 
   # --- post-stamp scan (definitive): no replacement token may remain ---------
-  if grep -q '@@[A-Za-z_]*@@' "$tmp"; then
+  # Match ANY @@...@@ token (the spec requires rejecting every remaining token, not
+  # just [A-Za-z_] names — e.g. @@LLM2@@ / @@LLM-OTHER@@ must also be caught).
+  if grep -qE '@@[^@]+@@' "$tmp"; then
     rm -f "$tmp"; die "generated litellm config still contains an unreplaced @@...@@ token (template malformed): $template" 65
   fi
 

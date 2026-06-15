@@ -332,15 +332,28 @@ if [[ -n "$LLTPL_SRC" ]]; then
   OUT="$(runner "$WBC" --config "$LLC")"; rc=$?
   check "template duplicated markers -> err"  '[[ $rc -ne 0 ]] && grep -q "exactly once" <<<"$OUT"'
 
+  # Reject: markers present but in the WRONG order (close before open).
+  printf 'model: ollama_chat/@@LLM_MODEL@@\n# <<< embeddings\nx: @@LLM_EMBED_MODEL@@\n# >>> embeddings\n' > "$LLDIR/config.yaml.template"
+  OUT="$(runner "$WBC" --config "$LLE")"; rc=$?
+  check "template reversed markers -> err"    '[[ $rc -ne 0 ]] && grep -q "must precede" <<<"$OUT"'
+
   # Reject: embed kept but @@LLM_EMBED_MODEL@@ token absent from the block.
   printf 'model: ollama_chat/@@LLM_MODEL@@\n# >>> embeddings\n  - model_name: local-embed\n# <<< embeddings\n' > "$LLDIR/config.yaml.template"
   OUT="$(runner "$WBC" --config "$LLE")"; rc=$?
   check "embed kept w/o embed token -> err"   '[[ $rc -ne 0 ]] && grep -q "@@LLM_EMBED_MODEL@@" <<<"$OUT"'
 
-  # Reject: post-stamp scan catches a stray @@token@@ the substitution missed.
-  printf 'model: ollama_chat/@@LLM_MODEL@@\nstray: @@LLM_OTHER@@\n# >>> embeddings\nx: @@LLM_EMBED_MODEL@@\n# <<< embeddings\n' > "$LLDIR/config.yaml.template"
+  # Reject: embed token present but OUTSIDE the sentinel block (the block itself is
+  # tokenless). The within-block check must catch this even though the token exists
+  # somewhere in the template.
+  printf 'model: ollama_chat/@@LLM_MODEL@@\nstray: @@LLM_EMBED_MODEL@@\n# >>> embeddings\n  - model_name: local-embed\n# <<< embeddings\n' > "$LLDIR/config.yaml.template"
+  OUT="$(runner "$WBC" --config "$LLE")"; rc=$?
+  check "embed token outside block -> err"    '[[ $rc -ne 0 ]] && grep -q "inside the embeddings block" <<<"$OUT"'
+
+  # Reject: post-stamp scan catches a stray @@token@@ with a DIGIT/DASH name (the
+  # narrow [A-Za-z_] pattern would have missed @@LLM2@@; the scan must reject any token).
+  printf 'model: ollama_chat/@@LLM_MODEL@@\nstray: @@LLM2@@\n# >>> embeddings\nx: @@LLM_EMBED_MODEL@@\n# <<< embeddings\n' > "$LLDIR/config.yaml.template"
   OUT="$(runner "$WBC" --config "$LLC")"; rc=$?
-  check "post-stamp stray token -> err"       '[[ $rc -ne 0 ]] && grep -q "unreplaced" <<<"$OUT"'
+  check "post-stamp stray digit token -> err" '[[ $rc -ne 0 ]] && grep -q "unreplaced" <<<"$OUT"'
 
   # Restore the real template for any later sections.
   cp "$LLTPL_SRC" "$LLDIR/config.yaml.template"
