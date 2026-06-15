@@ -27,10 +27,17 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"          # repo root
-SUITE="$SCRIPT_DIR/system-cli/system_cli_test.sh"
 GATE="$ROOT/.github/scripts/kcov-gate.sh"
 
-[[ -f "$SUITE" ]] || { echo "ERROR: shell suite not found: $SUITE" >&2; exit 1; }
+# Every shell suite under tests/system-cli/ (system_cli_test.sh, local_llm_test.sh,
+# …). They share ONE kcov collect dir so the merged summary spans all of them — a
+# single 100%-line gate over all new/changed shell. local_llm_test.sh self-skips
+# (exit 0) when the local-llm stack is not installed, so a non-opt-in project's CI
+# stays green; it still contributes nothing to the merge in that case.
+SUITES=()
+while IFS= read -r s; do SUITES+=("$s"); done \
+  < <(find "$SCRIPT_DIR/system-cli" -maxdepth 1 -name '*_test.sh' -type f | sort)
+[[ ${#SUITES[@]} -gt 0 ]] || { echo "ERROR: no shell suites found under $SCRIPT_DIR/system-cli" >&2; exit 1; }
 
 require_kcov=0
 [[ "${1:-}" == "--require-kcov" ]] && require_kcov=1
@@ -40,16 +47,19 @@ if ! command -v kcov >/dev/null 2>&1; then
     echo "ERROR: --require-kcov set but kcov is not installed" >&2
     exit 1
   fi
-  echo "NOTICE: kcov not installed — running the shell suite WITHOUT coverage." >&2
+  echo "NOTICE: kcov not installed — running the shell suites WITHOUT coverage." >&2
   echo "NOTICE: install kcov (apt-get install kcov / brew install kcov) for the line-coverage gate." >&2
-  bash "$SUITE"
-  exit $?
+  for suite in "${SUITES[@]}"; do bash "$suite" || exit $?; done
+  exit 0
 fi
 
-# kcov present — run the suite in coverage mode, collecting one dir per invocation.
+# kcov present — run every suite in coverage mode into ONE shared collect dir.
 KDIR="$(mktemp -d)"; trap 'rm -rf "$KDIR"' EXIT
-echo "== running shell suite under kcov (collect dir: $KDIR) =="
-SYSTEM_CLI_KCOV_DIR="$KDIR" bash "$SUITE"   # suite asserts correctness + per-branch
+echo "== running shell suites under kcov (collect dir: $KDIR) =="
+for suite in "${SUITES[@]}"; do
+  echo "-- $suite"
+  SYSTEM_CLI_KCOV_DIR="$KDIR" bash "$suite"   # each asserts correctness + per-branch
+done
 
 # Merge every per-call collect dir into one summary.
 runs=("$KDIR"/run-*)

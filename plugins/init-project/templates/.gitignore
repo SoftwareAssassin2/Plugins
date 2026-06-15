@@ -41,6 +41,12 @@ src/*/public/config.json
 # src/keycloak/realm.template.json.
 src/keycloak/import/*-realm.json
 
+# Generated LiteLLM runtime config for the local LLM mock stack (opt-in). Stamped
+# from etc/local-llm/litellm/config.yaml.template by build-config when
+# localLlm.model is present. The committed sources are config.yaml.template (real)
+# and config.mock.yaml (static mock); only the generated config.yaml is ignored.
+etc/local-llm/litellm/config.yaml
+
 # Local Claude Code settings (machine-specific overrides).
 .claude/settings.local.json
 

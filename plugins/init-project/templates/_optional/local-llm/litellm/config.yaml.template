@@ -1,0 +1,43 @@
+# LiteLLM proxy config TEMPLATE for REAL local inference (--profile ai).
+#
+# This is the COMMITTED source template. `./system.sh build-config` stamps the
+# gitignored runtime litellm/config.yaml from it by:
+#   - replacing @@LLM_MODEL@@ with the raw, validated config.json -> localLlm.model
+#   - the embeddings block between the `# >>> embeddings` / `# <<< embeddings`
+#     sentinel markers: when localLlm.embeddingModel is set, KEEP the block, strip
+#     the marker lines, and substitute @@LLM_EMBED_MODEL@@; when ABSENT, DELETE the
+#     ENTIRE marked block (no orphan entry, no leftover token, valid YAML either way).
+# (The stamping wiring lands in fn-3….2; this task only authors the template shape.)
+#
+# Routing: LiteLLM only serves models named in model_list, so a base-URL repoint
+# alone is NOT enough. A WILDCARD chat route (model_name: "*") makes unmodified app
+# code sending ANY chat model name (gpt-4o, claude-sonnet-4-6, …) transparently hit
+# the local model on BOTH the OpenAI /v1/chat/completions AND the unified Anthropic
+# /v1/messages surfaces. An explicit `local` alias to the same model is also kept.
+# The backend is the NATIVE ollama_chat provider (NOT openai/ + Ollama's /v1, whose
+# OpenAI-compat surface is officially experimental/unreliable for tool calls).
+
+model_list:
+  # Wildcard: any chat model name the app sends is served by the local model.
+  - model_name: "*"
+    litellm_params:
+      model: ollama_chat/@@LLM_MODEL@@
+      api_base: http://ollama:11434
+
+  # Explicit alias — callers can target `local` directly.
+  - model_name: local
+    litellm_params:
+      model: ollama_chat/@@LLM_MODEL@@
+      api_base: http://ollama:11434
+
+  # >>> embeddings
+  # Embeddings (R12, opt-in) — OpenAI /v1/embeddings ONLY (Anthropic has no
+  # embeddings endpoint). An EXPLICIT `local-embed` alias (a wildcard is unreliable
+  # across the embeddings endpoint). build-config emits OPENAI_EMBEDDING_MODEL=
+  # local-embed so embedding callers know the name. This whole block (markers
+  # included) is removed when no embedding model is opted in.
+  - model_name: local-embed
+    litellm_params:
+      model: ollama/@@LLM_EMBED_MODEL@@
+      api_base: http://ollama:11434
+  # <<< embeddings

@@ -1,0 +1,152 @@
+# Local LLM mock stack — an OPT-IN, local-dev-only LLM gateway (LiteLLM + Ollama).
+#
+# This is internal dev tooling living under etc/local-llm/ (mirrors the
+# observability stack: compose-managed, outside .devcontainer/, orchestrated by
+# `./system.sh up`). It is EXPLICITLY NOT a config.json systems[] component and NOT
+# itself a services{} external dependency — it BACKS the always-present
+# claude-api/openai-api services{} entries in local dev. Nothing deploys it.
+# See docs/local-llm.md.
+#
+# Authored under templates/_optional/local-llm/ in the plugin so it stays OUT of a
+# default scaffold; the scaffold engine copies _optional/local-llm/ -> the project's
+# etc/local-llm/ ONLY on --local-llm opt-in.
+#
+# TWO operating modes, selected by compose PROFILE (no app-code edits — the app's
+# base URL is identical across both; only the active profile differs):
+#   --profile ai-mock : LiteLLM ONLY, mounting config.mock.yaml (mock_response).
+#                       Ollama is NOT started. Fast/free/deterministic — the CI path.
+#   --profile ai      : LiteLLM + Ollama + a one-shot model-pull init, mounting the
+#                       gitignored, build-config-stamped litellm/config.yaml. For
+#                       manual dev/demos with REAL local inference.
+#
+# The default `./system.sh up` activates NEITHER profile, so this stack starts
+# nothing unless explicitly opted into.
+#
+# Model selection: the chosen model lives at config.json -> localLlm.model (the
+# single source of truth). `system.sh up`/`down` export LLM_MODEL (and the optional
+# LLM_EMBED_MODEL) from config.json; compose interpolates ${LLM_MODEL:-} below. There
+# is NO generated .env / no env_file: directive (avoids the env_file:{required:false}
+# compose-version dependency and keeps `down` working with no generated artifacts).
+#
+# A real bring-up needs Docker (dev container / CI); locally
+# `docker compose -f etc/local-llm/docker-compose.yml --profile ai-mock config`
+# validates this definition without starting anything.
+
+services:
+  # The inference engine. Pinned to a specific VERSION TAG (not latest — R14): a
+  # readable tag eases bumping, and the engine is less regression-prone than
+  # LiteLLM's translation layer (which is digest-pinned, R11). CPU-only by default
+  # (R15 — laptop/CI portability; the GPU override is documented in docs/local-llm.md,
+  # never enabled here). Internal-only: NO host port (only LiteLLM talks to it).
+  ollama:
+    image: ollama/ollama:0.30.8
+    restart: unless-stopped
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - local-llm
+    healthcheck:
+      # The official image ships the `ollama` CLI but NOT curl — health is probed
+      # with `ollama list` (a server round-trip), never an HTTP curl. Generous
+      # start_period: the server takes a moment to come up on a cold start.
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    profiles: ["ai"]
+
+  # One-shot model puller. SAME ollama/ollama image (so the `ollama` CLI is present),
+  # but with an ENTRYPOINT OVERRIDE: the image's default entrypoint is `ollama`, so a
+  # bare `command: _pull-model.sh` would run `ollama _pull-model.sh`. We override the
+  # entrypoint to run the script via /bin/sh. It reads LLM_MODEL (+ optional
+  # LLM_EMBED_MODEL) from its env (interpolated from the host below), runs
+  # `ollama pull`, and exits. restart:"no" — it must run once and stop. A failed pull
+  # (offline / unknown model) makes it exit non-zero (R13).
+  model-pull:
+    image: ollama/ollama:0.30.8
+    restart: "no"
+    entrypoint: ["/bin/sh", "/scripts/_pull-model.sh"]
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - LLM_MODEL=${LLM_MODEL:-}
+      - LLM_EMBED_MODEL=${LLM_EMBED_MODEL:-}
+    volumes:
+      # The committed init script, mounted read-only.
+      - ./_pull-model.sh:/scripts/_pull-model.sh:ro
+    networks:
+      - local-llm
+    depends_on:
+      ollama:
+        condition: service_healthy
+    profiles: ["ai"]
+
+  # The REAL gateway. Pinned by IMMUTABLE DIGEST (R11 — registry tags can be
+  # re-pushed, and LiteLLM's /v1/messages streaming-translation has version-specific
+  # regressions). The readable tag alongside the digest is documentation only; the
+  # digest is what is pulled. Routes to Ollama via the native ollama_chat provider.
+  # OLLAMA_API_BASE is set on the CONTAINER ENV (not just per-model api_base) because
+  # LiteLLM hits OLLAMA_API_BASE/api/show for capability detection regardless of the
+  # per-model api_base (known bug) — without it, function-calling silently degrades.
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.77.3-stable@sha256:13627afb7b0dd049ce7a7d724c05264fa0acbca1b8e32e85c6241b22c46921be
+    restart: unless-stopped
+    environment:
+      - OLLAMA_API_BASE=http://ollama:11434
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    volumes:
+      # BIND-MOUNT the gitignored, build-config-stamped runtime config (NOT a
+      # top-level configs: file:, which is parse-time-validated and would make `down`
+      # fail when the generated file is absent). create_host_path:false makes a
+      # MISSING generated config error CLEARLY rather than silently creating a dir.
+      - type: bind
+        source: ./litellm/config.yaml
+        target: /app/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      # Loopback ONLY — a dev-only UNAUTHENTICATED gateway must never bind all
+      # interfaces; this matches the 127.0.0.1 SDK base URLs the app uses.
+      - "127.0.0.1:4000:4000"
+    networks:
+      - local-llm
+    depends_on:
+      # Wait for the model pull to COMPLETE successfully — so early smoke requests
+      # never hit a missing model, and a failed pull fails `up --profile ai` loudly.
+      model-pull:
+        condition: service_completed_successfully
+    profiles: ["ai"]
+
+  # The MOCK gateway — LiteLLM ONLY, mounting the committed static config.mock.yaml
+  # whose wildcard route carries a canned mock_response. Tagged ai-mock so it runs
+  # WITHOUT Ollama (no backend needed). Same loopback :4000 publish as the real
+  # instance — so selecting BOTH ai and ai-mock at once is a port conflict (up.sh
+  # rejects that combination; see fn-3….3). config.mock.yaml is committed (static),
+  # so this needs no build-config stamping and works straight from a clone.
+  litellm-mock:
+    image: ghcr.io/berriai/litellm:v1.77.3-stable@sha256:13627afb7b0dd049ce7a7d724c05264fa0acbca1b8e32e85c6241b22c46921be
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    volumes:
+      - type: bind
+        source: ./litellm/config.mock.yaml
+        target: /app/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      - "127.0.0.1:4000:4000"
+    networks:
+      - local-llm
+    profiles: ["ai-mock"]
+
+volumes:
+  ollama-models:
+
+networks:
+  # All services share one network so LiteLLM resolves `ollama` by service name.
+  # A profiled service is NOT auto-started by another's depends_on unless its profile
+  # is active, but it still needs the shared network for DNS-by-name to work.
+  local-llm:
+    name: local-llm
