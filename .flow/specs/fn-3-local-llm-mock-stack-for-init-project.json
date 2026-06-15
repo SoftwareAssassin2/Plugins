@@ -14,7 +14,7 @@
   "plan_review_status": "unknown",
   "plan_reviewed_at": null,
   "spec_path": ".flow/specs/fn-3-local-llm-mock-stack-for-init-project.md",
-  "status": "open",
+  "status": "done",
   "title": "Local LLM mock stack for /init-project (LiteLLM + Ollama)",
   "tracker": {
     "baseHashFlow": null,
@@ -26,5 +26,5 @@
     "mergeBaseTracker": null,
     "url": null
   },
-  "updated_at": "2026-06-15T11:51:55.537572Z"
+  "updated_at": "2026-06-15T13:37:41.950678Z"
 }
