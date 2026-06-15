@@ -21,7 +21,7 @@ You can develop without the dev container, but you'll need to install the toolch
 `config.json` is the single source of truth for local development:
 
 - `systems[]` — one entry per component under `src/`, including the `postgres` database and `keycloak` identity provider.
-- `services{}` — external dependencies the system connects to (their credentials start as `REPLACE_ME` — fill them in locally). Two are always present: `claude-api` (Anthropic-compatible) and `openai-api` (OpenAI-compatible). The opt-in local LLM mock stack (see below) backs these in local dev.
+- `services{}` — external dependencies the system connects to (their credentials start as `REPLACE_ME` — fill them in locally). Two are always present: `claude-api` (Anthropic-compatible) and `openai-api` (OpenAI-compatible). When scaffolded with `--local-llm`, the opt-in local LLM mock stack (see below) backs these in local dev.
 
 Generated local-dev secrets (Postgres role passwords, Keycloak admin) are created at scaffold time and committed for single-operator local dev — they are **not** production secrets. Real secrets enter only via `config.deploy.json` (`{{VAR-NAME}}` placeholders the CI/CD pipeline renders at deploy). See [`docs/config-management.md`](docs/config-management.md).
 

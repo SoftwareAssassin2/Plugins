@@ -178,8 +178,11 @@ The unified `/v1/messages` surface translates Anthropic ↔ OpenAI. That
 OpenAI↔Anthropic SSE re-assembly has **documented, version-specific regressions**
 (dropped streaming tool_use args, null `stop_reason`, dropped first text delta).
 **Real-mode Anthropic-surface tool-use/streaming fidelity is therefore NOT
-guaranteed.** For tool-use test assertions, prefer the deterministic mock; treat
-structured tool-use translation fidelity as a manual real-inference check.
+guaranteed.** The deterministic mock is the right tool only for canned-response /
+request-*tolerated* assertions (it short-circuits the backend, so it cannot emit
+structured `tool_calls` / `tool_use` — see §3). **Structured tool-use and
+streaming-translation fidelity must be checked in real mode (`--profile ai`) or a
+dedicated integration fixture, never via the mock.**
 
 Because of these version-specific regressions, the images are pinned and the
 **LiteLLM image is pinned by immutable digest** (a bare semver tag is
