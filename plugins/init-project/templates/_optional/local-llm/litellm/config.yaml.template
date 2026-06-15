@@ -2,12 +2,15 @@
 #
 # This is the COMMITTED source template. `./system.sh build-config` stamps the
 # gitignored runtime litellm/config.yaml from it by:
-#   - replacing @@LLM_MODEL@@ with the raw, validated config.json -> localLlm.model
-#   - the embeddings block between the `# >>> embeddings` / `# <<< embeddings`
-#     sentinel markers: when localLlm.embeddingModel is set, KEEP the block, strip
-#     the marker lines, and substitute @@LLM_EMBED_MODEL@@; when ABSENT, DELETE the
-#     ENTIRE marked block (no orphan entry, no leftover token, valid YAML either way).
-# (The stamping wiring lands in fn-3….2; this task only authors the template shape.)
+#   - replacing the chat-model placeholder on the `ollama_chat/` lines below with
+#     the raw, validated config.json localLlm.model
+#   - the embeddings block between the two embeddings sentinel comment markers
+#     (open/close, on the model_list entry below): when localLlm.embeddingModel is
+#     set, KEEP the block, strip the marker lines, and substitute the embed-model
+#     placeholder; when ABSENT, DELETE the ENTIRE marked block (no orphan entry, no
+#     leftover token; valid YAML either way).
+# The post-stamp scan rejects any remaining placeholder token, so these doc lines
+# must NOT carry the literal placeholders — only the model_list entries below do.
 #
 # Routing: LiteLLM only serves models named in model_list, so a base-URL repoint
 # alone is NOT enough. A WILDCARD chat route (model_name: "*") makes unmodified app

@@ -123,12 +123,46 @@ check "v_port rejects 0"                  '( v_port 0 l ) 2>/dev/null; [[ $? -eq
 check "v_port rejects 70000"             '( v_port 70000 l ) 2>/dev/null; [[ $? -eq 64 ]]'
 check "v_port accepts valid"             '( v_port 5432 l ); [[ $? -eq 0 ]]'
 
+# --- v_base_url (service base-URL grammar + separate port range-check, R6) ---
+check "v_base_url accepts loopback+port"  '( v_base_url "http://127.0.0.1:4000" l ); [[ $? -eq 0 ]]'
+check "v_base_url accepts https+path"     '( v_base_url "https://api.openai.com/v1" l ); [[ $? -eq 0 ]]'
+check "v_base_url accepts no-port host"   '( v_base_url "https://api.anthropic.com" l ); [[ $? -eq 0 ]]'
+check "v_base_url rejects wrong scheme"   '( v_base_url "ftp://host" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_base_url rejects bad host char"  '( v_base_url "http://h@st/x" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_base_url rejects space in host"  '( v_base_url "http://ho st" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_base_url rejects non-num port"   '( v_base_url "http://host:abc" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_base_url rejects port 99999"     '( v_base_url "http://host:99999" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_base_url accepts port boundary"  '( v_base_url "http://host:65535" l ); [[ $? -eq 0 ]]'
+
+# --- v_modelname (Ollama model-name grammar, R6/R12) ------------------------
+check "v_modelname accepts simple"        '( v_modelname "llama3.2" l ); [[ $? -eq 0 ]]'
+check "v_modelname accepts namespaced+tag" '( v_modelname "huihui_ai/llama3.2-abliterate:q4" l ); [[ $? -eq 0 ]]'
+check "v_modelname accepts colon tag"     '( v_modelname "llama3.2:3b" l ); [[ $? -eq 0 ]]'
+check "v_modelname rejects shell metachar" '( v_modelname "bad; rm -rf /" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_modelname rejects space"         '( v_modelname "a b" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+
+# --- v_env_value (transport-safety for the docker-compose env_file consumer) -
+check "v_env_value accepts space/#/quotes" '( v_env_value "a b#c\"d'"'"'e" l ); [[ $? -eq 0 ]]'
+check "v_env_value rejects LF"            '( v_env_value "$(printf "a\nb")" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_env_value rejects CR"            '( v_env_value "$(printf "a\rb")" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_env_value rejects TAB (control)" '( v_env_value "$(printf "a\tb")" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_env_value rejects \$ (interpolation)" '( v_env_value "a\$b" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+
 echo "== build-config: distribution =="
 OUT="$(runner "$WBC")"; rc=$?
 check "build-config succeeds"            '[[ $rc -eq 0 ]]'
 check "writes src/postgres/.env"         '[[ -f "$WORK/src/postgres/.env" ]]'
 check "DataAccess migrator conn string"  'grep -q "MIGRATOR_CONNECTION_STRING=.*Username=migrator" "$WORK/src/DataAccess/.env"'
 check "Api api-role conn + keycloak"     'grep -q "API_CONNECTION_STRING=.*Username=api" "$WORK/src/Api/.env" && grep -q "KEYCLOAK_API_CLIENT_SECRET=" "$WORK/src/Api/.env"'
+# LLM endpoint vars (R6): all four emitted into Api/.env with SDK-standard names +
+# the non-opt-in real-provider defaults, RAW (no wrapping quotes — compose env_file).
+check "Api ANTHROPIC_BASE_URL default"   'grep -qx "ANTHROPIC_BASE_URL=https://api.anthropic.com" "$WORK/src/Api/.env"'
+check "Api ANTHROPIC_API_KEY default"    'grep -qx "ANTHROPIC_API_KEY=REPLACE_ME" "$WORK/src/Api/.env"'
+check "Api OPENAI_BASE_URL default"      'grep -qx "OPENAI_BASE_URL=https://api.openai.com/v1" "$WORK/src/Api/.env"'
+check "Api OPENAI_API_KEY default"       'grep -qx "OPENAI_API_KEY=REPLACE_ME" "$WORK/src/Api/.env"'
+# Non-opt-in (no localLlm): no embedding model var, and no generated litellm config.
+check "no OPENAI_EMBEDDING_MODEL w/o embed" '! grep -q "OPENAI_EMBEDDING_MODEL" "$WORK/src/Api/.env"'
+check "no litellm config.yaml w/o localLlm" '[[ ! -f "$WORK/etc/local-llm/litellm/config.yaml" ]]'
 check "stamps SPA public config (non-secret)" 'jq -e "(keys|sort)==[\"clientId\",\"realmUrl\"]" "$WORK/src/WebApp/public/config.json" >/dev/null'
 
 OUT="$(runner "$WBC" --config "$WORK/config.json")"; rc=$?
@@ -158,11 +192,159 @@ if [[ -f "$ROOT/config.deploy.json" ]]; then
   check "raw deploy template -> exit 64"  '[[ $rc -eq 64 ]]'
 fi
 
-# External service credential exempt (opaque api_key with /+= passes).
+# External service credential exempt (opaque api_key with /+= passes) — both entries.
 OPAQUE="$WORK/opaque.json"
-jq '.services."claude-api".api_key="sk-a/b+c=d"' "$WORK/config.json" > "$OPAQUE"
+jq '.services."claude-api".api_key="sk-a/b+c=d" | .services."openai-api".api_key="sk-x/y+z=w"' "$WORK/config.json" > "$OPAQUE"
 OUT="$(runner "$WBC" --config "$OPAQUE")"; rc=$?
 check "external service cred exempt"      '[[ $rc -eq 0 ]]'
+check "opaque openai-api key emitted raw" '[[ $rc -eq 0 ]] && grep -qx "OPENAI_API_KEY=sk-x/y+z=w" "$WORK/src/Api/.env"'
+
+echo "== build-config: services{} LLM endpoints (R6) =="
+# base_url grammar: reject malformed host / non-numeric & out-of-range ports.
+BADURL="$WORK/badurl.json"
+jq '.services."claude-api".base_url="http://h@st/x"' "$WORK/config.json" > "$BADURL"
+OUT="$(runner "$WBC" --config "$BADURL")"; rc=$?
+check "claude-api base_url bad host -> 64" '[[ $rc -eq 64 ]]'
+jq '.services."openai-api".base_url="http://host:99999"' "$WORK/config.json" > "$BADURL"
+OUT="$(runner "$WBC" --config "$BADURL")"; rc=$?
+check "openai-api base_url port 99999 -> 64" '[[ $rc -eq 64 ]]'
+jq '.services."openai-api".base_url="http://host:abc"' "$WORK/config.json" > "$BADURL"
+OUT="$(runner "$WBC" --config "$BADURL")"; rc=$?
+check "openai-api base_url non-num port -> 64" '[[ $rc -eq 64 ]]'
+
+# Split test matrix — API KEY punctuation: space/#/"/' round-trip raw (compose
+# env_file consumer); $ and CR/LF/control are rejected.
+KEYT="$WORK/keyt.json"
+for pair in "space:sk a" "hash:sk#a" "dquote:sk\"a" "squote:sk'a"; do
+  label="${pair%%:*}"; val="${pair#*:}"
+  jq --arg k "$val" '.services."claude-api".api_key=$k' "$WORK/config.json" > "$KEYT"
+  OUT="$(runner "$WBC" --config "$KEYT")"; rc=$?
+  check "api_key with $label round-trips"  '[[ $rc -eq 0 ]] && grep -qx "ANTHROPIC_API_KEY=$val" "$WORK/src/Api/.env"'
+done
+jq --arg k 'sk-a$b' '.services."claude-api".api_key=$k' "$WORK/config.json" > "$KEYT"
+OUT="$(runner "$WBC" --config "$KEYT")"; rc=$?
+check "api_key with \$ rejected -> 64"     '[[ $rc -eq 64 ]]'
+jq --arg k "$(printf 'sk-a\nb')" '.services."claude-api".api_key=$k' "$WORK/config.json" > "$KEYT"
+OUT="$(runner "$WBC" --config "$KEYT")"; rc=$?
+check "api_key with LF rejected -> 64"     '[[ $rc -eq 64 ]]'
+jq --arg k "$(printf 'sk-a\rb')" '.services."claude-api".api_key=$k' "$WORK/config.json" > "$KEYT"
+OUT="$(runner "$WBC" --config "$KEYT")"; rc=$?
+check "api_key with CR rejected -> 64"     '[[ $rc -eq 64 ]]'
+jq --arg k "$(printf 'sk-a\tb')" '.services."claude-api".api_key=$k' "$WORK/config.json" > "$KEYT"
+OUT="$(runner "$WBC" --config "$KEYT")"; rc=$?
+check "api_key with TAB rejected -> 64"    '[[ $rc -eq 64 ]]'
+
+# Base URL legal path punctuation: # round-trips (grammar-valid path); $ rejected.
+jq --arg u 'http://host/p#frag' '.services."claude-api".base_url=$u' "$WORK/config.json" > "$BADURL"
+OUT="$(runner "$WBC" --config "$BADURL")"; rc=$?
+check "base_url path # round-trips"        '[[ $rc -eq 0 ]] && grep -qx "ANTHROPIC_BASE_URL=http://host/p#frag" "$WORK/src/Api/.env"'
+jq --arg u 'http://host/p$x' '.services."claude-api".base_url=$u' "$WORK/config.json" > "$BADURL"
+OUT="$(runner "$WBC" --config "$BADURL")"; rc=$?
+check "base_url path \$ rejected -> 64"    '[[ $rc -eq 64 ]]'
+
+echo "== build-config: rendered deploy config distributes LLM vars (R6) =="
+# Raw config.deploy.json still fails the unrendered-placeholder guard (above);
+# a RENDERED deploy config distributes the four LLM vars + embedding model var.
+if [[ -f "$ROOT/config.deploy.json" ]]; then
+  RENDERED="$WORK/rendered.json"
+  sed -e 's/{{POSTGRES_HOST}}/postgres/g' \
+      -e 's/{{POSTGRES_OWNER_PASSWORD}}/ownerpw/g' \
+      -e 's/{{POSTGRES_MIGRATOR_PASSWORD}}/migpw/g' \
+      -e 's/{{POSTGRES_API_PASSWORD}}/apipw/g' \
+      -e 's/{{KEYCLOAK_HOST}}/keycloak/g' \
+      -e 's/{{KEYCLOAK_REALM}}/myrealm/g' \
+      -e 's#{{KEYCLOAK_PUBLIC_URL}}#http://127.0.0.1:8080#g' \
+      -e 's/{{KEYCLOAK_ADMIN_PASSWORD}}/adminpw/g' \
+      -e 's/{{KEYCLOAK_API_CLIENT_SECRET}}/apisecret/g' \
+      -e 's/{{API_HOST}}/127.0.0.1/g' \
+      -e 's#{{CLAUDE_API_BASE_URL}}#https://api.anthropic.com#g' \
+      -e 's/{{CLAUDE_API_KEY}}/sk-claude/g' \
+      -e 's#{{OPENAI_API_BASE_URL}}#https://api.openai.com/v1#g' \
+      -e 's/{{OPENAI_API_KEY}}/sk-openai/g' \
+      "$ROOT/config.deploy.json" > "$RENDERED"
+  OUT="$(runner "$WBC" --config "$RENDERED")"; rc=$?
+  check "rendered deploy distributes claude key" '[[ $rc -eq 0 ]] && grep -qx "ANTHROPIC_API_KEY=sk-claude" "$WORK/src/Api/.env"'
+  check "rendered deploy distributes openai key" 'grep -qx "OPENAI_API_KEY=sk-openai" "$WORK/src/Api/.env"'
+fi
+
+echo "== build-config: localLlm config.yaml stamping (R6/R12) =="
+# Provide the litellm template at the path build-config reads (etc/local-llm/litellm/).
+LLDIR="$WORK/etc/local-llm/litellm"
+mkdir -p "$LLDIR"
+LLTPL_SRC=""
+for cand in "$ROOT/_optional/local-llm/litellm/config.yaml.template" \
+            "$ROOT/etc/local-llm/litellm/config.yaml.template"; do
+  [[ -f "$cand" ]] && LLTPL_SRC="$cand" && break
+done
+if [[ -n "$LLTPL_SRC" ]]; then
+  cp "$LLTPL_SRC" "$LLDIR/config.yaml.template"
+
+  # Chat-only: model present, no embeddingModel -> embeddings block deleted.
+  LLC="$WORK/ll-chat.json"
+  jq '.localLlm={model:"llama3.2:3b"}' "$WORK/config.json" > "$LLC"
+  rm -f "$LLDIR/config.yaml"
+  OUT="$(runner "$WBC" --config "$LLC")"; rc=$?
+  check "chat-only stamps config.yaml"        '[[ $rc -eq 0 ]] && [[ -f "$LLDIR/config.yaml" ]]'
+  check "chat-only model raw (no re-prefix)"  'grep -q "ollama_chat/llama3.2:3b" "$LLDIR/config.yaml" && ! grep -q "ollama_chat/ollama_chat" "$LLDIR/config.yaml"'
+  check "chat-only no local-embed entry"      '! grep -q "model_name: local-embed" "$LLDIR/config.yaml"'
+  check "chat-only no leftover @@token"       '! grep -Eq "@@[A-Za-z_]+@@" "$LLDIR/config.yaml"'
+  check "chat-only markers stripped"          '! grep -Eq "^[[:space:]]*# (>>>|<<<) embeddings[[:space:]]*$" "$LLDIR/config.yaml"'
+  check "chat-only writes NO litellm .env"    '[[ ! -f "$LLDIR/.env" ]] && ! grep -q "OPENAI_EMBEDDING_MODEL" "$WORK/src/Api/.env"'
+
+  # Chat + embeddings: block kept, token substituted, embedding var emitted.
+  LLE="$WORK/ll-embed.json"
+  jq '.localLlm={model:"llama3.2:3b",embeddingModel:"nomic-embed-text"}' "$WORK/config.json" > "$LLE"
+  rm -f "$LLDIR/config.yaml"
+  OUT="$(runner "$WBC" --config "$LLE")"; rc=$?
+  check "embed kept: local-embed entry"       '[[ $rc -eq 0 ]] && grep -q "model_name: local-embed" "$LLDIR/config.yaml"'
+  check "embed kept: embed token substituted" 'grep -q "ollama/nomic-embed-text" "$LLDIR/config.yaml" && ! grep -Eq "@@[A-Za-z_]+@@" "$LLDIR/config.yaml"'
+  check "embed kept: OPENAI_EMBEDDING_MODEL"   'grep -qx "OPENAI_EMBEDDING_MODEL=local-embed" "$WORK/src/Api/.env"'
+
+  # Reject: hostile model name.
+  LLBAD="$WORK/ll-bad.json"
+  jq '.localLlm={model:"bad; rm -rf /"}' "$WORK/config.json" > "$LLBAD"
+  OUT="$(runner "$WBC" --config "$LLBAD")"; rc=$?
+  check "hostile localLlm.model -> 64"        '[[ $rc -eq 64 ]]'
+
+  # Reject: embeddingModel without model.
+  jq '.localLlm={embeddingModel:"nomic-embed-text"}' "$WORK/config.json" > "$LLBAD"
+  OUT="$(runner "$WBC" --config "$LLBAD")"; rc=$?
+  check "embeddingModel without model -> 64"  '[[ $rc -eq 64 ]]'
+
+  # Reject: .localLlm present but not an object.
+  jq '.localLlm="oops"' "$WORK/config.json" > "$LLBAD"
+  OUT="$(runner "$WBC" --config "$LLBAD")"; rc=$?
+  check "localLlm not an object -> 64"        '[[ $rc -eq 64 ]]'
+
+  # Reject: model present but template missing -> opt-in invariant.
+  mv "$LLDIR/config.yaml.template" "$LLDIR/config.yaml.template.bak"
+  OUT="$(runner "$WBC" --config "$LLC")"; rc=$?
+  check "model present + template missing -> err" '[[ $rc -ne 0 ]] && grep -q "is missing" <<<"$OUT"'
+  mv "$LLDIR/config.yaml.template.bak" "$LLDIR/config.yaml.template"
+
+  # Reject: malformed template — @@LLM_MODEL@@ token absent entirely.
+  printf 'model_list:\n  - model_name: local\n# >>> embeddings\n# <<< embeddings\n' > "$LLDIR/config.yaml.template"
+  OUT="$(runner "$WBC" --config "$LLC")"; rc=$?
+  check "template missing @@LLM_MODEL@@ -> err" '[[ $rc -ne 0 ]] && grep -q "@@LLM_MODEL@@" <<<"$OUT"'
+
+  # Reject: malformed template — embeddings markers unbalanced/duplicated.
+  printf 'model: ollama_chat/@@LLM_MODEL@@\n# >>> embeddings\n# >>> embeddings\n# <<< embeddings\n' > "$LLDIR/config.yaml.template"
+  OUT="$(runner "$WBC" --config "$LLC")"; rc=$?
+  check "template duplicated markers -> err"  '[[ $rc -ne 0 ]] && grep -q "exactly once" <<<"$OUT"'
+
+  # Reject: embed kept but @@LLM_EMBED_MODEL@@ token absent from the block.
+  printf 'model: ollama_chat/@@LLM_MODEL@@\n# >>> embeddings\n  - model_name: local-embed\n# <<< embeddings\n' > "$LLDIR/config.yaml.template"
+  OUT="$(runner "$WBC" --config "$LLE")"; rc=$?
+  check "embed kept w/o embed token -> err"   '[[ $rc -ne 0 ]] && grep -q "@@LLM_EMBED_MODEL@@" <<<"$OUT"'
+
+  # Reject: post-stamp scan catches a stray @@token@@ the substitution missed.
+  printf 'model: ollama_chat/@@LLM_MODEL@@\nstray: @@LLM_OTHER@@\n# >>> embeddings\nx: @@LLM_EMBED_MODEL@@\n# <<< embeddings\n' > "$LLDIR/config.yaml.template"
+  OUT="$(runner "$WBC" --config "$LLC")"; rc=$?
+  check "post-stamp stray token -> err"       '[[ $rc -ne 0 ]] && grep -q "unreplaced" <<<"$OUT"'
+
+  # Restore the real template for any later sections.
+  cp "$LLTPL_SRC" "$LLDIR/config.yaml.template"
+fi
 
 echo "== build-config: realm-stamp mechanism =="
 if [[ -f "$ROOT/src/keycloak/realm.template.json" ]]; then

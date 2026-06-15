@@ -9,6 +9,10 @@
 #   - src/Api/.env                    API_CONNECTION_STRING + keycloak/Api values
 #   - src/<SPA>/public/config.json    non-secret public runtime config
 #   - src/keycloak/import/<realm>-realm.json  generated realm import (from template)
+#   - src/Api/.env                    ALSO carries the LLM endpoint vars
+#                                     (ANTHROPIC_BASE_URL/API_KEY, OPENAI_BASE_URL/API_KEY,
+#                                     and OPENAI_EMBEDDING_MODEL when embeddings opted in)
+#   - etc/local-llm/litellm/config.yaml  generated LiteLLM config (opt-in: localLlm.model)
 #
 # Usage:
 #   build-config [--config <path>]
@@ -25,7 +29,11 @@
 #   - realm / *_client_id                      ^[A-Za-z0-9._-]+$
 #   - public_url / realm_url                   ^https?://[^[:space:]]+$
 #   - every *port field                        integer 1..65535
-# External service credentials (services{}) are OPAQUE and exempt from validation.
+#   - services{}.*.base_url                    ^https?://[host][:port][/path]$ + port 1..65535
+#   - localLlm.model / .embeddingModel         ^[A-Za-z0-9._/-]+(:[A-Za-z0-9._-]+)?$
+#   - all four emitted LLM .env values         transport-safe (reject CR/LF/control/$)
+# External service credentials (services{}.*.api_key) are OPAQUE and exempt from
+# grammar validation (only transport-safety checked, not the URL-safe alphabet).
 # Postgres role names (owner/migrator/api) and the db name (platform) are FIXED
 # scaffold constants — not in config.json, never validated/injected.
 
@@ -47,6 +55,49 @@ v_container() { [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]+$ ]]   || die "$2 invalid 
 v_clientid()  { [[ "$1" =~ ^[A-Za-z0-9._-]+$ ]]              || die "$2 invalid (^[A-Za-z0-9._-]+): '$1'"; }
 v_url()       { [[ "$1" =~ ^https?://[^[:space:]]+$ ]]       || die "$2 invalid URL (^https?://...): '$1'"; }
 v_port()      { [[ "$1" =~ ^[0-9]+$ && "$1" -ge 1 && "$1" -le 65535 ]] || die "$2 invalid port (1..65535): '$1'"; }
+
+# Ollama model-name grammar (R6/R12). Rejects whitespace, shell metacharacters, and
+# YAML-sensitive characters so a hostile localLlm.model/embeddingModel cannot corrupt
+# the stamped litellm/config.yaml. Accepts the legitimate `/` (namespaced repo) and a
+# single `:tag` suffix.
+v_modelname() { [[ "$1" =~ ^[A-Za-z0-9._/-]+(:[A-Za-z0-9._-]+)?$ ]] || die "$2 invalid model name (^[A-Za-z0-9._/-]+(:[A-Za-z0-9._-]+)?): '$1'"; }
+
+# Service base-URL grammar (R6). An INJECTION-RESISTANT host char-whitelist + a
+# SEPARATE port range-check — NOT full RFC-1123 hostname validation. Odd-but-harmless
+# hosts (`.example.com`, `-bad`) are accepted (they'd simply fail to resolve); the goal
+# is preventing .env injection, not URL correctness. The host class `[A-Za-z0-9.-]+`
+# rejects `?#@[]:` etc. in the host portion; an optional path may follow. The
+# `[0-9]{1,5}` class alone would accept `99999`, so the captured port is range-checked
+# 1..65535 separately. This is STRICTER than the permissive v_url.
+v_base_url() {
+  local url="$1" label="$2" port
+  [[ "$url" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[^[:space:]]*)?$ ]] \
+    || die "$label invalid base URL (^https?://<host>[:<port>][/<path>]): '$url'"
+  # Range-check the port if one was captured ("${BASH_REMATCH[1]}" is ":<digits>").
+  if [[ -n "${BASH_REMATCH[1]}" ]]; then
+    port="${BASH_REMATCH[1]#:}"
+    [[ "$port" -ge 1 && "$port" -le 65535 ]] || die "$label base URL port out of range (1..65535): '$url'"
+  fi
+}
+
+# Transport-safe check for a value emitted into a .env line consumed by docker
+# compose's `env_file:` parser (the confirmed consumer of src/Api/.env — see
+# docs/config-management.md §4/§7 + src/Api/Program.cs). That parser takes the value
+# RAW (no shell close-reopen quoting; surrounding quotes are STRIPPED, so KEY='value'
+# would lose the quotes) and performs `$`/`${VAR}` interpolation, and it cannot
+# represent embedded newlines. We therefore emit values verbatim and REJECT any char
+# that cannot round-trip across the consumer set:
+#   - CR / LF / other control chars (break line parsing / multi-line not supported)
+#   - `$` (compose variable interpolation; cannot round-trip raw, and the `$$` escape
+#     is compose-only and would corrupt a plain shell `source` consumer)
+# Empirically grounded against `docker compose config` (v2). space/#/"/' round-trip raw.
+v_env_value() {
+  local value="$1" label="$2"
+  [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]] && die "$label contains a newline/CR (cannot be encoded in a .env value)"
+  [[ "$value" =~ [[:cntrl:]] ]] && die "$label contains a control character (cannot be encoded in a .env value)"
+  [[ "$value" == *'$'* ]] && die "$label contains '\$' (docker compose env_file interpolates it; cannot round-trip): '$value'"
+  return 0
+}
 
 # Read a jq path from the source config; dies if the result is null/absent. The
 # absent-sentinel is passed via --arg (never inline-quoted in the filter) so the
@@ -146,6 +197,41 @@ main() {
   v_host "$api_host" "Api.host"
   v_port "$api_port" "Api.port"
 
+  # --- services{} LLM endpoints (always present — no opt-in branch, R6) -------
+  # base_url is grammar-validated (injection-resistant); api_key stays OPAQUE
+  # (unvalidated — provider keys may be any chars) but is transport-safe-checked.
+  # ALL four emitted values pass v_env_value (a validated base_url PATH may still
+  # carry punctuation), encoded for the docker-compose env_file consumer of Api/.env.
+  local claude_base claude_key openai_base openai_key
+  claude_base="$(cfg '.services."claude-api".base_url' 'services.claude-api.base_url')"
+  claude_key="$(cfg '.services."claude-api".api_key' 'services.claude-api.api_key')"
+  openai_base="$(cfg '.services."openai-api".base_url' 'services.openai-api.base_url')"
+  openai_key="$(cfg '.services."openai-api".api_key' 'services.openai-api.api_key')"
+  v_base_url "$claude_base" "services.claude-api.base_url"
+  v_base_url "$openai_base" "services.openai-api.base_url"
+  v_env_value "$claude_base" "services.claude-api.base_url"
+  v_env_value "$claude_key" "services.claude-api.api_key"
+  v_env_value "$openai_base" "services.openai-api.base_url"
+  v_env_value "$openai_key" "services.openai-api.api_key"
+
+  # --- localLlm (opt-in only) — validate type + model-name grammar (R6/R12) ---
+  # build-config FAILS clearly on a malformed `.localLlm` (present but not an object):
+  # a hand-edit must not silently skip stamping while the project points at the local
+  # gateway. Genuinely-absent localLlm is a no-op (empty model/embed below).
+  local ll_kind ll_model ll_embed
+  ll_kind="$(jq -r 'if has("localLlm") then (.localLlm|type) else "absent" end' "$CONFIG")"
+  if [[ "$ll_kind" != "absent" && "$ll_kind" != "object" ]]; then
+    die "config.localLlm must be an object (got $ll_kind)"
+  fi
+  ll_model="$(jq -r '.localLlm.model // ""' "$CONFIG")"
+  ll_embed="$(jq -r '.localLlm.embeddingModel // ""' "$CONFIG")"
+  # Embeddings require a chat opt-in (R12): embeddingModel without model is invalid.
+  if [[ -n "$ll_embed" && -z "$ll_model" ]]; then
+    die "config.localLlm.embeddingModel set without localLlm.model (embeddings require a chat model)"
+  fi
+  [[ -n "$ll_model" ]] && v_modelname "$ll_model" "localLlm.model"
+  [[ -n "$ll_embed" ]] && v_modelname "$ll_embed" "localLlm.embeddingModel"
+
   # --- SPA public config (non-secret, structural) ----------------------------
   local ms_realm ms_cid wa_realm wa_cid
   ms_realm="$(cfg "$ms.realm_url" "MarketingSite.realm_url")"
@@ -175,8 +261,15 @@ EOF
 MIGRATOR_CONNECTION_STRING=Host=$pg_chost;Port=$pg_cport;Database=$DB_NAME;Username=$ROLE_MIGRATOR;Password=$pg_mig
 EOF
 
-  # Api .env — runtime api-role connection + keycloak issuer/client values
-  write_env "src/Api/.env" <<EOF
+  # Api .env — runtime api-role connection + keycloak issuer/client values + the
+  # LLM endpoint vars (SDK-standard names). Values are emitted RAW (no shell quoting):
+  # the consumer is docker compose's env_file parser, which takes values verbatim and
+  # strips wrapping quotes — every value already passed v_env_value above. When
+  # embeddings are opted in, ALSO emit OPENAI_EMBEDDING_MODEL=local-embed (the explicit
+  # embeddings alias, R2/R12); chat callers need no model var (the wildcard route
+  # serves any name).
+  {
+    cat <<EOF
 API_HOST=$api_host
 API_PORT=$api_port
 API_CONNECTION_STRING=Host=$pg_chost;Port=$pg_cport;Database=$DB_NAME;Username=$ROLE_API;Password=$pg_api
@@ -184,7 +277,13 @@ KEYCLOAK_REALM=$kc_realm
 KEYCLOAK_PUBLIC_URL=$kc_url
 KEYCLOAK_API_CLIENT_ID=$kc_apicid
 KEYCLOAK_API_CLIENT_SECRET=$kc_apisecret
+ANTHROPIC_BASE_URL=$claude_base
+ANTHROPIC_API_KEY=$claude_key
+OPENAI_BASE_URL=$openai_base
+OPENAI_API_KEY=$openai_key
 EOF
+    if [[ -n "$ll_embed" ]]; then echo "OPENAI_EMBEDDING_MODEL=local-embed"; fi
+  } | write_env "src/Api/.env"
 
   # keycloak .env — container bootstrap admin + host/port references
   write_env "src/keycloak/.env" <<EOF
@@ -203,7 +302,86 @@ EOF
   # Keycloak realm import — stamp from the committed template, if present.
   stamp_realm_import "$kc_realm" "$kc_webcid" "$kc_mscid" "$kc_apicid" "$kc_apisecret"
 
+  # LiteLLM runtime config — stamp the gitignored litellm/config.yaml from its
+  # committed template when the local LLM stack is opted in (localLlm.model present).
+  stamp_litellm_config "$ll_model" "$ll_embed"
+
   echo "build-config: done"
+}
+
+# Stamp the gitignored LiteLLM runtime config (etc/local-llm/litellm/config.yaml) from
+# the committed config.yaml.template when localLlm.model is present (opt-in). NO .env
+# is written here — system.sh up/down export LLM_MODEL/LLM_EMBED_MODEL from config.json
+# (owned by .3). Genuinely-absent localLlm (empty model) is a no-op. Mirrors the
+# realm-import stamp responsibility.
+#
+#   - @@LLM_MODEL@@        replaced (ALL occurrences — wildcard "*" route AND the
+#                          explicit `local` alias) with the RAW validated model name
+#                          (the template line already carries `ollama_chat/`, so this
+#                          does NOT re-prefix it).
+#   - the embeddings block between `# >>> embeddings` / `# <<< embeddings` sentinels is
+#     a BLOCK operation, not a naive token replace: kept (markers stripped,
+#     @@LLM_EMBED_MODEL@@ substituted) when embeddingModel is present; otherwise the
+#     ENTIRE marked block is deleted (no orphan entry, no leftover token, valid YAML
+#     either way).
+#
+# Template structural validation (fail clearly, never emit broken YAML): @@LLM_MODEL@@
+# present at least once; embeddings markers present, balanced, non-duplicated;
+# @@LLM_EMBED_MODEL@@ present within the block when kept; and a post-stamp scan that NO
+# @@…@@ token remains in the generated config.yaml (the definitive check).
+stamp_litellm_config() {
+  local model="$1" embed="$2"
+  local template="etc/local-llm/litellm/config.yaml.template"
+  local out="etc/local-llm/litellm/config.yaml"
+
+  # Genuinely-absent localLlm → no-op (no model, nothing to stamp).
+  [[ -z "$model" ]] && return 0
+
+  # Opt-in invariant: model present but template missing → fail clearly (R6).
+  [[ -f "$template" ]] || die "localLlm.model is set but $template is missing (cannot stamp litellm config)" 65
+
+  # --- template structural validation (pre-stamp) ---------------------------
+  grep -q '@@LLM_MODEL@@' "$template" \
+    || die "litellm template missing @@LLM_MODEL@@ token: $template" 65
+  local open_cnt close_cnt
+  open_cnt="$(grep -c '^[[:space:]]*# >>> embeddings[[:space:]]*$' "$template")"
+  close_cnt="$(grep -c '^[[:space:]]*# <<< embeddings[[:space:]]*$' "$template")"
+  [[ "$open_cnt" -eq 1 && "$close_cnt" -eq 1 ]] \
+    || die "litellm template embeddings markers must appear exactly once each (open=$open_cnt close=$close_cnt): $template" 65
+
+  local tmp; tmp="$(mktemp)"
+
+  if [[ -n "$embed" ]]; then
+    # Embeddings KEPT: the block must carry the @@LLM_EMBED_MODEL@@ token.
+    grep -q '@@LLM_EMBED_MODEL@@' "$template" \
+      || { rm -f "$tmp"; die "litellm template missing @@LLM_EMBED_MODEL@@ within the embeddings block: $template" 65; }
+    # Strip ONLY the two marker comment lines; keep the block body.
+    if ! grep -vE '^[[:space:]]*# (>>>|<<<) embeddings[[:space:]]*$' "$template" \
+         | LLM_MODEL="$model" LLM_EMBED_MODEL="$embed" awk '
+             { gsub(/@@LLM_MODEL@@/, ENVIRON["LLM_MODEL"]);
+               gsub(/@@LLM_EMBED_MODEL@@/, ENVIRON["LLM_EMBED_MODEL"]); print }' > "$tmp"; then
+      rm -f "$tmp"; die "failed to stamp litellm config from $template" 65
+    fi
+  else
+    # Embeddings ABSENT: delete the ENTIRE marked block (markers inclusive).
+    if ! awk '
+           /^[[:space:]]*# >>> embeddings[[:space:]]*$/ { skip=1; next }
+           /^[[:space:]]*# <<< embeddings[[:space:]]*$/ { skip=0; next }
+           skip { next }
+           { print }' "$template" \
+         | LLM_MODEL="$model" awk '{ gsub(/@@LLM_MODEL@@/, ENVIRON["LLM_MODEL"]); print }' > "$tmp"; then
+      rm -f "$tmp"; die "failed to stamp litellm config from $template" 65
+    fi
+  fi
+
+  # --- post-stamp scan (definitive): no replacement token may remain ---------
+  if grep -q '@@[A-Za-z_]*@@' "$tmp"; then
+    rm -f "$tmp"; die "generated litellm config still contains an unreplaced @@...@@ token (template malformed): $template" 65
+  fi
+
+  mkdir -p "$(dirname "$out")"
+  mv "$tmp" "$out"
+  echo "  stamped $out"
 }
 
 # Stamp a SPA's gitignored public config.json (non-secret realmUrl + clientId) via
