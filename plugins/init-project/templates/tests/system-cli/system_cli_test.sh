@@ -333,9 +333,14 @@ if [[ -n "$LLTPL_SRC" ]]; then
   check "localLlm not an object -> 64"        '[[ $rc -eq 64 ]]'
 
   # Reject: model present but template missing -> opt-in invariant.
+  # ALSO assert ATOMICITY: the template preflight runs in the validation phase BEFORE
+  # any artifact is written, so a stale Api/.env must NOT be overwritten on this
+  # failure (no partial update). Seed a sentinel Api/.env and confirm it survives.
   mv "$LLDIR/config.yaml.template" "$LLDIR/config.yaml.template.bak"
+  printf 'SENTINEL=untouched\n' > "$WORK/src/Api/.env"
   OUT="$(runner "$WBC" --config "$LLC")"; rc=$?
   check "model present + template missing -> err" '[[ $rc -ne 0 ]] && grep -q "is missing" <<<"$OUT"'
+  check "missing template fails BEFORE writing Api/.env" 'grep -qx "SENTINEL=untouched" "$WORK/src/Api/.env"'
   mv "$LLDIR/config.yaml.template.bak" "$LLDIR/config.yaml.template"
 
   # Reject: malformed template — @@LLM_MODEL@@ token absent entirely.

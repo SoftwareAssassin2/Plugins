@@ -236,6 +236,11 @@ main() {
   fi
   [[ -n "$ll_model" ]] && v_modelname "$ll_model" "localLlm.model"
   [[ -n "$ll_embed" ]] && v_modelname "$ll_embed" "localLlm.embeddingModel"
+  # Preflight the LiteLLM template (existence + structural shape) HERE in the
+  # validation phase — BEFORE any .env is written — so a missing/malformed template
+  # fails before the workspace is partially updated (e.g. Api/.env repointed at the
+  # local gateway while config.yaml was never generated). No-op when localLlm absent.
+  preflight_litellm_template "$ll_model" "$ll_embed"
 
   # --- SPA public config (non-secret, structural) ----------------------------
   local ms_realm ms_cid wa_realm wa_cid
@@ -314,38 +319,26 @@ EOF
   echo "build-config: done"
 }
 
-# Stamp the gitignored LiteLLM runtime config (etc/local-llm/litellm/config.yaml) from
-# the committed config.yaml.template when localLlm.model is present (opt-in). NO .env
-# is written here — system.sh up/down export LLM_MODEL/LLM_EMBED_MODEL from config.json
-# (owned by .3). Genuinely-absent localLlm (empty model) is a no-op. Mirrors the
-# realm-import stamp responsibility.
+# PREFLIGHT the LiteLLM template (existence + structural shape) WITHOUT writing
+# anything — called from the validation phase so a missing/malformed template fails
+# BEFORE any downstream artifact (.env etc.) is written, never leaving the workspace
+# partially updated (e.g. Api/.env repointed at the gateway while config.yaml was
+# never generated). Genuinely-absent localLlm (empty model) is a no-op.
 #
-#   - @@LLM_MODEL@@        replaced (ALL occurrences — wildcard "*" route AND the
-#                          explicit `local` alias) with the RAW validated model name
-#                          (the template line already carries `ollama_chat/`, so this
-#                          does NOT re-prefix it).
-#   - the embeddings block between `# >>> embeddings` / `# <<< embeddings` sentinels is
-#     a BLOCK operation, not a naive token replace: kept (markers stripped,
-#     @@LLM_EMBED_MODEL@@ substituted) when embeddingModel is present; otherwise the
-#     ENTIRE marked block is deleted (no orphan entry, no leftover token, valid YAML
-#     either way).
-#
-# Template structural validation (fail clearly, never emit broken YAML): @@LLM_MODEL@@
-# present at least once; embeddings markers present, balanced, non-duplicated;
-# @@LLM_EMBED_MODEL@@ present within the block when kept; and a post-stamp scan that NO
-# @@…@@ token remains in the generated config.yaml (the definitive check).
-stamp_litellm_config() {
+# Validates (fail clearly, never emit broken YAML): the template exists; @@LLM_MODEL@@
+# present at least once; embeddings markers present, balanced, non-duplicated, ordered
+# (open before close); and @@LLM_EMBED_MODEL@@ present INSIDE the marked block when
+# embeddings are kept.
+preflight_litellm_template() {
   local model="$1" embed="$2"
   local template="etc/local-llm/litellm/config.yaml.template"
-  local out="etc/local-llm/litellm/config.yaml"
 
-  # Genuinely-absent localLlm → no-op (no model, nothing to stamp).
+  # Genuinely-absent localLlm → no-op (no model, nothing to validate/stamp).
   [[ -z "$model" ]] && return 0
 
   # Opt-in invariant: model present but template missing → fail clearly (R6).
   [[ -f "$template" ]] || die "localLlm.model is set but $template is missing (cannot stamp litellm config)" 65
 
-  # --- template structural validation (pre-stamp) ---------------------------
   grep -q '@@LLM_MODEL@@' "$template" \
     || die "litellm template missing @@LLM_MODEL@@ token: $template" 65
   local open_cnt close_cnt open_ln close_ln
@@ -359,18 +352,45 @@ stamp_litellm_config() {
   [[ "$open_ln" -lt "$close_ln" ]] \
     || die "litellm template embeddings open marker must precede the close marker (open=$open_ln close=$close_ln): $template" 65
 
-  local tmp; tmp="$(mktemp)"
-
   if [[ -n "$embed" ]]; then
     # Embeddings KEPT: the @@LLM_EMBED_MODEL@@ token must live INSIDE the sentinel
     # block (a token outside the markers would leave the kept block tokenless and
-    # generate a bad local-embed entry). Extract the block BODY (between the markers,
-    # markers excluded) and require the token there.
+    # generate a bad local-embed entry). Extract the block BODY and require it there.
     awk '
       /^[[:space:]]*# >>> embeddings[[:space:]]*$/ { inblk=1; next }
       /^[[:space:]]*# <<< embeddings[[:space:]]*$/ { inblk=0; next }
       inblk { print }' "$template" | grep -q '@@LLM_EMBED_MODEL@@' \
-      || { rm -f "$tmp"; die "litellm template missing @@LLM_EMBED_MODEL@@ inside the embeddings block: $template" 65; }
+      || die "litellm template missing @@LLM_EMBED_MODEL@@ inside the embeddings block: $template" 65
+  fi
+}
+
+# Stamp the gitignored LiteLLM runtime config (etc/local-llm/litellm/config.yaml) from
+# the committed config.yaml.template when localLlm.model is present (opt-in). The
+# template was already structurally validated by preflight_litellm_template in the
+# validation phase, so this only does the substitution → temp → post-stamp scan →
+# ATOMIC mv (a corrupt result never lands at $out partially). NO .env is written here —
+# system.sh up/down export LLM_MODEL/LLM_EMBED_MODEL from config.json (owned by .3).
+# Genuinely-absent localLlm (empty model) is a no-op. Mirrors the realm-import stamp.
+#
+#   - @@LLM_MODEL@@        replaced (ALL occurrences — wildcard "*" route AND the
+#                          explicit `local` alias) with the RAW validated model name
+#                          (the template line already carries `ollama_chat/`, so this
+#                          does NOT re-prefix it).
+#   - the embeddings block between `# >>> embeddings` / `# <<< embeddings` sentinels is
+#     a BLOCK operation, not a naive token replace: kept (markers stripped,
+#     @@LLM_EMBED_MODEL@@ substituted) when embeddingModel is present; otherwise the
+#     ENTIRE marked block is deleted (no orphan entry, no leftover token, valid YAML).
+stamp_litellm_config() {
+  local model="$1" embed="$2"
+  local template="etc/local-llm/litellm/config.yaml.template"
+  local out="etc/local-llm/litellm/config.yaml"
+
+  # Genuinely-absent localLlm → no-op (preflight already passed when model is set).
+  [[ -z "$model" ]] && return 0
+
+  local tmp; tmp="$(mktemp)"
+
+  if [[ -n "$embed" ]]; then
     # Strip ONLY the two marker comment lines; keep the block body.
     if ! grep -vE '^[[:space:]]*# (>>>|<<<) embeddings[[:space:]]*$' "$template" \
          | LLM_MODEL="$model" LLM_EMBED_MODEL="$embed" awk '
