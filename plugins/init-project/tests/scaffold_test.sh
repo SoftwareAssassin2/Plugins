@@ -565,6 +565,23 @@ check "non-opt-in --update: etc/local-llm files removed" '[[ -z "$(find "$LR/dem
 check "non-opt-in --update: manifest drops etc/local-llm" '! jq -r ".files[].path" "$LR/demo/.init-project-manifest.json" | grep -q "etc/local-llm"'
 rm -rf "$LR"
 
+# (e2b) a NEVER-opted-in project with operator-customized provider creds/URLs is
+# NOT reset by a plain --update: the reset is gated on prior-opt-in evidence (a prior
+# manifest etc/local-llm/ entry), so a real-provider config keeps its operator edits
+# per the existing "existing wins" contract.
+LK="$(mktemp -d)"
+( cd "$LK" && bash "$SCAFFOLD" demo "x" >/dev/null )                                   # plain (never opt-in)
+# Operator customizes the provider creds/URLs by hand.
+jq '.services."claude-api".api_key="sk-ant-REAL" | .services."claude-api".base_url="https://proxy.example.com" | .services."openai-api".api_key="sk-oai-REAL"' \
+   "$LK/demo/config.json" > "$LK/demo/config.json.tmp" && mv "$LK/demo/config.json.tmp" "$LK/demo/config.json"
+( cd "$LK" && bash "$SCAFFOLD" demo "x" --update >/dev/null ); rc=$?
+check "non-opt-in --update on a never-opted project: exit 0" '[[ $rc -eq 0 ]]'
+check "never-opted --update PRESERVES operator claude-api key" 'jq -e ".services.\"claude-api\".api_key==\"sk-ant-REAL\"" "$LK/demo/config.json" >/dev/null'
+check "never-opted --update PRESERVES operator claude-api URL" 'jq -e ".services.\"claude-api\".base_url==\"https://proxy.example.com\"" "$LK/demo/config.json" >/dev/null'
+check "never-opted --update PRESERVES operator openai-api key" 'jq -e ".services.\"openai-api\".api_key==\"sk-oai-REAL\"" "$LK/demo/config.json" >/dev/null'
+check "never-opted --update: still no localLlm block"          '! jq -e ".localLlm" "$LK/demo/config.json" >/dev/null 2>&1'
+rm -rf "$LK"
+
 # (e3) empty --flag=value (the `=` form with no value) is a usage error (exit 64) —
 # an empty embed model must NOT be silently accepted/omitted.
 lerr2() { local d; d="$(mktemp -d)"; ( cd "$d" && bash "$SCAFFOLD" "$@" >/dev/null 2>&1 ); local r=$?; rm -rf "$d"; return $r; }

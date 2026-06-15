@@ -296,14 +296,20 @@ main() {
       mv "$dst.tmp" "$dst"
     fi
 
-    # Non-opt-in --update RESET (opt-in is NOT sticky — fn-3 R5): a prior opted-in
+    # Non-opt-in --update RESET (opt-in is NOT sticky — fn-3 R5): a PRIOR opted-in
     # config.json carries repointed base URLs + sk-local-mock keys + a localLlm block;
     # the "existing wins" merge would silently preserve them. So when --update runs
-    # WITHOUT --local-llm, reset the local-LLM-managed keys back to real-provider
-    # defaults and DROP localLlm — restoring the documented non-opt-in contract. Only
-    # the named local-LLM keys are touched; operator edits + secrets the merge kept are
-    # untouched. (The orphaned etc/local-llm/ files are removed after the loop.)
-    if [[ "$local_llm" -eq 0 && "$mode" == "update" && "$out" == "config.json" ]]; then
+    # WITHOUT --local-llm OVER A PRIOR OPT-IN, reset the local-LLM-managed keys back to
+    # real-provider defaults and DROP localLlm — restoring the documented non-opt-in
+    # contract. Only the named local-LLM keys are touched; operator edits + secrets the
+    # merge kept are untouched. (Orphaned etc/local-llm/ files are removed after the loop.)
+    #
+    # CRITICALLY gated on prior-opt-in EVIDENCE (the prior manifest listing
+    # etc/local-llm/ files — only the opt-in path ever writes those). A project that
+    # was NEVER opted in (real-provider URLs + operator-customized api_key) must NOT be
+    # reset: a plain --update preserves its config per the existing "existing wins"
+    # contract. `prior_llm_files` is populated pre-loop only in this exact case.
+    if [[ "$local_llm" -eq 0 && "$mode" == "update" && "$out" == "config.json" && ${#prior_llm_files[@]} -gt 0 ]]; then
       if ! jq \
         --arg claude_url "$REAL_CLAUDE_BASE_URL" --arg openai_url "$REAL_OPENAI_BASE_URL" \
         --arg key "$REAL_API_KEY" '
