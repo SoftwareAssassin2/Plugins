@@ -1,6 +1,11 @@
 {
   "branch_name": "fn-3-local-llm-mock-stack-for-init-project",
+  "completion_review_status": "ship",
+  "completion_reviewed_at": "2026-06-15T11:51:55.537420Z",
   "created_at": "2026-06-14T12:07:58.741150Z",
+  "default_impl": null,
+  "default_review": null,
+  "default_sync": null,
   "depends_on_epics": [
     "fn-2-init-project-scaffolding-skill-init"
   ],
@@ -21,5 +26,5 @@
     "mergeBaseTracker": null,
     "url": null
   },
-  "updated_at": "2026-06-14T12:14:23.700115Z"
+  "updated_at": "2026-06-15T11:51:55.537572Z"
 }
