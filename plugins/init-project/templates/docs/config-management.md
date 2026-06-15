@@ -246,11 +246,15 @@ environment). That parser takes each value **raw** (no shell close-reopen quotin
 surrounding quotes are *stripped*, so a `KEY='value'` form would NOT round-trip) and
 performs `$`/`${VAR}` interpolation, and it cannot represent embedded newlines.
 `build-config` therefore emits all four values **verbatim** and **rejects** any
-character that cannot round-trip across that consumer: CR / LF / control characters
-(break line parsing) and `$` (compose interpolation; the `$$` escape is compose-only
-and would corrupt a plain shell `source`). Punctuation that round-trips raw
-(space, `#`, `"`, `'`) is accepted. This applies to all four values — a
-grammar-valid `base_url` *path* may still carry such punctuation.
+character (or sequence) that cannot round-trip across that consumer: CR / LF /
+control characters (break line parsing), `$` (compose interpolation; the `$$`
+escape is compose-only and would corrupt a plain shell `source`), and a
+**whitespace-immediately-followed-by-`#` sequence** (compose treats it as a
+trailing inline comment and *truncates* the value — empirically `KEY=sk #x`
+parses to `sk`). Punctuation that round-trips raw is accepted: a standalone space,
+a `#` **not** preceded by whitespace (e.g. a URL fragment `host/p#frag`), `"`, and
+`'`. This applies to all four values — a grammar-valid `base_url` *path* may still
+carry such punctuation.
 
 External-service `api_key`s ship as `REPLACE_ME` for the operator and are **exempt**
 from the URL-safe alphabet validation — opaque provider keys may contain any

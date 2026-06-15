@@ -63,3 +63,20 @@ Authored the opt-in local LLM mock stack under templates/_optional/local-llm/ (c
 - Commits: e96359e14159baad24873c69d1f4f4b68b34b962
 - Tests: bash plugins/init-project/templates/tests/system-cli/local_llm_test.sh (56 passed), bash plugins/init-project/templates/tests/coverage.sh (no-kcov path: 56+53 passed across both suites), bash plugins/init-project/templates/tests/integration/local-llm-mock.sh (Docker ai-mock: 5 passed — both surfaces + tools tolerated, no Ollama), MANUAL --profile ai: ollama+model-pull(llama3.2:1b)+litellm up; gpt-4o /v1/chat/completions + claude-sonnet-4-6 /v1/messages wildcard routes answered via real Ollama; local alias OK, docker compose --profile ai|ai-mock config OK; default profile activates 0 services; embeddings keep/delete both valid YAML, no leftover token, bash plugins/init-project/tests/scaffold_test.sh (280 passed — unaffected)
 - PRs:
+- REAL `/v1/embeddings` smoke (R2/R12), captured 2026-06-15 (Docker 29.5.2 / compose v5.1.4, macOS):
+  Built a temp fixture project (`etc/local-llm/` populated from `templates/_optional/local-llm/`), set
+  `config.json` `localLlm.model=llama3.2:1b` + `localLlm.embeddingModel=nomic-embed-text`, ran the real
+  `build-config` which stamped `etc/local-llm/litellm/config.yaml` (chat `ollama_chat/llama3.2:1b` on the
+  wildcard `"*"` + `local` alias; embeddings block KEPT with markers stripped →
+  `model_name: local-embed` → `ollama/nomic-embed-text`). Exported `LLM_MODEL`/`LLM_EMBED_MODEL`,
+  `COMPOSE_PROFILES= docker compose -f docker-compose.yml --profile ai up -d`. Result:
+  ollama → Healthy; `model-pull` pulled BOTH models and exited 0 (`ollama list` shows
+  `llama3.2:1b` 1.3 GB + `nomic-embed-text:latest` 274 MB); real `litellm`
+  (`ghcr.io/berriai/litellm:v1.77.3-stable@sha256:13627afb7b0dd049ce7a7d724c05264fa0acbca1b8e32e85c6241b22c46921be`)
+  started after `model-pull` `service_completed_successfully`.
+  Request: `POST http://127.0.0.1:4000/v1/embeddings` `{"model":"local-embed","input":"hello"}`.
+  Response: **HTTP 200**, `object: list`, `model: ollama/nomic-embed-text`, `data` length 1, embedding
+  **vector length 768** (first dims `[0.017874617, -0.0058246492, -0.17537898, …]`),
+  `usage.prompt_tokens=3`. Confirms `/v1/embeddings` returns a non-empty vector against the `local-embed`
+  route on a build-config-stamped real config. Fixture + containers + named volume torn down afterward
+  (`docker compose --profile ai down -v`; no leftover `local-llm-*` containers/volumes).

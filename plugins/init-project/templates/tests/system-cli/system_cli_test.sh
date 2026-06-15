@@ -254,6 +254,13 @@ check "api_key with TAB rejected -> 64"    '[[ $rc -eq 64 ]]'
 jq --arg u 'http://host/p#frag' '.services."claude-api".base_url=$u' "$WORK/config.json" > "$BADURL"
 OUT="$(runner "$WBC" --config "$BADURL")"; rc=$?
 check "base_url path # round-trips"        '[[ $rc -eq 0 ]] && grep -qx "ANTHROPIC_BASE_URL=http://host/p#frag" "$WORK/src/Api/.env"'
+# A " (double-quote) in the path is non-whitespace (passes the grammar) and
+# round-trips raw through the compose env_file consumer (quotes are only stripped
+# when WRAPPING the whole value, not embedded) — same accept rule as the api_key
+# dquote fixture above.
+jq --arg u 'http://host/p"q' '.services."claude-api".base_url=$u' "$WORK/config.json" > "$BADURL"
+OUT="$(runner "$WBC" --config "$BADURL")"; rc=$?
+check "base_url path \" round-trips"       '[[ $rc -eq 0 ]] && grep -qx "ANTHROPIC_BASE_URL=http://host/p\"q" "$WORK/src/Api/.env"'
 jq --arg u 'http://host/p$x' '.services."claude-api".base_url=$u' "$WORK/config.json" > "$BADURL"
 OUT="$(runner "$WBC" --config "$BADURL")"; rc=$?
 check "base_url path \$ rejected -> 64"    '[[ $rc -eq 64 ]]'
