@@ -35,12 +35,23 @@
   "customizations": {
     "vscode": {
       "extensions": [
+        // Language + toolchain
         "ms-dotnettools.csdevkit",
         "Angular.ng-template",
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
+        "timonwong.shellcheck",
+        "redhat.vscode-yaml",
+        // Containers + data (compose stacks live outside .devcontainer/)
         "ms-azuretools.vscode-docker",
-        "timonwong.shellcheck"
+        "ms-ossdata.vscode-pgsql",
+        // Tests: visualize the 100% coverage gate (docs/tdd.md) inline
+        "ryanluker.vscode-coverage-gutters",
+        // GitHub: PRs/issues + CI workflow runs (.github/workflows/)
+        "github.vscode-pull-request-github",
+        "github.vscode-github-actions",
+        // Docs: GitHub-styled markdown preview for docs/*.md
+        "bierner.markdown-preview-github-styles"
       ]
     }
   },
