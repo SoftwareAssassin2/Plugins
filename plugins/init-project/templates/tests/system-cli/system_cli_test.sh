@@ -621,6 +621,23 @@ check "up --profile ai: invokes local compose --profile ai up" \
 check "up --profile ai: COMPOSE_PROFILES cleared on the call" \
       'grep -q "etc/local-llm.*COMPOSE_PROFILES=\]" "$STUB_LOG"'
 
+# --- dispatcher forwarding: the REAL user path is `./system.sh up --profile ...`, so
+#     prove system.sh forwards "$@" verbatim (a dispatcher dropping args would pass
+#     every direct-script test above yet break the actual command). Drive through
+#     $WSYS for both a forwarded SUCCESS (ai-mock, stack installed) and a forwarded
+#     usage error (invalid profile reaching up's grammar). (R7 arg-forwarding, R10) --
+set_llmodel ""
+: > "$STUB_LOG"
+OUT="$(COMPOSE_PROFILES=ai runner "$WSYS" up --profile ai-mock)"; rc=$?
+check "dispatcher: system.sh forwards --profile ai-mock to up" \
+      '[[ $rc -eq 0 ]] && grep -q "etc/local-llm/docker-compose.yml --profile ai-mock up -d" "$STUB_LOG"'
+OUT="$(runner "$WSYS" up --profile bogus)"; rc=$?
+check "dispatcher: forwarded invalid profile -> up usage exit 64" \
+      '[[ $rc -eq 64 ]] && grep -q "usage:" <<<"$OUT"'
+OUT="$(runner "$WSYS" down --profile ai)"; rc=$?
+check "dispatcher: system.sh forwards down --profile ai (tears down both)" \
+      '[[ $rc -eq 0 ]]'
+
 # --- up --profile ai: all preflights pass (chat + embeddings) ----------------------
 set_llmodel '{model:"llama3.2:3b",embeddingModel:"nomic-embed-text"}'
 write_llcfg "llama3.2:3b" "nomic-embed-text"
