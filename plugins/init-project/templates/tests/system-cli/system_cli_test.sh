@@ -199,6 +199,13 @@ OUT="$(runner "$WBC" --config "$OPAQUE")"; rc=$?
 check "external service cred exempt"      '[[ $rc -eq 0 ]]'
 check "opaque openai-api key emitted raw" '[[ $rc -eq 0 ]] && grep -qx "OPENAI_API_KEY=sk-x/y+z=w" "$WORK/src/Api/.env"'
 
+# The generated runtime litellm config MUST be gitignored (R6 acceptance) so a
+# build-config run with localLlm.model never leaves a committable artifact. The
+# committed template (config.yaml.template) is NOT matched by this rule.
+if [[ -f "$ROOT/.gitignore" ]]; then
+  check ".gitignore ignores generated litellm config.yaml" 'grep -qE "^[[:space:]]*etc/local-llm/litellm/config\.yaml[[:space:]]*$" "$ROOT/.gitignore"'
+fi
+
 echo "== build-config: services{} LLM endpoints (R6) =="
 # base_url grammar: reject malformed host / non-numeric & out-of-range ports.
 BADURL="$WORK/badurl.json"
@@ -224,6 +231,15 @@ done
 jq --arg k 'sk-a$b' '.services."claude-api".api_key=$k' "$WORK/config.json" > "$KEYT"
 OUT="$(runner "$WBC" --config "$KEYT")"; rc=$?
 check "api_key with \$ rejected -> 64"     '[[ $rc -eq 64 ]]'
+# whitespace+# is a compose env_file inline-comment sequence that TRUNCATES the value
+# (KEY=sk #x -> sk), so it must be rejected even though space and # are each fine alone.
+jq --arg k 'sk-a #suffix' '.services."claude-api".api_key=$k' "$WORK/config.json" > "$KEYT"
+OUT="$(runner "$WBC" --config "$KEYT")"; rc=$?
+check "api_key with space+# rejected -> 64" '[[ $rc -eq 64 ]]'
+# A # NOT preceded by whitespace round-trips (no inline comment).
+jq --arg k 'sk-a#suffix' '.services."claude-api".api_key=$k' "$WORK/config.json" > "$KEYT"
+OUT="$(runner "$WBC" --config "$KEYT")"; rc=$?
+check "api_key with #-no-space round-trips" '[[ $rc -eq 0 ]] && grep -qx "ANTHROPIC_API_KEY=sk-a#suffix" "$WORK/src/Api/.env"'
 jq --arg k "$(printf 'sk-a\nb')" '.services."claude-api".api_key=$k' "$WORK/config.json" > "$KEYT"
 OUT="$(runner "$WBC" --config "$KEYT")"; rc=$?
 check "api_key with LF rejected -> 64"     '[[ $rc -eq 64 ]]'

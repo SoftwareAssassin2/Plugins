@@ -84,18 +84,23 @@ v_base_url() {
 # compose's `env_file:` parser (the confirmed consumer of src/Api/.env — see
 # docs/config-management.md §4/§7 + src/Api/Program.cs). That parser takes the value
 # RAW (no shell close-reopen quoting; surrounding quotes are STRIPPED, so KEY='value'
-# would lose the quotes) and performs `$`/`${VAR}` interpolation, and it cannot
-# represent embedded newlines. We therefore emit values verbatim and REJECT any char
+# would lose the quotes) and performs `$`/`${VAR}` interpolation, treats a
+# WHITESPACE-then-`#` sequence as a trailing inline comment, and cannot represent
+# embedded newlines. We therefore emit values verbatim and REJECT any char/sequence
 # that cannot round-trip across the consumer set:
 #   - CR / LF / other control chars (break line parsing / multi-line not supported)
 #   - `$` (compose variable interpolation; cannot round-trip raw, and the `$$` escape
 #     is compose-only and would corrupt a plain shell `source` consumer)
-# Empirically grounded against `docker compose config` (v2). space/#/"/' round-trip raw.
+#   - whitespace immediately followed by `#` (compose strips it as an inline comment,
+#     truncating the value — empirically: `KEY=sk #x` parses to `sk`). A `#` NOT
+#     preceded by whitespace (e.g. a URL fragment `host/p#frag`) round-trips fine.
+# Empirically grounded against `docker compose config` (v2). space/#/"/' otherwise OK.
 v_env_value() {
   local value="$1" label="$2"
   [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]] && die "$label contains a newline/CR (cannot be encoded in a .env value)"
   [[ "$value" =~ [[:cntrl:]] ]] && die "$label contains a control character (cannot be encoded in a .env value)"
   [[ "$value" == *'$'* ]] && die "$label contains '\$' (docker compose env_file interpolates it; cannot round-trip): '$value'"
+  [[ "$value" =~ [[:space:]]# ]] && die "$label contains a whitespace+'#' inline-comment sequence (docker compose env_file truncates the value): '$value'"
   return 0
 }
 
