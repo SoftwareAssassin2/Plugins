@@ -459,6 +459,239 @@ check "down: removes shared observability network" 'grep -q "network rm observab
 OUT="$(runner "$WCLI/status.sh")"; rc=$?
 check "status: stacks present -> exit 0 + docker compose ps invoked" '[[ $rc -eq 0 ]] && grep -q " ps" "$STUB_LOG"'
 
+echo "== up/down: opt-in local-llm profile orchestration (docker STUBBED) =="
+# The local-llm stack lives at etc/local-llm/docker-compose.yml (config at
+# etc/local-llm/litellm/config.yaml, model from config.json -> localLlm.model). All
+# docker calls are stubbed; we assert command CONSTRUCTION + every branch.
+#
+# Core src/* compose stacks are still present from Branch B above (postgres/keycloak/
+# observability) — so we can assert that a FAILED `--profile ai` preflight leaves
+# ZERO docker invocations (no core stack started either: preflight runs first).
+
+LLDIR_RT="$WORK/etc/local-llm"
+LLCFG_RT="$LLDIR_RT/litellm"
+mkdir -p "$LLCFG_RT"
+# A docker stub that records argv (incl. the cleared COMPOSE_PROFILES) into STUB_LOG.
+# Overwrites the generic stub for this section so we can also assert env handling.
+cat > "$STUBBIN/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "STUB docker $* [COMPOSE_PROFILES=${COMPOSE_PROFILES-<unset>}]" >> "${STUB_LOG:-/dev/null}"
+exit 0
+STUB
+chmod +x "$STUBBIN/docker"
+
+# Helper: write a generated litellm config.yaml with the given chat + (optional)
+# embed models, matching build-config's stamped shape (two ollama_chat routes + an
+# optional ollama/ embed route).
+write_llcfg() {  # write_llcfg <chat-model> [embed-model]
+  {
+    printf 'model_list:\n'
+    printf '  - model_name: "*"\n    litellm_params:\n      model: ollama_chat/%s\n      api_base: http://ollama:11434\n' "$1"
+    printf '  - model_name: local\n    litellm_params:\n      model: ollama_chat/%s\n      api_base: http://ollama:11434\n' "$1"
+    if [[ -n "${2:-}" ]]; then
+      printf '  - model_name: local-embed\n    litellm_params:\n      model: ollama/%s\n      api_base: http://ollama:11434\n' "$2"
+    fi
+  } > "$LLCFG_RT/config.yaml"
+}
+set_llmodel() {  # set_llmodel <jq-localLlm-expr-or-empty>  (writes $WORK/config.json)
+  if [[ -z "${1:-}" ]]; then
+    jq 'del(.localLlm)' "$WORK/config.json" > "$WORK/config.json.tmp"
+  else
+    jq ".localLlm=$1" "$WORK/config.json" > "$WORK/config.json.tmp"
+  fi
+  mv "$WORK/config.json.tmp" "$WORK/config.json"
+}
+
+# --- profile grammar (parse layer, shared by up + down) ----------------------------
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile bogus)"; rc=$?
+check "up: unknown profile -> exit 64"            '[[ $rc -eq 64 ]] && grep -q "usage:" <<<"$OUT"'
+OUT="$(runner "$WCLI/up.sh" --frobnicate)"; rc=$?
+check "up: unknown flag -> exit 64"               '[[ $rc -eq 64 ]]'
+OUT="$(runner "$WCLI/up.sh" --profile)"; rc=$?
+check "up: --profile missing value -> exit 64"    '[[ $rc -eq 64 ]]'
+OUT="$(runner "$WCLI/up.sh" --profile ai --profile ai-mock)"; rc=$?
+check "up: both ai + ai-mock -> exit 64 (port)"   '[[ $rc -eq 64 ]] && grep -q ":4000" <<<"$OUT"'
+OUT="$(runner "$WCLI/down.sh" --profile=bogus)"; rc=$?
+check "down: unknown profile (= form) -> exit 64" '[[ $rc -eq 64 ]]'
+OUT="$(runner "$WCLI/down.sh" stray-arg)"; rc=$?
+check "down: non-profile arg -> exit 64"          '[[ $rc -eq 64 ]]'
+
+# --- not-installed stack (etc/local-llm/docker-compose.yml ABSENT) -----------------
+rm -f "$LLDIR_RT/docker-compose.yml"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai, not installed -> exit 64"   '[[ $rc -eq 64 ]] && grep -q "not installed" <<<"$OUT"'
+check "up --profile ai, not installed -> 0 docker"  '! grep -q "STUB docker" "$STUB_LOG"'
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai-mock)"; rc=$?
+check "up --profile ai-mock, not installed -> 64"   '[[ $rc -eq 64 ]] && grep -q "not installed" <<<"$OUT"'
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/down.sh" --profile ai)"; rc=$?
+check "down --profile ai, not installed -> no-op 0" '[[ $rc -eq 0 ]] && ! grep -q "local-llm" "$STUB_LOG"'
+
+# Install the stack compose file for the remaining cases.
+printf 'services: {}\n' > "$LLDIR_RT/docker-compose.yml"
+
+# --- default up (no profile) never invokes the local compose, even with ambient
+#     COMPOSE_PROFILES=ai set --------------------------------------------------------
+: > "$STUB_LOG"
+OUT="$(COMPOSE_PROFILES=ai runner "$WCLI/up.sh")"; rc=$?
+check "default up: exit 0"                          '[[ $rc -eq 0 ]]'
+check "default up: NO local-llm compose invoked"    '! grep -q "etc/local-llm" "$STUB_LOG"'
+check "default up: ambient COMPOSE_PROFILES ignored — no ai containers" '! grep -q "etc/local-llm" "$STUB_LOG"'
+
+# --- up --profile ai-mock: installed, no model needed (static config) --------------
+set_llmodel ""            # no localLlm at all — ai-mock must not require it
+: > "$STUB_LOG"
+OUT="$(COMPOSE_PROFILES=ai runner "$WCLI/up.sh" --profile ai-mock)"; rc=$?
+check "up --profile ai-mock: exit 0 (no model needed)" '[[ $rc -eq 0 ]]'
+check "up --profile ai-mock: invokes local compose w/ --profile ai-mock" \
+      'grep -q "etc/local-llm/docker-compose.yml --profile ai-mock up -d" "$STUB_LOG"'
+check "up --profile ai-mock: COMPOSE_PROFILES cleared on the call" \
+      'grep -q "etc/local-llm.*COMPOSE_PROFILES=\]" "$STUB_LOG"'
+
+# --- up --profile ai preflight: config.yaml absent ---------------------------------
+set_llmodel '{model:"llama3.2:3b"}'
+rm -f "$LLCFG_RT/config.yaml"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: config.yaml absent -> err"  '[[ $rc -ne 0 ]] && grep -q "build-config" <<<"$OUT"'
+check "up --profile ai: preflight fail -> 0 docker"  '! grep -q "STUB docker" "$STUB_LOG"'
+
+# --- up --profile ai preflight: localLlm.model empty -------------------------------
+set_llmodel '{embeddingModel:"nomic-embed-text"}'   # model absent
+write_llcfg "llama3.2:3b"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: empty model -> err"         '[[ $rc -ne 0 ]] && grep -q "localLlm.model" <<<"$OUT"'
+
+# --- up --profile ai preflight: malformed localLlm (wrong type) tolerated by export,
+#     but empty model -> err (no jq crash) -----------------------------------------
+set_llmodel '"oops-a-string"'
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: wrong-typed localLlm -> err (no jq crash)" \
+      '[[ $rc -ne 0 ]] && ! grep -qi "jq:" <<<"$OUT"'
+
+# --- up --profile ai preflight: stale chat model (model names with ./:/) -----------
+set_llmodel '{model:"huihui_ai/llama3.2:q4"}'
+write_llcfg "llama3.2:3b"     # YAML stamped with a DIFFERENT model
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: stale chat model -> err"    '[[ $rc -ne 0 ]] && grep -q "stale" <<<"$OUT"'
+check "up --profile ai: stale -> 0 docker"          '! grep -q "STUB docker" "$STUB_LOG"'
+
+# --- up --profile ai preflight: config has embed, YAML has none --------------------
+set_llmodel '{model:"llama3.2:3b",embeddingModel:"nomic-embed-text"}'
+write_llcfg "llama3.2:3b"     # no embed route
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: embed in config, none in YAML -> err" '[[ $rc -ne 0 ]] && grep -q "stale" <<<"$OUT"'
+
+# --- up --profile ai preflight: YAML has embed, config has none --------------------
+set_llmodel '{model:"llama3.2:3b"}'
+write_llcfg "llama3.2:3b" "nomic-embed-text"   # embed route present
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: embed in YAML, none in config -> err" '[[ $rc -ne 0 ]] && grep -q "stale" <<<"$OUT"'
+
+# --- up --profile ai preflight: stale embed VALUE ----------------------------------
+set_llmodel '{model:"llama3.2:3b",embeddingModel:"mxbai-embed-large"}'
+write_llcfg "llama3.2:3b" "nomic-embed-text"   # embed route has the OLD value
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: stale embed value -> err"   '[[ $rc -ne 0 ]] && grep -q "stale" <<<"$OUT"'
+
+# --- up --profile ai preflight: no ollama_chat route at all ------------------------
+set_llmodel '{model:"llama3.2:3b"}'
+printf 'model_list:\n  - model_name: local\n    litellm_params:\n      model: openai/gpt\n' > "$LLCFG_RT/config.yaml"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: no ollama_chat route -> err" '[[ $rc -ne 0 ]] && grep -q "no ollama_chat route" <<<"$OUT"'
+
+# --- up --profile ai: all preflights pass (chat-only) -> brings up the real stack --
+set_llmodel '{model:"llama3.2:3b"}'
+write_llcfg "llama3.2:3b"
+: > "$STUB_LOG"
+OUT="$(COMPOSE_PROFILES=ai runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai (chat-only): exit 0"          '[[ $rc -eq 0 ]]'
+check "up --profile ai: invokes local compose --profile ai up" \
+      'grep -q "etc/local-llm/docker-compose.yml --profile ai up -d" "$STUB_LOG"'
+check "up --profile ai: COMPOSE_PROFILES cleared on the call" \
+      'grep -q "etc/local-llm.*COMPOSE_PROFILES=\]" "$STUB_LOG"'
+
+# --- up --profile ai: all preflights pass (chat + embeddings) ----------------------
+set_llmodel '{model:"llama3.2:3b",embeddingModel:"nomic-embed-text"}'
+write_llcfg "llama3.2:3b" "nomic-embed-text"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai (chat+embed): exit 0 + compose up" \
+      '[[ $rc -eq 0 ]] && grep -q "etc/local-llm/docker-compose.yml --profile ai up -d" "$STUB_LOG"'
+
+# --- up --profile ai: a compose failure propagates as non-zero (R13) ---------------
+set_llmodel '{model:"llama3.2:3b"}'
+write_llcfg "llama3.2:3b"
+cat > "$STUBBIN/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "STUB docker $*" >> "${STUB_LOG:-/dev/null}"
+# Fail only the local-llm compose up (simulate a model-pull / bring-up failure).
+case "$*" in
+  *etc/local-llm*up*) exit 7 ;;
+  *) exit 0 ;;
+esac
+STUB
+chmod +x "$STUBBIN/docker"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: compose/model-pull failure -> non-zero (R13)" '[[ $rc -ne 0 ]]'
+# Restore the recording (always-succeed) stub.
+cat > "$STUBBIN/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "STUB docker $* [COMPOSE_PROFILES=${COMPOSE_PROFILES-<unset>}]" >> "${STUB_LOG:-/dev/null}"
+exit 0
+STUB
+chmod +x "$STUBBIN/docker"
+
+# --- down: NOT profile-gated — always tears down the stack (both profiles) ---------
+# Config.yaml ABSENT must still succeed (down needs no generated config).
+set_llmodel '{model:"llama3.2:3b"}'
+rm -f "$LLCFG_RT/config.yaml"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/down.sh")"; rc=$?
+check "down (default): tears down local-llm under both profiles" \
+      '[[ $rc -eq 0 ]] && grep -q "etc/local-llm/docker-compose.yml --profile ai --profile ai-mock down" "$STUB_LOG"'
+check "down: succeeds with generated config.yaml absent" '[[ $rc -eq 0 ]]'
+check "down: COMPOSE_PROFILES cleared on the teardown call" \
+      'grep -q "etc/local-llm.*COMPOSE_PROFILES=\]" "$STUB_LOG"'
+
+# down mirrors up's grammar as no-ops: a profile arg (and duplicates / both) is
+# accepted but does not change the teardown (always both).
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/down.sh" --profile ai --profile ai --profile ai-mock)"; rc=$?
+check "down --profile (dups + both) -> still tears down both, exit 0" \
+      '[[ $rc -eq 0 ]] && grep -q "etc/local-llm/docker-compose.yml --profile ai --profile ai-mock down" "$STUB_LOG"'
+
+# down tolerates a malformed (wrong-typed) localLlm via the type-safe export.
+set_llmodel '["not","an","object"]'
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/down.sh")"; rc=$?
+check "down: wrong-typed localLlm tolerated (no jq crash)" \
+      '[[ $rc -eq 0 ]] && ! grep -qi "jq:" <<<"$OUT"'
+
+# down with config.json ABSENT (export yields empty, no jq error) still tears down.
+mv "$WORK/config.json" "$WORK/config.json.bak"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/down.sh")"; rc=$?
+check "down: config.json absent -> empty export, still tears down" \
+      '[[ $rc -eq 0 ]] && grep -q "etc/local-llm/docker-compose.yml --profile ai --profile ai-mock down" "$STUB_LOG"'
+mv "$WORK/config.json.bak" "$WORK/config.json"
+
+# Restore a clean config.json + remove the local-llm stack so later sections are
+# unaffected (migrate/psql don't touch it, but keep the work tree tidy).
+set_llmodel ""
+rm -rf "$LLDIR_RT"
+
 echo "== migrate subcommand — dotnet STUBBED, env-gated branches =="
 # migrate.sh: (1) missing src/DataAccess/.env -> exit 64; (2) .env present but no
 # MIGRATOR_CONNECTION_STRING -> exit 64; (3) full env -> runs (stubbed) dotnet.

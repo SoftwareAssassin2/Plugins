@@ -58,7 +58,8 @@ Author the build-time-complete compose templates for the local LLM mock: `etc/lo
 - [ ] AUTOMATED CI: generated-file checks + model-pull/any shell at 100% line coverage via kcov, per-branch tests, with ollama/curl/docker stubbed — no daemon/network/model (R10)
 
 ## Done summary
-_(filled on completion)_
-
+Authored the opt-in local LLM mock stack under templates/_optional/local-llm/ (compose with ollama/model-pull/real+mock LiteLLM, the real config template with wildcard chat route + sentinel-marked embeddings block, the static mock config, and the POSIX _pull-model.sh), plus an unconditional unit suite, a Docker-gated ai-mock integration proof wired into CI, and a coverage.sh that runs every shell suite under one kcov merge. Proved the epic's early proof point: ai-mock answers canned responses on both /v1/chat/completions and /v1/messages with no Ollama, and a manual --profile ai smoke confirmed both surfaces answer via real Ollama inference using wildcard model names. Codex impl-review: SHIP (0 findings, R1/R2/R3/R5/R7/R10/R11/R12/R13/R14/R15 met).
 ## Evidence
-_(filled on completion)_
+- Commits: e96359e14159baad24873c69d1f4f4b68b34b962
+- Tests: bash plugins/init-project/templates/tests/system-cli/local_llm_test.sh (56 passed), bash plugins/init-project/templates/tests/coverage.sh (no-kcov path: 56+53 passed across both suites), bash plugins/init-project/templates/tests/integration/local-llm-mock.sh (Docker ai-mock: 5 passed — both surfaces + tools tolerated, no Ollama), MANUAL --profile ai: ollama+model-pull(llama3.2:1b)+litellm up; gpt-4o /v1/chat/completions + claude-sonnet-4-6 /v1/messages wildcard routes answered via real Ollama; local alias OK, docker compose --profile ai|ai-mock config OK; default profile activates 0 services; embeddings keep/delete both valid YAML, no leftover token, bash plugins/init-project/tests/scaffold_test.sh (280 passed — unaffected)
+- PRs:

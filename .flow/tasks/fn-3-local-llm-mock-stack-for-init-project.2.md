@@ -42,7 +42,8 @@ Wire the LLM services into the config model with an explicit build-config contra
 - [ ] Tests assert each emitted `.env` line + the stamped model wiring; build-config additions at 100% line coverage + per-branch (R10)
 
 ## Done summary
-_(filled on completion)_
-
+Wired the always-present claude-api/openai-api services{} entries into config.json/config.deploy.json (key-set parity) and extended build-config.sh to unconditionally emit ANTHROPIC_/OPENAI_ BASE_URL+API_KEY into src/Api/.env with injection-resistant base_url validation and a docker-compose-env_file-matched transport-safe encoding (rejects CR/LF/control/$ and whitespace+# which compose would truncate/interpolate). Added opt-in localLlm stamping of the gitignored litellm/config.yaml (model-name grammar, embeddings sentinel-block keep/delete, structural+post-stamp validation preflighted before any write for atomicity), updated docs/config-management.md (openai-api row, base_url grammar, .env encoding contract, localLlm fields, R9 dev-tooling classification), and added per-branch tests. Codex impl-review: SHIP.
 ## Evidence
-_(filled on completion)_
+- Commits: 24f77e5, bd98026, b8f18ae, bc806a801650d6f89dee2a402398189cd301bdc1
+- Tests: bash plugins/init-project/templates/tests/system-cli/system_cli_test.sh (117 passed), bash plugins/init-project/templates/tests/system-cli/local_llm_test.sh (56 passed), bash plugins/init-project/tests/scaffold_test.sh (280 passed), bash plugins/init-project/tests/dispatcher_test.sh (62 passed), config-drift.sh PASS, shellcheck clean
+- PRs:
