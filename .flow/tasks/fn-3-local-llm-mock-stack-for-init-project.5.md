@@ -31,7 +31,8 @@ Author the docs: a new `docs/local-llm.md` standard (incl. removal instructions)
 - [ ] Docs are H&G-free and build-time-complete (R8)
 
 ## Done summary
-_(filled on completion)_
-
+Authored docs/local-llm.md (the local LLM mock-stack standard) and updated _CLAUDE.md (Standards index + invariant-exceptions), dev-container.md (dep-placement table + outside-.devcontainer example), and README.md (Local LLM mock opt-in section). Covers ai vs ai-mock profiles, mock-vs-real, model selection + abliterated caveat, optional embeddings, wildcard routing, the Anthropic-surface fidelity caveat with the exact pinned LiteLLM digest + Ollama tag, CPU-only default + GPU override, offline/pre-pull + loud pull-failure, editing the canned mock_response, dev-tooling classification, and complete-removal steps.
 ## Evidence
-_(filled on completion)_
+- Commits: 9c01949f687045fd6aa6aa4f7dae8fa33564e2c2, 87408d8bc702264ca05ce9a7eede1cd3a8992b0c
+- Tests: bash plugins/init-project/tests/scaffold_test.sh (305 ok, 0 fail), bash plugins/init-project/tests/dispatcher_test.sh (62 ok, 0 fail), scaffold demo project: docs/local-llm.md lands with LiteLLM digest intact
+- PRs:
