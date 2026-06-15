@@ -10,17 +10,36 @@ Stand up a new software project from copy-ready templates. **The templates are a
 
 ## What it does (orchestration)
 1. **Ask** for a **project name** (`^[a-z0-9][a-z0-9-]*$`) and a **short description** — nothing else.
-2. **Run the bundled engine:** `scaffold.sh <name> "<description>"` (see [scaffold.sh](scaffold.sh)). It copies `templates/` into `./<name>/`, substitutes `__SCAFFOLD_PROJECT_NAME__` / `__SCAFFOLD_PROJECT_DESCRIPTION__`, generates a fresh URL-safe value for each `__SCAFFOLD_GEN_URLSAFE__` occurrence, maps `_CLAUDE.md` → `CLAUDE.md`, writes `.init-project-manifest.json`, and fails if any `__SCAFFOLD_*__` token is left behind.
+2. **Local LLM mock stack (opt-in prompt — before running the engine).** Ask the user whether to install the **local LLM mock stack** (LiteLLM + Ollama) so the scaffolded app's outbound LLM calls hit a local gateway instead of paid providers — see the [Local LLM opt-in](#local-llm-opt-in-before-the-engine-runs) section below for the exact prompts (install? → chat-model menu → optional embeddings). The default is **no** (a plain scaffold). Carry the user's answers into the engine flags in the next step.
+3. **Run the bundled engine:** `scaffold.sh <name> "<description>" [--local-llm --local-llm-model <model> [--local-llm-embed-model <model>]]` (see [scaffold.sh](scaffold.sh)). It copies `templates/` into `./<name>/`, substitutes `__SCAFFOLD_PROJECT_NAME__` / `__SCAFFOLD_PROJECT_DESCRIPTION__`, generates a fresh URL-safe value for each `__SCAFFOLD_GEN_URLSAFE__` occurrence, maps `_CLAUDE.md` → `CLAUDE.md`, writes `.init-project-manifest.json`, and fails if any `__SCAFFOLD_*__` token is left behind.
    - Refuses a non-empty target unless `--force` (first scaffold, no collision with unmanaged files) or `--update` (re-scaffold over a prior output; `config.json` preserved).
    - `--dry-run` prints the planned tree without writing.
-3. **Report** the created tree to the user.
-4. **Git/GitHub phase** (below) — `git init` + initial commit, status line, optional repo + `/init`.
-5. **Terminal `/dick` hand-off** (below) — the LAST thing the skill does.
+   - **`--local-llm` (opt-in, off by default):** lays down `templates/_optional/local-llm/` → the project's `etc/local-llm/` (this subtree is **excluded from the default copy**, so a plain scaffold has **zero** `etc/local-llm/` files), and `jq`-mutates the generated `config.json` — repointing `claude-api`/`openai-api` base URLs at the local LiteLLM gateway (`http://127.0.0.1:4000` / `…/v1`) with dummy `sk-local-mock` keys, and adding `localLlm.model` (+ `localLlm.embeddingModel` when embeddings were chosen). `--local-llm` **requires** `--local-llm-model <model>` (the model is the single source of truth — there is no hardcoded default); the model flags without `--local-llm`, or an invalid model name, are usage errors (exit 64).
+   - **Conditional `jq` dependency:** the `--local-llm` path uses `jq` **on the host** (scaffolding may run outside the dev container). The engine **preflights `jq` only when `--local-llm` is set** and exits 64 with a clear message if it's missing; a plain (non-opt-in) scaffold needs no `jq`.
+4. **Report** the created tree to the user.
+5. **Git/GitHub phase** (below) — `git init` + initial commit, status line, optional repo + `/init`.
+6. **Terminal `/dick` hand-off** (below) — the LAST thing the skill does.
 
-**Scaffold-exit handling (gate before step 4).** `scaffold.sh` exit codes are surfaced verbatim as user-facing errors; a non-zero exit STOPS the skill — do **not** proceed to git/`/dick`:
+**Scaffold-exit handling (gate before the git phase).** `scaffold.sh` exit codes are surfaced verbatim as user-facing errors; a non-zero exit STOPS the skill — do **not** proceed to git/`/dick`:
 - **64** — usage/validation error (e.g. the name failed `^[a-z0-9][a-z0-9-]*$`, or a `__SCAFFOLD_*__` token survived). Re-prompt for a valid name/description, or report the validation message.
 - **65** — target/collision error (the target dir is non-empty / has a prior manifest / an unmanaged file collides). Report it and tell the user to pick a fresh `./<name>/`, or re-run with `--force`/`--update` per the message — never silently overwrite.
-- **0** — success; continue to step 4.
+- **0** — success; continue to the git phase.
+
+## Local LLM opt-in (before the engine runs)
+
+The scaffolded project **always** carries `claude-api` + `openai-api` `services{}` entries pointing at the real providers. This opt-in step instead points them at a **local LiteLLM + Ollama mock stack** (under `etc/local-llm/`), so the app's LLM calls run locally — free, offline-capable, and deterministic in CI. It is **off by default** and fully removable; declining leaves a plain scaffold with **no** `etc/local-llm/` and **no** `localLlm` config block. This is **prose-driven prompting only** — the skill chooses the model with the user and passes the names as flags; it never authors model config itself (the engine + `build-config` do the deterministic work).
+
+Ask, in order (each defaults to the safe choice):
+
+1. **"Install the local LLM mock stack (LiteLLM + Ollama)?"** (default: **no**). If **no**, run the engine with no `--local-llm` flag and skip the rest of this section.
+2. **If yes — pick the chat model** (guided menu; the chosen name is passed as `--local-llm-model`):
+   - **Lightweight** (laptop/CPU-friendly default) — e.g. `llama3.2:3b` or `qwen2.5:3b`.
+   - **More powerful** — e.g. `qwen2.5:7b` or `llama3.1:8b`.
+   - **Abliterated** — e.g. `huihui_ai/llama3.2-abliterate` — **caveat:** guardrails removed + quality degradation + the **base model's license** still applies. Never offer this as a default; only when the user explicitly wants it.
+   - **Something else** — help the user pick by size / VRAM / task / license (any Ollama model name). The engine validates the entered name against `^[A-Za-z0-9._/-]+(:[A-Za-z0-9._-]+)?$` and **re-prompt on rejection** (exit 64).
+3. **Then a second prompt — "Does the project need embeddings?"** (default: **no**). If **yes**, pick an embedding model (default **`nomic-embed-text`**, or **"something else"** — same grammar validation) and pass it as `--local-llm-embed-model`. If **no**, omit the flag entirely (no embeddings entry is written).
+
+Then invoke the engine: `scaffold.sh <name> "<description>" --local-llm --local-llm-model <chat-model> [--local-llm-embed-model <embed-model>]`. The engine lays down `etc/local-llm/`, repoints the base URLs + keys, and writes `localLlm.model` (+ `localLlm.embeddingModel`) into `config.json` — the single source of truth that `build-config` and `system.sh up`/`down` later consume. Reminder: the `--local-llm` path needs **`jq` on the host** (preflighted by the engine; a plain scaffold does not).
 
 ## Git/GitHub phase (after a successful scaffold)
 
@@ -62,4 +81,5 @@ After the git phase + optional commit, offer to boot **`/dick`** (the business-a
 ## Notes
 - Deterministic stamping lives in `scaffold.sh` (tested, 100% coverage) — not in this prose.
 - The scaffolded project is a mono-repo: every component is `src/<component>/` with a matching `config.json` `systems[]` entry (tooling like `src/system-cli/` and `tests/` are documented exceptions).
-- **Ordering is single and unambiguous:** scaffold → `git init` + status line → optional `/init` → optional **initial commit** → **terminal `/dick` hand-off LAST**.
+- **Ordering is single and unambiguous:** optional local-LLM opt-in prompt → scaffold → `git init` + status line → optional `/init` → optional **initial commit** → **terminal `/dick` hand-off LAST**.
+- The local LLM mock stack lives under `etc/local-llm/` (internal dev tooling, like the observability stack) — it is opt-in, profile-gated, and removable; it is **not** a `systems[]` component.

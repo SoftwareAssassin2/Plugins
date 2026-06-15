@@ -486,6 +486,101 @@ printf 'not json{' > "$W3/b/config.json"
 check "invalid existing config aborts --update (exit 65)" '[[ $rc -eq 65 ]]'
 rm -rf "$W3"
 
+# ---------------------------------------------------------------------------
+# Local-LLM mock-stack opt-in (fn-3 task .4): --local-llm / --local-llm-model /
+# --local-llm-embed-model. The `_optional/local-llm/` subtree is pruned from the
+# default copy and laid down at etc/local-llm/ ONLY on opt-in; config.json is
+# jq-mutated (base URLs + keys + localLlm.model[/embeddingModel]) on opt-in only.
+# Every engine branch is exercised here (the per-branch + missing-jq coverage R10).
+# ---------------------------------------------------------------------------
+echo "== local-llm opt-in =="
+
+# target_rel unit: the _optional/local-llm/ subtree remaps under etc/local-llm/.
+check "target_rel maps _optional/local-llm subtree" '[[ "$(target_rel _optional/local-llm/litellm/config.yaml.template)" == "etc/local-llm/litellm/config.yaml.template" ]]'
+
+# (a) NON-opt-in: zero etc/local-llm, no localLlm block, real-provider base URLs +
+# REPLACE_ME keys, and NO leaked _optional/ subtree.
+LN="$(mktemp -d)"; ( cd "$LN" && bash "$SCAFFOLD" demo "x" >/dev/null )
+check "non-opt-in: no etc/local-llm/ files"        '[[ -z "$(find "$LN/demo/etc/local-llm" -type f 2>/dev/null)" ]]'
+check "non-opt-in: no _optional/ leaked"           '[[ ! -e "$LN/demo/_optional" ]]'
+check "non-opt-in: no localLlm block"              '! jq -e ".localLlm" "$LN/demo/config.json" >/dev/null 2>&1'
+check "non-opt-in: claude-api real-provider URL"   'jq -e ".services.\"claude-api\".base_url==\"https://api.anthropic.com\"" "$LN/demo/config.json" >/dev/null'
+check "non-opt-in: openai-api real-provider URL"   'jq -e ".services.\"openai-api\".base_url==\"https://api.openai.com/v1\"" "$LN/demo/config.json" >/dev/null'
+check "non-opt-in: both keys stay REPLACE_ME"      'jq -e "(.services.\"claude-api\".api_key==\"REPLACE_ME\") and (.services.\"openai-api\".api_key==\"REPLACE_ME\")" "$LN/demo/config.json" >/dev/null'
+check "non-opt-in: manifest has no etc/local-llm"  '! jq -r ".files[].path" "$LN/demo/.init-project-manifest.json" | grep -q "etc/local-llm"'
+rm -rf "$LN"
+
+# (b) opt-in (chat only): subtree laid down, URLs/keys repointed, localLlm.model set,
+# NO embeddingModel, manifest carries the 4 copied files, no leftover __SCAFFOLD__
+# tokens, and the @@LLM_MODEL@@ build-config token survives (NOT a scaffold token).
+LC="$(mktemp -d)"; ( cd "$LC" && bash "$SCAFFOLD" demo "x" --local-llm --local-llm-model "qwen2.5:7b" >/dev/null ); rc=$?
+check "opt-in chat: exit 0"                         '[[ $rc -eq 0 ]]'
+check "opt-in chat: etc/local-llm/docker-compose.yml landed" '[[ -f "$LC/demo/etc/local-llm/docker-compose.yml" ]]'
+check "opt-in chat: etc/local-llm/litellm config template landed" '[[ -f "$LC/demo/etc/local-llm/litellm/config.yaml.template" && -f "$LC/demo/etc/local-llm/litellm/config.mock.yaml" ]]'
+check "opt-in chat: _pull-model.sh landed"          '[[ -f "$LC/demo/etc/local-llm/_pull-model.sh" ]]'
+check "opt-in chat: no _optional/ leaked"           '[[ ! -e "$LC/demo/_optional" ]]'
+check "opt-in chat: claude-api repointed to gateway" 'jq -e ".services.\"claude-api\".base_url==\"http://127.0.0.1:4000\"" "$LC/demo/config.json" >/dev/null'
+check "opt-in chat: openai-api repointed to gateway/v1" 'jq -e ".services.\"openai-api\".base_url==\"http://127.0.0.1:4000/v1\"" "$LC/demo/config.json" >/dev/null'
+check "opt-in chat: both keys are sk-local-mock"    'jq -e "(.services.\"claude-api\".api_key==\"sk-local-mock\") and (.services.\"openai-api\".api_key==\"sk-local-mock\")" "$LC/demo/config.json" >/dev/null'
+check "opt-in chat: localLlm.model set"             'jq -e ".localLlm.model==\"qwen2.5:7b\"" "$LC/demo/config.json" >/dev/null'
+check "opt-in chat: NO localLlm.embeddingModel"     '! jq -e ".localLlm | has(\"embeddingModel\")" "$LC/demo/config.json" >/dev/null'
+check "opt-in chat: manifest lists 4 etc/local-llm files" '[[ "$(jq -r ".files[].path" "$LC/demo/.init-project-manifest.json" | grep -c "^etc/local-llm/")" -eq 4 ]]'
+check "opt-in chat: no leftover __SCAFFOLD__ tokens" '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$LC/demo/etc/local-llm"'
+check "opt-in chat: @@LLM_MODEL@@ build-config token preserved" 'grep -q "@@LLM_MODEL@@" "$LC/demo/etc/local-llm/litellm/config.yaml.template"'
+rm -rf "$LC"
+
+# (c) opt-in (chat + embed): embeddingModel set; also exercises the `--flag=value` form.
+LE="$(mktemp -d)"; ( cd "$LE" && bash "$SCAFFOLD" demo "x" --local-llm --local-llm-model="llama3.2:3b" --local-llm-embed-model="nomic-embed-text" >/dev/null ); rc=$?
+check "opt-in embed: exit 0 (=value form)"          '[[ $rc -eq 0 ]]'
+check "opt-in embed: localLlm.model set"            'jq -e ".localLlm.model==\"llama3.2:3b\"" "$LE/demo/config.json" >/dev/null'
+check "opt-in embed: localLlm.embeddingModel set"   'jq -e ".localLlm.embeddingModel==\"nomic-embed-text\"" "$LE/demo/config.json" >/dev/null'
+rm -rf "$LE"
+
+# (d) opt-in accepts a model with valid `/` and `:` punctuation (abliterated path).
+LA="$(mktemp -d)"; ( cd "$LA" && bash "$SCAFFOLD" demo "x" --local-llm --local-llm-model "huihui_ai/llama3.2-abliterate:7b-instruct" >/dev/null ); rc=$?
+check "opt-in: valid slash+colon model accepted"    '[[ $rc -eq 0 ]] && jq -e ".localLlm.model==\"huihui_ai/llama3.2-abliterate:7b-instruct\"" "$LA/demo/config.json" >/dev/null'
+rm -rf "$LA"
+
+# (e) opt-in mutation applies on --update too (re-scaffold over a prior output).
+LU="$(mktemp -d)"
+( cd "$LU" && bash "$SCAFFOLD" demo "x" >/dev/null )                                   # plain first scaffold
+( cd "$LU" && bash "$SCAFFOLD" demo "x" --update --local-llm --local-llm-model "qwen2.5:7b" >/dev/null ); rc=$?
+check "opt-in on --update: exit 0"                  '[[ $rc -eq 0 ]]'
+check "opt-in on --update: config.json repointed"   'jq -e ".services.\"claude-api\".base_url==\"http://127.0.0.1:4000\" and .localLlm.model==\"qwen2.5:7b\"" "$LU/demo/config.json" >/dev/null'
+check "opt-in on --update: etc/local-llm laid down" '[[ -f "$LU/demo/etc/local-llm/docker-compose.yml" ]]'
+rm -rf "$LU"
+
+# (f) usage errors (exit 64) — every guard branch. (Capture rc into a var first —
+# the harness's check evaluates its predicate against an explicit $rc, never a bare $?.)
+lerr() { local d; d="$(mktemp -d)"; ( cd "$d" && bash "$SCAFFOLD" "$@" >/dev/null 2>&1 ); local r=$?; rm -rf "$d"; return $r; }
+lerr demo x --local-llm;                                                  rc=$?; check "--local-llm w/o model -> 64"            '[[ $rc -eq 64 ]]'
+lerr demo x --local-llm-model qwen2.5:7b;                                 rc=$?; check "--local-llm-model w/o --local-llm -> 64" '[[ $rc -eq 64 ]]'
+lerr demo x --local-llm-embed-model nomic-embed-text;                     rc=$?; check "--local-llm-embed-model w/o --local-llm -> 64" '[[ $rc -eq 64 ]]'
+lerr demo x --local-llm --local-llm-model 'bad model';                    rc=$?; check "invalid model (space) -> 64"            '[[ $rc -eq 64 ]]'
+lerr demo x --local-llm --local-llm-model 'evil;rm -rf';                  rc=$?; check "invalid model (metachar) -> 64"         '[[ $rc -eq 64 ]]'
+lerr demo x --local-llm --local-llm-model ok --local-llm-embed-model 'bad embed'; rc=$?; check "invalid embed model -> 64"     '[[ $rc -eq 64 ]]'
+lerr demo x --local-llm --local-llm-model;                                rc=$?; check "--local-llm-model missing value -> 64"  '[[ $rc -eq 64 ]]'
+lerr demo x --local-llm --local-llm-model ok --local-llm-embed-model;     rc=$?; check "--local-llm-embed-model missing value -> 64" '[[ $rc -eq 64 ]]'
+
+# (g) the --local-llm jq preflight: opt-in REQUIRES jq on the host (exit 64 with a
+# clear message); the NON-opt-in scaffold stays jq-free. Simulate a jq-less host by
+# running scaffold.sh under a PATH that contains only a curated bin WITHOUT jq.
+# (Symlink the few non-jq tools scaffold.sh needs; deliberately omit jq.)
+JQLESS="$(mktemp -d)"; mkdir -p "$JQLESS/bin"
+for t in bash sh env cat cp mkdir find shasum cut dirname openssl tr grep ls mv rm sed sort; do
+  p="$(command -v "$t" 2>/dev/null)" && ln -sf "$p" "$JQLESS/bin/$t"
+done
+JD="$(mktemp -d)"
+( cd "$JD" && PATH="$JQLESS/bin" bash "$SCAFFOLD" demo "x" --local-llm --local-llm-model qwen2.5:7b >/tmp/jqless.out 2>&1 ); rc=$?
+check "--local-llm without jq on host -> exit 64"   '[[ $rc -eq 64 ]]'
+check "--local-llm-without-jq error names jq"       'grep -qi "jq" /tmp/jqless.out'
+rm -rf "$JD"
+# NON-opt-in scaffold must succeed even when jq is absent from PATH (no jq dependency).
+JD2="$(mktemp -d)"
+( cd "$JD2" && PATH="$JQLESS/bin" bash "$SCAFFOLD" demo "x" >/dev/null 2>&1 ); rc=$?
+check "non-opt-in scaffold succeeds without jq (exit 0)" '[[ $rc -eq 0 && -f "$JD2/demo/config.json" ]]'
+rm -rf "$JD2" "$JQLESS"
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]
