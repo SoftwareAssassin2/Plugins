@@ -550,6 +550,28 @@ check "opt-in on --update: config.json repointed"   'jq -e ".services.\"claude-a
 check "opt-in on --update: etc/local-llm laid down" '[[ -f "$LU/demo/etc/local-llm/docker-compose.yml" ]]'
 rm -rf "$LU"
 
+# (e2) NON-opt-in --update RESETS a prior opt-in (opt-in is NOT sticky — fn-3 R5):
+# localLlm dropped, base URLs/keys restored to real-provider defaults, the prior
+# etc/local-llm/ files removed (no orphans), and the manifest no longer lists them.
+LR="$(mktemp -d)"
+( cd "$LR" && bash "$SCAFFOLD" demo "x" --local-llm --local-llm-model "qwen2.5:7b" --local-llm-embed-model "nomic-embed-text" >/dev/null )
+check "reset precondition: opt-in laid down 4 files" '[[ "$(find "$LR/demo/etc/local-llm" -type f | wc -l | tr -d " ")" -eq 4 ]]'
+( cd "$LR" && bash "$SCAFFOLD" demo "x" --update >/dev/null ); rc=$?
+check "non-opt-in --update: exit 0"                  '[[ $rc -eq 0 ]]'
+check "non-opt-in --update: localLlm dropped"        '! jq -e ".localLlm" "$LR/demo/config.json" >/dev/null 2>&1'
+check "non-opt-in --update: claude-api restored"     'jq -e ".services.\"claude-api\".base_url==\"https://api.anthropic.com\" and .services.\"claude-api\".api_key==\"REPLACE_ME\"" "$LR/demo/config.json" >/dev/null'
+check "non-opt-in --update: openai-api restored"     'jq -e ".services.\"openai-api\".base_url==\"https://api.openai.com/v1\" and .services.\"openai-api\".api_key==\"REPLACE_ME\"" "$LR/demo/config.json" >/dev/null'
+check "non-opt-in --update: etc/local-llm files removed" '[[ -z "$(find "$LR/demo/etc/local-llm" -type f 2>/dev/null)" ]]'
+check "non-opt-in --update: manifest drops etc/local-llm" '! jq -r ".files[].path" "$LR/demo/.init-project-manifest.json" | grep -q "etc/local-llm"'
+rm -rf "$LR"
+
+# (e3) empty --flag=value (the `=` form with no value) is a usage error (exit 64) —
+# an empty embed model must NOT be silently accepted/omitted.
+lerr2() { local d; d="$(mktemp -d)"; ( cd "$d" && bash "$SCAFFOLD" "$@" >/dev/null 2>&1 ); local r=$?; rm -rf "$d"; return $r; }
+lerr2 demo x --local-llm --local-llm-model= ;                                  rc=$?; check "empty --local-llm-model= -> 64"        '[[ $rc -eq 64 ]]'
+lerr2 demo x --local-llm --local-llm-model ok --local-llm-embed-model= ;       rc=$?; check "empty --local-llm-embed-model= -> 64"  '[[ $rc -eq 64 ]]'
+lerr2 demo x --local-llm --local-llm-model "" ;                                rc=$?; check "empty --local-llm-model (space form) -> 64" '[[ $rc -eq 64 ]]'
+
 # (f) usage errors (exit 64) — every guard branch. (Capture rc into a var first —
 # the harness's check evaluates its predicate against an explicit $rc, never a bare $?.)
 lerr() { local d; d="$(mktemp -d)"; ( cd "$d" && bash "$SCAFFOLD" "$@" >/dev/null 2>&1 ); local r=$?; rm -rf "$d"; return $r; }

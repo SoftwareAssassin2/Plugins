@@ -56,6 +56,13 @@ readonly MODEL_RE='^[A-Za-z0-9._/-]+(:[A-Za-z0-9._-]+)?$'
 readonly LLM_CLAUDE_BASE_URL="http://127.0.0.1:4000"      # Anthropic SDK root
 readonly LLM_OPENAI_BASE_URL="http://127.0.0.1:4000/v1"   # OpenAI surface
 readonly LLM_DUMMY_KEY="sk-local-mock"                    # SDKs reject empty keys
+# Real-provider defaults — the non-opt-in config.json values (also the committed
+# template's values). Used to RESET a previously-opted-in config on a non-opt-in
+# `--update` so opt-in is NOT sticky (absent --local-llm => no stack, no localLlm,
+# real-provider URLs — fn-3 R5).
+readonly REAL_CLAUDE_BASE_URL="https://api.anthropic.com"
+readonly REAL_OPENAI_BASE_URL="https://api.openai.com/v1"
+readonly REAL_API_KEY="REPLACE_ME"
 
 die() { echo "ERROR: $*" >&2; exit "${2:-64}"; }
 usage() { echo "usage: scaffold.sh <project-name> <description> [--force|--update] [--replace-config] [--dry-run] [--local-llm --local-llm-model <model> [--local-llm-embed-model <model>]]" >&2; exit 64; }
@@ -107,13 +114,17 @@ main() {
       --dry-run)        dry_run=1 ;;
       --local-llm)      local_llm=1 ;;
       --local-llm-model)
-                        [[ $# -ge 2 ]] || die "--local-llm-model requires a value"
+                        [[ $# -ge 2 && -n "$2" ]] || die "--local-llm-model requires a non-empty value"
                         llm_model="$2"; shift ;;
-      --local-llm-model=*)       llm_model="${1#*=}" ;;
+      --local-llm-model=*)
+                        llm_model="${1#*=}"
+                        [[ -n "$llm_model" ]] || die "--local-llm-model requires a non-empty value" ;;
       --local-llm-embed-model)
-                        [[ $# -ge 2 ]] || die "--local-llm-embed-model requires a value"
+                        [[ $# -ge 2 && -n "$2" ]] || die "--local-llm-embed-model requires a non-empty value"
                         llm_embed_model="$2"; shift ;;
-      --local-llm-embed-model=*) llm_embed_model="${1#*=}" ;;
+      --local-llm-embed-model=*)
+                        llm_embed_model="${1#*=}"
+                        [[ -n "$llm_embed_model" ]] || die "--local-llm-embed-model requires a non-empty value" ;;
       --*)              die "unknown flag '$1'" ;;
       *)                positionals+=("$1") ;;
     esac
@@ -210,6 +221,18 @@ main() {
     return 0
   fi
 
+  # Non-opt-in --update: capture the prior manifest's etc/local-llm/ files (from a
+  # previous opt-in) so they can be removed after the rebuild — otherwise they linger
+  # orphaned on disk + drop silently out of the new manifest (fn-3 R5 removability).
+  # Captured BEFORE the loop rewrites the manifest. (Opt-in --update re-lays them, so
+  # only the non-opt-in case prunes.)
+  local prior_llm_files=()
+  if [[ "$local_llm" -eq 0 && "$mode" == "update" && -f "$existing_manifest" ]] && command -v jq >/dev/null 2>&1; then
+    local plf
+    while IFS= read -r plf; do [[ -n "$plf" ]] && prior_llm_files+=("$plf"); done \
+      < <(jq -r '.files[].path | select(startswith("etc/local-llm/"))' "$existing_manifest" 2>/dev/null)
+  fi
+
   mkdir -p "$target"
   local manifest_lines=()
   local i out dst hash stamped
@@ -273,6 +296,29 @@ main() {
       mv "$dst.tmp" "$dst"
     fi
 
+    # Non-opt-in --update RESET (opt-in is NOT sticky — fn-3 R5): a prior opted-in
+    # config.json carries repointed base URLs + sk-local-mock keys + a localLlm block;
+    # the "existing wins" merge would silently preserve them. So when --update runs
+    # WITHOUT --local-llm, reset the local-LLM-managed keys back to real-provider
+    # defaults and DROP localLlm — restoring the documented non-opt-in contract. Only
+    # the named local-LLM keys are touched; operator edits + secrets the merge kept are
+    # untouched. (The orphaned etc/local-llm/ files are removed after the loop.)
+    if [[ "$local_llm" -eq 0 && "$mode" == "update" && "$out" == "config.json" ]]; then
+      if ! jq \
+        --arg claude_url "$REAL_CLAUDE_BASE_URL" --arg openai_url "$REAL_OPENAI_BASE_URL" \
+        --arg key "$REAL_API_KEY" '
+          .services["claude-api"].base_url = $claude_url
+          | .services["claude-api"].api_key = $key
+          | .services["openai-api"].base_url = $openai_url
+          | .services["openai-api"].api_key = $key
+          | del(.localLlm)
+        ' "$dst" > "$dst.tmp"; then
+        rm -f "$dst.tmp"
+        die "failed to reset local-LLM config.json on non-opt-in --update (jq error)" 65
+      fi
+      mv "$dst.tmp" "$dst"
+    fi
+
     hash="$(shasum -a 256 "$dst" | cut -d' ' -f1)"
     manifest_lines+=("    {\"path\": \"$out\", \"sha256\": \"$hash\"}")
   done
@@ -282,6 +328,16 @@ main() {
     local n=${#manifest_lines[@]} j
     for ((j=0; j<n; j++)); do printf '%s' "${manifest_lines[$j]}"; [[ $j -lt $((n-1)) ]] && echo "," || echo ""; done
     echo "  ]"; echo "}"; } > "$existing_manifest"
+
+  # Non-opt-in --update: remove the prior opt-in's now-orphaned etc/local-llm/ files
+  # (captured pre-loop), then prune emptied dirs. Only manifest-owned local-LLM paths
+  # are touched (never operator files). The new manifest already omits them.
+  if [[ ${#prior_llm_files[@]} -gt 0 ]]; then
+    local of
+    for of in "${prior_llm_files[@]}"; do rm -f "$target/$of"; done
+    # Remove the etc/local-llm/ tree if it's now empty (rmdir -p ignores non-empty).
+    [[ -d "$target/etc/local-llm" ]] && find "$target/etc/local-llm" -type d -empty -delete 2>/dev/null || true
+  fi
 
   # Leftover-token gate — scan ONLY the scaffold-managed outputs (not unmanaged
   # pre-existing files a --force target may legitimately contain).
