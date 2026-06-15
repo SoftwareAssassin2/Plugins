@@ -123,12 +123,46 @@ check "v_port rejects 0"                  '( v_port 0 l ) 2>/dev/null; [[ $? -eq
 check "v_port rejects 70000"             '( v_port 70000 l ) 2>/dev/null; [[ $? -eq 64 ]]'
 check "v_port accepts valid"             '( v_port 5432 l ); [[ $? -eq 0 ]]'
 
+# --- v_base_url (service base-URL grammar + separate port range-check, R6) ---
+check "v_base_url accepts loopback+port"  '( v_base_url "http://127.0.0.1:4000" l ); [[ $? -eq 0 ]]'
+check "v_base_url accepts https+path"     '( v_base_url "https://api.openai.com/v1" l ); [[ $? -eq 0 ]]'
+check "v_base_url accepts no-port host"   '( v_base_url "https://api.anthropic.com" l ); [[ $? -eq 0 ]]'
+check "v_base_url rejects wrong scheme"   '( v_base_url "ftp://host" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_base_url rejects bad host char"  '( v_base_url "http://h@st/x" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_base_url rejects space in host"  '( v_base_url "http://ho st" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_base_url rejects non-num port"   '( v_base_url "http://host:abc" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_base_url rejects port 99999"     '( v_base_url "http://host:99999" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_base_url accepts port boundary"  '( v_base_url "http://host:65535" l ); [[ $? -eq 0 ]]'
+
+# --- v_modelname (Ollama model-name grammar, R6/R12) ------------------------
+check "v_modelname accepts simple"        '( v_modelname "llama3.2" l ); [[ $? -eq 0 ]]'
+check "v_modelname accepts namespaced+tag" '( v_modelname "huihui_ai/llama3.2-abliterate:q4" l ); [[ $? -eq 0 ]]'
+check "v_modelname accepts colon tag"     '( v_modelname "llama3.2:3b" l ); [[ $? -eq 0 ]]'
+check "v_modelname rejects shell metachar" '( v_modelname "bad; rm -rf /" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_modelname rejects space"         '( v_modelname "a b" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+
+# --- v_env_value (transport-safety for the docker-compose env_file consumer) -
+check "v_env_value accepts space/#/quotes" '( v_env_value "a b#c\"d'"'"'e" l ); [[ $? -eq 0 ]]'
+check "v_env_value rejects LF"            '( v_env_value "$(printf "a\nb")" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_env_value rejects CR"            '( v_env_value "$(printf "a\rb")" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_env_value rejects TAB (control)" '( v_env_value "$(printf "a\tb")" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+check "v_env_value rejects \$ (interpolation)" '( v_env_value "a\$b" l ) 2>/dev/null; [[ $? -eq 64 ]]'
+
 echo "== build-config: distribution =="
 OUT="$(runner "$WBC")"; rc=$?
 check "build-config succeeds"            '[[ $rc -eq 0 ]]'
 check "writes src/postgres/.env"         '[[ -f "$WORK/src/postgres/.env" ]]'
 check "DataAccess migrator conn string"  'grep -q "MIGRATOR_CONNECTION_STRING=.*Username=migrator" "$WORK/src/DataAccess/.env"'
 check "Api api-role conn + keycloak"     'grep -q "API_CONNECTION_STRING=.*Username=api" "$WORK/src/Api/.env" && grep -q "KEYCLOAK_API_CLIENT_SECRET=" "$WORK/src/Api/.env"'
+# LLM endpoint vars (R6): all four emitted into Api/.env with SDK-standard names +
+# the non-opt-in real-provider defaults, RAW (no wrapping quotes — compose env_file).
+check "Api ANTHROPIC_BASE_URL default"   'grep -qx "ANTHROPIC_BASE_URL=https://api.anthropic.com" "$WORK/src/Api/.env"'
+check "Api ANTHROPIC_API_KEY default"    'grep -qx "ANTHROPIC_API_KEY=REPLACE_ME" "$WORK/src/Api/.env"'
+check "Api OPENAI_BASE_URL default"      'grep -qx "OPENAI_BASE_URL=https://api.openai.com/v1" "$WORK/src/Api/.env"'
+check "Api OPENAI_API_KEY default"       'grep -qx "OPENAI_API_KEY=REPLACE_ME" "$WORK/src/Api/.env"'
+# Non-opt-in (no localLlm): no embedding model var, and no generated litellm config.
+check "no OPENAI_EMBEDDING_MODEL w/o embed" '! grep -q "OPENAI_EMBEDDING_MODEL" "$WORK/src/Api/.env"'
+check "no litellm config.yaml w/o localLlm" '[[ ! -f "$WORK/etc/local-llm/litellm/config.yaml" ]]'
 check "stamps SPA public config (non-secret)" 'jq -e "(keys|sort)==[\"clientId\",\"realmUrl\"]" "$WORK/src/WebApp/public/config.json" >/dev/null'
 
 OUT="$(runner "$WBC" --config "$WORK/config.json")"; rc=$?
@@ -158,11 +192,200 @@ if [[ -f "$ROOT/config.deploy.json" ]]; then
   check "raw deploy template -> exit 64"  '[[ $rc -eq 64 ]]'
 fi
 
-# External service credential exempt (opaque api_key with /+= passes).
+# External service credential exempt (opaque api_key with /+= passes) — both entries.
 OPAQUE="$WORK/opaque.json"
-jq '.services."claude-api".api_key="sk-a/b+c=d"' "$WORK/config.json" > "$OPAQUE"
+jq '.services."claude-api".api_key="sk-a/b+c=d" | .services."openai-api".api_key="sk-x/y+z=w"' "$WORK/config.json" > "$OPAQUE"
 OUT="$(runner "$WBC" --config "$OPAQUE")"; rc=$?
 check "external service cred exempt"      '[[ $rc -eq 0 ]]'
+check "opaque openai-api key emitted raw" '[[ $rc -eq 0 ]] && grep -qx "OPENAI_API_KEY=sk-x/y+z=w" "$WORK/src/Api/.env"'
+
+# The generated runtime litellm config MUST be gitignored (R6 acceptance) so a
+# build-config run with localLlm.model never leaves a committable artifact. The
+# committed template (config.yaml.template) is NOT matched by this rule.
+if [[ -f "$ROOT/.gitignore" ]]; then
+  check ".gitignore ignores generated litellm config.yaml" 'grep -qE "^[[:space:]]*etc/local-llm/litellm/config\.yaml[[:space:]]*$" "$ROOT/.gitignore"'
+fi
+
+echo "== build-config: services{} LLM endpoints (R6) =="
+# base_url grammar: reject malformed host / non-numeric & out-of-range ports.
+BADURL="$WORK/badurl.json"
+jq '.services."claude-api".base_url="http://h@st/x"' "$WORK/config.json" > "$BADURL"
+OUT="$(runner "$WBC" --config "$BADURL")"; rc=$?
+check "claude-api base_url bad host -> 64" '[[ $rc -eq 64 ]]'
+jq '.services."openai-api".base_url="http://host:99999"' "$WORK/config.json" > "$BADURL"
+OUT="$(runner "$WBC" --config "$BADURL")"; rc=$?
+check "openai-api base_url port 99999 -> 64" '[[ $rc -eq 64 ]]'
+jq '.services."openai-api".base_url="http://host:abc"' "$WORK/config.json" > "$BADURL"
+OUT="$(runner "$WBC" --config "$BADURL")"; rc=$?
+check "openai-api base_url non-num port -> 64" '[[ $rc -eq 64 ]]'
+
+# Split test matrix — API KEY punctuation: space/#/"/' round-trip raw (compose
+# env_file consumer); $ and CR/LF/control are rejected.
+KEYT="$WORK/keyt.json"
+for pair in "space:sk a" "hash:sk#a" "dquote:sk\"a" "squote:sk'a"; do
+  label="${pair%%:*}"; val="${pair#*:}"
+  jq --arg k "$val" '.services."claude-api".api_key=$k' "$WORK/config.json" > "$KEYT"
+  OUT="$(runner "$WBC" --config "$KEYT")"; rc=$?
+  check "api_key with $label round-trips"  '[[ $rc -eq 0 ]] && grep -qx "ANTHROPIC_API_KEY=$val" "$WORK/src/Api/.env"'
+done
+jq --arg k 'sk-a$b' '.services."claude-api".api_key=$k' "$WORK/config.json" > "$KEYT"
+OUT="$(runner "$WBC" --config "$KEYT")"; rc=$?
+check "api_key with \$ rejected -> 64"     '[[ $rc -eq 64 ]]'
+# whitespace+# is a compose env_file inline-comment sequence that TRUNCATES the value
+# (KEY=sk #x -> sk), so it must be rejected even though space and # are each fine alone.
+jq --arg k 'sk-a #suffix' '.services."claude-api".api_key=$k' "$WORK/config.json" > "$KEYT"
+OUT="$(runner "$WBC" --config "$KEYT")"; rc=$?
+check "api_key with space+# rejected -> 64" '[[ $rc -eq 64 ]]'
+# A # NOT preceded by whitespace round-trips (no inline comment).
+jq --arg k 'sk-a#suffix' '.services."claude-api".api_key=$k' "$WORK/config.json" > "$KEYT"
+OUT="$(runner "$WBC" --config "$KEYT")"; rc=$?
+check "api_key with #-no-space round-trips" '[[ $rc -eq 0 ]] && grep -qx "ANTHROPIC_API_KEY=sk-a#suffix" "$WORK/src/Api/.env"'
+jq --arg k "$(printf 'sk-a\nb')" '.services."claude-api".api_key=$k' "$WORK/config.json" > "$KEYT"
+OUT="$(runner "$WBC" --config "$KEYT")"; rc=$?
+check "api_key with LF rejected -> 64"     '[[ $rc -eq 64 ]]'
+jq --arg k "$(printf 'sk-a\rb')" '.services."claude-api".api_key=$k' "$WORK/config.json" > "$KEYT"
+OUT="$(runner "$WBC" --config "$KEYT")"; rc=$?
+check "api_key with CR rejected -> 64"     '[[ $rc -eq 64 ]]'
+jq --arg k "$(printf 'sk-a\tb')" '.services."claude-api".api_key=$k' "$WORK/config.json" > "$KEYT"
+OUT="$(runner "$WBC" --config "$KEYT")"; rc=$?
+check "api_key with TAB rejected -> 64"    '[[ $rc -eq 64 ]]'
+
+# Base URL legal path punctuation: # round-trips (grammar-valid path); $ rejected.
+jq --arg u 'http://host/p#frag' '.services."claude-api".base_url=$u' "$WORK/config.json" > "$BADURL"
+OUT="$(runner "$WBC" --config "$BADURL")"; rc=$?
+check "base_url path # round-trips"        '[[ $rc -eq 0 ]] && grep -qx "ANTHROPIC_BASE_URL=http://host/p#frag" "$WORK/src/Api/.env"'
+# A " (double-quote) in the path is non-whitespace (passes the grammar) and
+# round-trips raw through the compose env_file consumer (quotes are only stripped
+# when WRAPPING the whole value, not embedded) — same accept rule as the api_key
+# dquote fixture above.
+jq --arg u 'http://host/p"q' '.services."claude-api".base_url=$u' "$WORK/config.json" > "$BADURL"
+OUT="$(runner "$WBC" --config "$BADURL")"; rc=$?
+check "base_url path \" round-trips"       '[[ $rc -eq 0 ]] && grep -qx "ANTHROPIC_BASE_URL=http://host/p\"q" "$WORK/src/Api/.env"'
+jq --arg u 'http://host/p$x' '.services."claude-api".base_url=$u' "$WORK/config.json" > "$BADURL"
+OUT="$(runner "$WBC" --config "$BADURL")"; rc=$?
+check "base_url path \$ rejected -> 64"    '[[ $rc -eq 64 ]]'
+
+echo "== build-config: rendered deploy config distributes LLM vars (R6) =="
+# Raw config.deploy.json still fails the unrendered-placeholder guard (above);
+# a RENDERED deploy config distributes the four LLM vars + embedding model var.
+if [[ -f "$ROOT/config.deploy.json" ]]; then
+  RENDERED="$WORK/rendered.json"
+  sed -e 's/{{POSTGRES_HOST}}/postgres/g' \
+      -e 's/{{POSTGRES_OWNER_PASSWORD}}/ownerpw/g' \
+      -e 's/{{POSTGRES_MIGRATOR_PASSWORD}}/migpw/g' \
+      -e 's/{{POSTGRES_API_PASSWORD}}/apipw/g' \
+      -e 's/{{KEYCLOAK_HOST}}/keycloak/g' \
+      -e 's/{{KEYCLOAK_REALM}}/myrealm/g' \
+      -e 's#{{KEYCLOAK_PUBLIC_URL}}#http://127.0.0.1:8080#g' \
+      -e 's/{{KEYCLOAK_ADMIN_PASSWORD}}/adminpw/g' \
+      -e 's/{{KEYCLOAK_API_CLIENT_SECRET}}/apisecret/g' \
+      -e 's/{{API_HOST}}/127.0.0.1/g' \
+      -e 's#{{CLAUDE_API_BASE_URL}}#https://api.anthropic.com#g' \
+      -e 's/{{CLAUDE_API_KEY}}/sk-claude/g' \
+      -e 's#{{OPENAI_API_BASE_URL}}#https://api.openai.com/v1#g' \
+      -e 's/{{OPENAI_API_KEY}}/sk-openai/g' \
+      "$ROOT/config.deploy.json" > "$RENDERED"
+  OUT="$(runner "$WBC" --config "$RENDERED")"; rc=$?
+  check "rendered deploy distributes claude key" '[[ $rc -eq 0 ]] && grep -qx "ANTHROPIC_API_KEY=sk-claude" "$WORK/src/Api/.env"'
+  check "rendered deploy distributes openai key" 'grep -qx "OPENAI_API_KEY=sk-openai" "$WORK/src/Api/.env"'
+fi
+
+echo "== build-config: localLlm config.yaml stamping (R6/R12) =="
+# Provide the litellm template at the path build-config reads (etc/local-llm/litellm/).
+LLDIR="$WORK/etc/local-llm/litellm"
+mkdir -p "$LLDIR"
+LLTPL_SRC=""
+for cand in "$ROOT/_optional/local-llm/litellm/config.yaml.template" \
+            "$ROOT/etc/local-llm/litellm/config.yaml.template"; do
+  [[ -f "$cand" ]] && LLTPL_SRC="$cand" && break
+done
+if [[ -n "$LLTPL_SRC" ]]; then
+  cp "$LLTPL_SRC" "$LLDIR/config.yaml.template"
+
+  # Chat-only: model present, no embeddingModel -> embeddings block deleted.
+  LLC="$WORK/ll-chat.json"
+  jq '.localLlm={model:"llama3.2:3b"}' "$WORK/config.json" > "$LLC"
+  rm -f "$LLDIR/config.yaml"
+  OUT="$(runner "$WBC" --config "$LLC")"; rc=$?
+  check "chat-only stamps config.yaml"        '[[ $rc -eq 0 ]] && [[ -f "$LLDIR/config.yaml" ]]'
+  check "chat-only model raw (no re-prefix)"  'grep -q "ollama_chat/llama3.2:3b" "$LLDIR/config.yaml" && ! grep -q "ollama_chat/ollama_chat" "$LLDIR/config.yaml"'
+  check "chat-only no local-embed entry"      '! grep -q "model_name: local-embed" "$LLDIR/config.yaml"'
+  check "chat-only no leftover @@token"       '! grep -Eq "@@[A-Za-z_]+@@" "$LLDIR/config.yaml"'
+  check "chat-only markers stripped"          '! grep -Eq "^[[:space:]]*# (>>>|<<<) embeddings[[:space:]]*$" "$LLDIR/config.yaml"'
+  check "chat-only writes NO litellm .env"    '[[ ! -f "$LLDIR/.env" ]] && ! grep -q "OPENAI_EMBEDDING_MODEL" "$WORK/src/Api/.env"'
+
+  # Chat + embeddings: block kept, token substituted, embedding var emitted.
+  LLE="$WORK/ll-embed.json"
+  jq '.localLlm={model:"llama3.2:3b",embeddingModel:"nomic-embed-text"}' "$WORK/config.json" > "$LLE"
+  rm -f "$LLDIR/config.yaml"
+  OUT="$(runner "$WBC" --config "$LLE")"; rc=$?
+  check "embed kept: local-embed entry"       '[[ $rc -eq 0 ]] && grep -q "model_name: local-embed" "$LLDIR/config.yaml"'
+  check "embed kept: embed token substituted" 'grep -q "ollama/nomic-embed-text" "$LLDIR/config.yaml" && ! grep -Eq "@@[A-Za-z_]+@@" "$LLDIR/config.yaml"'
+  check "embed kept: OPENAI_EMBEDDING_MODEL"   'grep -qx "OPENAI_EMBEDDING_MODEL=local-embed" "$WORK/src/Api/.env"'
+
+  # Reject: hostile model name.
+  LLBAD="$WORK/ll-bad.json"
+  jq '.localLlm={model:"bad; rm -rf /"}' "$WORK/config.json" > "$LLBAD"
+  OUT="$(runner "$WBC" --config "$LLBAD")"; rc=$?
+  check "hostile localLlm.model -> 64"        '[[ $rc -eq 64 ]]'
+
+  # Reject: embeddingModel without model.
+  jq '.localLlm={embeddingModel:"nomic-embed-text"}' "$WORK/config.json" > "$LLBAD"
+  OUT="$(runner "$WBC" --config "$LLBAD")"; rc=$?
+  check "embeddingModel without model -> 64"  '[[ $rc -eq 64 ]]'
+
+  # Reject: .localLlm present but not an object.
+  jq '.localLlm="oops"' "$WORK/config.json" > "$LLBAD"
+  OUT="$(runner "$WBC" --config "$LLBAD")"; rc=$?
+  check "localLlm not an object -> 64"        '[[ $rc -eq 64 ]]'
+
+  # Reject: model present but template missing -> opt-in invariant.
+  # ALSO assert ATOMICITY: the template preflight runs in the validation phase BEFORE
+  # any artifact is written, so a stale Api/.env must NOT be overwritten on this
+  # failure (no partial update). Seed a sentinel Api/.env and confirm it survives.
+  mv "$LLDIR/config.yaml.template" "$LLDIR/config.yaml.template.bak"
+  printf 'SENTINEL=untouched\n' > "$WORK/src/Api/.env"
+  OUT="$(runner "$WBC" --config "$LLC")"; rc=$?
+  check "model present + template missing -> err" '[[ $rc -ne 0 ]] && grep -q "is missing" <<<"$OUT"'
+  check "missing template fails BEFORE writing Api/.env" 'grep -qx "SENTINEL=untouched" "$WORK/src/Api/.env"'
+  mv "$LLDIR/config.yaml.template.bak" "$LLDIR/config.yaml.template"
+
+  # Reject: malformed template — @@LLM_MODEL@@ token absent entirely.
+  printf 'model_list:\n  - model_name: local\n# >>> embeddings\n# <<< embeddings\n' > "$LLDIR/config.yaml.template"
+  OUT="$(runner "$WBC" --config "$LLC")"; rc=$?
+  check "template missing @@LLM_MODEL@@ -> err" '[[ $rc -ne 0 ]] && grep -q "@@LLM_MODEL@@" <<<"$OUT"'
+
+  # Reject: malformed template — embeddings markers unbalanced/duplicated.
+  printf 'model: ollama_chat/@@LLM_MODEL@@\n# >>> embeddings\n# >>> embeddings\n# <<< embeddings\n' > "$LLDIR/config.yaml.template"
+  OUT="$(runner "$WBC" --config "$LLC")"; rc=$?
+  check "template duplicated markers -> err"  '[[ $rc -ne 0 ]] && grep -q "exactly once" <<<"$OUT"'
+
+  # Reject: markers present but in the WRONG order (close before open).
+  printf 'model: ollama_chat/@@LLM_MODEL@@\n# <<< embeddings\nx: @@LLM_EMBED_MODEL@@\n# >>> embeddings\n' > "$LLDIR/config.yaml.template"
+  OUT="$(runner "$WBC" --config "$LLE")"; rc=$?
+  check "template reversed markers -> err"    '[[ $rc -ne 0 ]] && grep -q "must precede" <<<"$OUT"'
+
+  # Reject: embed kept but @@LLM_EMBED_MODEL@@ token absent from the block.
+  printf 'model: ollama_chat/@@LLM_MODEL@@\n# >>> embeddings\n  - model_name: local-embed\n# <<< embeddings\n' > "$LLDIR/config.yaml.template"
+  OUT="$(runner "$WBC" --config "$LLE")"; rc=$?
+  check "embed kept w/o embed token -> err"   '[[ $rc -ne 0 ]] && grep -q "@@LLM_EMBED_MODEL@@" <<<"$OUT"'
+
+  # Reject: embed token present but OUTSIDE the sentinel block (the block itself is
+  # tokenless). The within-block check must catch this even though the token exists
+  # somewhere in the template.
+  printf 'model: ollama_chat/@@LLM_MODEL@@\nstray: @@LLM_EMBED_MODEL@@\n# >>> embeddings\n  - model_name: local-embed\n# <<< embeddings\n' > "$LLDIR/config.yaml.template"
+  OUT="$(runner "$WBC" --config "$LLE")"; rc=$?
+  check "embed token outside block -> err"    '[[ $rc -ne 0 ]] && grep -q "inside the embeddings block" <<<"$OUT"'
+
+  # Reject: post-stamp scan catches a stray @@token@@ with a DIGIT/DASH name (the
+  # narrow [A-Za-z_] pattern would have missed @@LLM2@@; the scan must reject any token).
+  printf 'model: ollama_chat/@@LLM_MODEL@@\nstray: @@LLM2@@\n# >>> embeddings\nx: @@LLM_EMBED_MODEL@@\n# <<< embeddings\n' > "$LLDIR/config.yaml.template"
+  OUT="$(runner "$WBC" --config "$LLC")"; rc=$?
+  check "post-stamp stray digit token -> err" '[[ $rc -ne 0 ]] && grep -q "unreplaced" <<<"$OUT"'
+
+  # Restore the real template for any later sections.
+  cp "$LLTPL_SRC" "$LLDIR/config.yaml.template"
+fi
 
 echo "== build-config: realm-stamp mechanism =="
 if [[ -f "$ROOT/src/keycloak/realm.template.json" ]]; then
@@ -242,6 +465,256 @@ check "down: removes shared observability network" 'grep -q "network rm observab
 : > "$STUB_LOG"
 OUT="$(runner "$WCLI/status.sh")"; rc=$?
 check "status: stacks present -> exit 0 + docker compose ps invoked" '[[ $rc -eq 0 ]] && grep -q " ps" "$STUB_LOG"'
+
+echo "== up/down: opt-in local-llm profile orchestration (docker STUBBED) =="
+# The local-llm stack lives at etc/local-llm/docker-compose.yml (config at
+# etc/local-llm/litellm/config.yaml, model from config.json -> localLlm.model). All
+# docker calls are stubbed; we assert command CONSTRUCTION + every branch.
+#
+# Core src/* compose stacks are still present from Branch B above (postgres/keycloak/
+# observability) — so we can assert that a FAILED `--profile ai` preflight leaves
+# ZERO docker invocations (no core stack started either: preflight runs first).
+
+LLDIR_RT="$WORK/etc/local-llm"
+LLCFG_RT="$LLDIR_RT/litellm"
+mkdir -p "$LLCFG_RT"
+# A docker stub that records argv (incl. the cleared COMPOSE_PROFILES) into STUB_LOG.
+# Overwrites the generic stub for this section so we can also assert env handling.
+cat > "$STUBBIN/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "STUB docker $* [COMPOSE_PROFILES=${COMPOSE_PROFILES-<unset>}]" >> "${STUB_LOG:-/dev/null}"
+exit 0
+STUB
+chmod +x "$STUBBIN/docker"
+
+# Helper: write a generated litellm config.yaml with the given chat + (optional)
+# embed models, matching build-config's stamped shape (two ollama_chat routes + an
+# optional ollama/ embed route).
+write_llcfg() {  # write_llcfg <chat-model> [embed-model]
+  {
+    printf 'model_list:\n'
+    printf '  - model_name: "*"\n    litellm_params:\n      model: ollama_chat/%s\n      api_base: http://ollama:11434\n' "$1"
+    printf '  - model_name: local\n    litellm_params:\n      model: ollama_chat/%s\n      api_base: http://ollama:11434\n' "$1"
+    if [[ -n "${2:-}" ]]; then
+      printf '  - model_name: local-embed\n    litellm_params:\n      model: ollama/%s\n      api_base: http://ollama:11434\n' "$2"
+    fi
+  } > "$LLCFG_RT/config.yaml"
+}
+set_llmodel() {  # set_llmodel <jq-localLlm-expr-or-empty>  (writes $WORK/config.json)
+  if [[ -z "${1:-}" ]]; then
+    jq 'del(.localLlm)' "$WORK/config.json" > "$WORK/config.json.tmp"
+  else
+    jq ".localLlm=$1" "$WORK/config.json" > "$WORK/config.json.tmp"
+  fi
+  mv "$WORK/config.json.tmp" "$WORK/config.json"
+}
+
+# --- profile grammar (parse layer, shared by up + down) ----------------------------
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile bogus)"; rc=$?
+check "up: unknown profile -> exit 64"            '[[ $rc -eq 64 ]] && grep -q "usage:" <<<"$OUT"'
+OUT="$(runner "$WCLI/up.sh" --frobnicate)"; rc=$?
+check "up: unknown flag -> exit 64"               '[[ $rc -eq 64 ]]'
+OUT="$(runner "$WCLI/up.sh" --profile)"; rc=$?
+check "up: --profile missing value -> exit 64"    '[[ $rc -eq 64 ]]'
+OUT="$(runner "$WCLI/up.sh" --profile ai --profile ai-mock)"; rc=$?
+check "up: both ai + ai-mock -> exit 64 (port)"   '[[ $rc -eq 64 ]] && grep -q ":4000" <<<"$OUT"'
+OUT="$(runner "$WCLI/down.sh" --profile=bogus)"; rc=$?
+check "down: unknown profile (= form) -> exit 64" '[[ $rc -eq 64 ]]'
+OUT="$(runner "$WCLI/down.sh" stray-arg)"; rc=$?
+check "down: non-profile arg -> exit 64"          '[[ $rc -eq 64 ]]'
+
+# --- not-installed stack (etc/local-llm/docker-compose.yml ABSENT) -----------------
+rm -f "$LLDIR_RT/docker-compose.yml"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai, not installed -> exit 64"   '[[ $rc -eq 64 ]] && grep -q "not installed" <<<"$OUT"'
+check "up --profile ai, not installed -> 0 docker"  '! grep -q "STUB docker" "$STUB_LOG"'
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai-mock)"; rc=$?
+check "up --profile ai-mock, not installed -> 64"   '[[ $rc -eq 64 ]] && grep -q "not installed" <<<"$OUT"'
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/down.sh" --profile ai)"; rc=$?
+check "down --profile ai, not installed -> no-op 0" '[[ $rc -eq 0 ]] && ! grep -q "local-llm" "$STUB_LOG"'
+
+# Install the stack compose file for the remaining cases.
+printf 'services: {}\n' > "$LLDIR_RT/docker-compose.yml"
+
+# --- default up (no profile) never invokes the local compose, even with ambient
+#     COMPOSE_PROFILES=ai set --------------------------------------------------------
+: > "$STUB_LOG"
+OUT="$(COMPOSE_PROFILES=ai runner "$WCLI/up.sh")"; rc=$?
+check "default up: exit 0"                          '[[ $rc -eq 0 ]]'
+check "default up: NO local-llm compose invoked"    '! grep -q "etc/local-llm" "$STUB_LOG"'
+check "default up: ambient COMPOSE_PROFILES ignored — no ai containers" '! grep -q "etc/local-llm" "$STUB_LOG"'
+
+# --- up --profile ai-mock: installed, no model needed (static config) --------------
+set_llmodel ""            # no localLlm at all — ai-mock must not require it
+: > "$STUB_LOG"
+OUT="$(COMPOSE_PROFILES=ai runner "$WCLI/up.sh" --profile ai-mock)"; rc=$?
+check "up --profile ai-mock: exit 0 (no model needed)" '[[ $rc -eq 0 ]]'
+check "up --profile ai-mock: invokes local compose w/ --profile ai-mock" \
+      'grep -q "etc/local-llm/docker-compose.yml --profile ai-mock up -d" "$STUB_LOG"'
+check "up --profile ai-mock: COMPOSE_PROFILES cleared on the call" \
+      'grep -q "etc/local-llm.*COMPOSE_PROFILES=\]" "$STUB_LOG"'
+
+# --- up --profile ai preflight: config.yaml absent ---------------------------------
+set_llmodel '{model:"llama3.2:3b"}'
+rm -f "$LLCFG_RT/config.yaml"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: config.yaml absent -> err"  '[[ $rc -ne 0 ]] && grep -q "build-config" <<<"$OUT"'
+check "up --profile ai: preflight fail -> 0 docker"  '! grep -q "STUB docker" "$STUB_LOG"'
+
+# --- up --profile ai preflight: localLlm.model empty -------------------------------
+set_llmodel '{embeddingModel:"nomic-embed-text"}'   # model absent
+write_llcfg "llama3.2:3b"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: empty model -> err"         '[[ $rc -ne 0 ]] && grep -q "localLlm.model" <<<"$OUT"'
+
+# --- up --profile ai preflight: malformed localLlm (wrong type) tolerated by export,
+#     but empty model -> err (no jq crash) -----------------------------------------
+set_llmodel '"oops-a-string"'
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: wrong-typed localLlm -> err (no jq crash)" \
+      '[[ $rc -ne 0 ]] && ! grep -qi "jq:" <<<"$OUT"'
+
+# --- up --profile ai preflight: stale chat model (model names with ./:/) -----------
+set_llmodel '{model:"huihui_ai/llama3.2:q4"}'
+write_llcfg "llama3.2:3b"     # YAML stamped with a DIFFERENT model
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: stale chat model -> err"    '[[ $rc -ne 0 ]] && grep -q "stale" <<<"$OUT"'
+check "up --profile ai: stale -> 0 docker"          '! grep -q "STUB docker" "$STUB_LOG"'
+
+# --- up --profile ai preflight: config has embed, YAML has none --------------------
+set_llmodel '{model:"llama3.2:3b",embeddingModel:"nomic-embed-text"}'
+write_llcfg "llama3.2:3b"     # no embed route
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: embed in config, none in YAML -> err" '[[ $rc -ne 0 ]] && grep -q "stale" <<<"$OUT"'
+
+# --- up --profile ai preflight: YAML has embed, config has none --------------------
+set_llmodel '{model:"llama3.2:3b"}'
+write_llcfg "llama3.2:3b" "nomic-embed-text"   # embed route present
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: embed in YAML, none in config -> err" '[[ $rc -ne 0 ]] && grep -q "stale" <<<"$OUT"'
+
+# --- up --profile ai preflight: stale embed VALUE ----------------------------------
+set_llmodel '{model:"llama3.2:3b",embeddingModel:"mxbai-embed-large"}'
+write_llcfg "llama3.2:3b" "nomic-embed-text"   # embed route has the OLD value
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: stale embed value -> err"   '[[ $rc -ne 0 ]] && grep -q "stale" <<<"$OUT"'
+
+# --- up --profile ai preflight: no ollama_chat route at all ------------------------
+set_llmodel '{model:"llama3.2:3b"}'
+printf 'model_list:\n  - model_name: local\n    litellm_params:\n      model: openai/gpt\n' > "$LLCFG_RT/config.yaml"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: no ollama_chat route -> err" '[[ $rc -ne 0 ]] && grep -q "no ollama_chat route" <<<"$OUT"'
+
+# --- up --profile ai: all preflights pass (chat-only) -> brings up the real stack --
+set_llmodel '{model:"llama3.2:3b"}'
+write_llcfg "llama3.2:3b"
+: > "$STUB_LOG"
+OUT="$(COMPOSE_PROFILES=ai runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai (chat-only): exit 0"          '[[ $rc -eq 0 ]]'
+check "up --profile ai: invokes local compose --profile ai up" \
+      'grep -q "etc/local-llm/docker-compose.yml --profile ai up -d" "$STUB_LOG"'
+check "up --profile ai: COMPOSE_PROFILES cleared on the call" \
+      'grep -q "etc/local-llm.*COMPOSE_PROFILES=\]" "$STUB_LOG"'
+
+# --- dispatcher forwarding: the REAL user path is `./system.sh up --profile ...`, so
+#     prove system.sh forwards "$@" verbatim (a dispatcher dropping args would pass
+#     every direct-script test above yet break the actual command). Drive through
+#     $WSYS for both a forwarded SUCCESS (ai-mock, stack installed) and a forwarded
+#     usage error (invalid profile reaching up's grammar). (R7 arg-forwarding, R10) --
+set_llmodel ""
+: > "$STUB_LOG"
+OUT="$(COMPOSE_PROFILES=ai runner "$WSYS" up --profile ai-mock)"; rc=$?
+check "dispatcher: system.sh forwards --profile ai-mock to up" \
+      '[[ $rc -eq 0 ]] && grep -q "etc/local-llm/docker-compose.yml --profile ai-mock up -d" "$STUB_LOG"'
+OUT="$(runner "$WSYS" up --profile bogus)"; rc=$?
+check "dispatcher: forwarded invalid profile -> up usage exit 64" \
+      '[[ $rc -eq 64 ]] && grep -q "usage:" <<<"$OUT"'
+OUT="$(runner "$WSYS" down --profile ai)"; rc=$?
+check "dispatcher: system.sh forwards down --profile ai (tears down both)" \
+      '[[ $rc -eq 0 ]]'
+
+# --- up --profile ai: all preflights pass (chat + embeddings) ----------------------
+set_llmodel '{model:"llama3.2:3b",embeddingModel:"nomic-embed-text"}'
+write_llcfg "llama3.2:3b" "nomic-embed-text"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai (chat+embed): exit 0 + compose up" \
+      '[[ $rc -eq 0 ]] && grep -q "etc/local-llm/docker-compose.yml --profile ai up -d" "$STUB_LOG"'
+
+# --- up --profile ai: a compose failure propagates as non-zero (R13) ---------------
+set_llmodel '{model:"llama3.2:3b"}'
+write_llcfg "llama3.2:3b"
+cat > "$STUBBIN/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "STUB docker $*" >> "${STUB_LOG:-/dev/null}"
+# Fail only the local-llm compose up (simulate a model-pull / bring-up failure).
+case "$*" in
+  *etc/local-llm*up*) exit 7 ;;
+  *) exit 0 ;;
+esac
+STUB
+chmod +x "$STUBBIN/docker"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/up.sh" --profile ai)"; rc=$?
+check "up --profile ai: compose/model-pull failure -> non-zero (R13)" '[[ $rc -ne 0 ]]'
+# Restore the recording (always-succeed) stub.
+cat > "$STUBBIN/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "STUB docker $* [COMPOSE_PROFILES=${COMPOSE_PROFILES-<unset>}]" >> "${STUB_LOG:-/dev/null}"
+exit 0
+STUB
+chmod +x "$STUBBIN/docker"
+
+# --- down: NOT profile-gated — always tears down the stack (both profiles) ---------
+# Config.yaml ABSENT must still succeed (down needs no generated config).
+set_llmodel '{model:"llama3.2:3b"}'
+rm -f "$LLCFG_RT/config.yaml"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/down.sh")"; rc=$?
+check "down (default): tears down local-llm under both profiles" \
+      '[[ $rc -eq 0 ]] && grep -q "etc/local-llm/docker-compose.yml --profile ai --profile ai-mock down" "$STUB_LOG"'
+check "down: succeeds with generated config.yaml absent" '[[ $rc -eq 0 ]]'
+check "down: COMPOSE_PROFILES cleared on the teardown call" \
+      'grep -q "etc/local-llm.*COMPOSE_PROFILES=\]" "$STUB_LOG"'
+
+# down mirrors up's grammar as no-ops: a profile arg (and duplicates / both) is
+# accepted but does not change the teardown (always both).
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/down.sh" --profile ai --profile ai --profile ai-mock)"; rc=$?
+check "down --profile (dups + both) -> still tears down both, exit 0" \
+      '[[ $rc -eq 0 ]] && grep -q "etc/local-llm/docker-compose.yml --profile ai --profile ai-mock down" "$STUB_LOG"'
+
+# down tolerates a malformed (wrong-typed) localLlm via the type-safe export.
+set_llmodel '["not","an","object"]'
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/down.sh")"; rc=$?
+check "down: wrong-typed localLlm tolerated (no jq crash)" \
+      '[[ $rc -eq 0 ]] && ! grep -qi "jq:" <<<"$OUT"'
+
+# down with config.json ABSENT (export yields empty, no jq error) still tears down.
+mv "$WORK/config.json" "$WORK/config.json.bak"
+: > "$STUB_LOG"
+OUT="$(runner "$WCLI/down.sh")"; rc=$?
+check "down: config.json absent -> empty export, still tears down" \
+      '[[ $rc -eq 0 ]] && grep -q "etc/local-llm/docker-compose.yml --profile ai --profile ai-mock down" "$STUB_LOG"'
+mv "$WORK/config.json.bak" "$WORK/config.json"
+
+# Restore a clean config.json + remove the local-llm stack so later sections are
+# unaffected (migrate/psql don't touch it, but keep the work tree tidy).
+set_llmodel ""
+rm -rf "$LLDIR_RT"
 
 echo "== migrate subcommand — dotnet STUBBED, env-gated branches =="
 # migrate.sh: (1) missing src/DataAccess/.env -> exit 64; (2) .env present but no

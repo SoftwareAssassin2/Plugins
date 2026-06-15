@@ -34,7 +34,8 @@ Add the scaffold-time opt-in: the `/init-project` skill asks whether to install 
 - [ ] SKILL.md documents the opt-in prompt, the `scaffold.sh --local-llm[ --local-llm-model]` contract + conditional inclusion (R5)
 
 ## Done summary
-_(filled on completion)_
-
+Added the scaffold-time `--local-llm` / `--local-llm-model` / `--local-llm-embed-model` opt-in to the init-project engine: prunes the `_optional/` subtree from the default copy, lays down `templates/_optional/local-llm/` → the project's `etc/local-llm/` and jq-mutates the generated config.json (repoint claude-api/openai-api base URLs + sk-local-mock keys + localLlm.model/embeddingModel) only on opt-in, with host-side jq preflight + Ollama model-name validation. Opt-in is non-sticky: a non-opt-in `--update` over a prior opt-in resets it (gated on prior-opt-in evidence so never-opted projects keep operator edits). SKILL.md documents the prompts (install? → chat-model menu incl. abliterated + "something else"; then optional embeddings) and the engine contract; 54 new shell-test assertions cover every branch incl. missing-jq.
 ## Evidence
-_(filled on completion)_
+- Commits: d62895f, e3e0652, 38de188, 180eca8
+- Tests: bash plugins/init-project/tests/scaffold_test.sh (334 passed, 0 failed), bash plugins/init-project/tests/dispatcher_test.sh (62 passed, 0 failed), shellcheck plugins/init-project/scaffold.sh (clean)
+- PRs:

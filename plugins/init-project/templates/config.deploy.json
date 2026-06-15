@@ -48,6 +48,7 @@
     { "name": "SampleApp" }
   ],
   "services": {
-    "claude-api": { "api_key": "{{CLAUDE_API_KEY}}" }
+    "claude-api": { "base_url": "{{CLAUDE_API_BASE_URL}}", "api_key": "{{CLAUDE_API_KEY}}" },
+    "openai-api": { "base_url": "{{OPENAI_API_BASE_URL}}", "api_key": "{{OPENAI_API_KEY}}" }
   }
 }

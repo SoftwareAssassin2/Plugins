@@ -40,7 +40,12 @@ When a component needs a new configuration value:
   fields.
 - **`services{}`** — one entry per **external** service the system *connects to*
   but is not part of (e.g. a third-party API). Keyed by service name; the value is
-  the credentials/endpoint the operator must supply.
+  the credentials/endpoint the operator must supply. This scaffold ships **two
+  canonical entries, both always present**: `claude-api` (Anthropic-compatible) and
+  `openai-api` (OpenAI-compatible), each with an explicit `base_url` + `api_key`
+  (see §4). The optional local LLM mock stack (`docs/local-llm.md`) *backs* these two
+  services in local dev — it is internal dev tooling, **not** itself a `services{}`
+  entry (it only repoints their `base_url`).
 
 **Exceptions** (NOT `systems[]` entries): `src/system-cli/` (repo tooling), the
 observability stack (`src/otel-collector/`, `src/prometheus/`, `src/grafana/` —
@@ -109,6 +114,8 @@ The exact validators `build-config` enforces (a violation exits non-zero):
 | container-name | `^[a-zA-Z0-9][a-zA-Z0-9_.-]+$` | `container_host` fields (Docker/compose service-name shape) |
 | realm / client-id | `^[A-Za-z0-9._-]+$` | `realm`, every `*_client_id` |
 | URL | `^https?://[^[:space:]]+$` | `public_url`, `realm_url` |
+| service base-URL | `^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[^[:space:]]*)?$` + port `1..65535` | `services.*.base_url` (injection-resistant; stricter than `URL`) |
+| model name | `^[A-Za-z0-9._/-]+(:[A-Za-z0-9._-]+)?$` | `localLlm.model`, `localLlm.embeddingModel` (opt-in) |
 | port | integer `1..65535` | every `*port` field |
 
 ### `postgres` (`systems[]` entry `postgres`)
@@ -203,14 +210,99 @@ string, see the postgres section) and the keycloak issuer/client values
 
 ### `services{}` — external dependencies
 
+There are **two canonical `services{}` entries**, both **always present** (no opt-in
+branch) with key-set parity across `config.json` and `config.deploy.json`: the
+Anthropic-compatible `claude-api` and the OpenAI-compatible `openai-api`. Each carries
+an explicit `base_url` + `api_key`. `build-config` (unconditionally) distributes all
+four values into the consuming component's `.env` (the `Api` by default), under the
+**SDK-standard env-var names** below.
+
 | `config.json` field | Kind | Validator | Generated `.env` var | Consumer |
 |---|---|---|---|---|
-| `services.claude-api.api_key` | external credential | **NOT URL-safe-validated** (opaque) | `CLAUDE_API_KEY` | whichever component calls the API |
+| `services.claude-api.base_url` | external endpoint | service base-URL grammar (`^https?://[A-Za-z0-9.-]+(:port)?(/path)?$` + port `1..65535`) | `ANTHROPIC_BASE_URL` | the `Api` (Anthropic SDK base URL) |
+| `services.claude-api.api_key` | external credential | **opaque** (transport-safe only) | `ANTHROPIC_API_KEY` | the `Api` (Anthropic SDK key) |
+| `services.openai-api.base_url` | external endpoint | service base-URL grammar (as above) | `OPENAI_BASE_URL` | the `Api` (OpenAI SDK base URL) |
+| `services.openai-api.api_key` | external credential | **opaque** (transport-safe only) | `OPENAI_API_KEY` | the `Api` (OpenAI SDK key) |
+| `localLlm.embeddingModel` (opt-in; see below) | — | — | `OPENAI_EMBEDDING_MODEL=local-embed` | the `Api` (embeddings model name; only emitted when embeddings opted in) |
 
-External-service credentials ship as `REPLACE_ME` for the operator and are
-**exempt** from the URL-safe alphabet validation — opaque provider API keys may
-contain any characters. Only fields declared URL-safe (the generated
-postgres/keycloak credentials above) are validated.
+**Non-opt-in (real-provider) defaults:** `claude-api.base_url=https://api.anthropic.com`,
+`openai-api.base_url=https://api.openai.com/v1`, keys `REPLACE_ME`. **Opt-in (local
+LLM mock) values:** `claude-api.base_url=http://127.0.0.1:4000`,
+`openai-api.base_url=http://127.0.0.1:4000/v1`, keys `sk-local-mock` — repointed by the
+scaffold opt-in engine (the four env-var names are unchanged so app code never moves).
+
+**`base_url` validation.** Each `base_url` is validated against an
+**injection-resistant** grammar — a restrictive host character class
+(`[A-Za-z0-9.-]+`, which rejects `?#@[]:` and other non-host characters in the host
+portion) plus a **separately range-checked** port (`1..65535` — the `[0-9]{1,5}` class
+alone would accept `99999`). An optional path may follow. This is anti-injection (a
+malformed URL cannot poison the `.env`), **not** RFC-1123 hostname correctness:
+odd-but-harmless hosts like `.example.com` or `-bad` are accepted (they simply fail to
+resolve). It is stricter than the permissive `public_url`/`realm_url` `URL` validator.
+
+**`.env` encoding (the consumer contract).** `src/Api/.env` is consumed by **docker
+compose's `env_file:` parser** (see §7; `src/Api/Program.cs` reads these from the
+environment). That parser takes each value **raw** (no shell close-reopen quoting —
+surrounding quotes are *stripped*, so a `KEY='value'` form would NOT round-trip) and
+performs `$`/`${VAR}` interpolation, and it cannot represent embedded newlines.
+`build-config` therefore emits all four values **verbatim** and **rejects** any
+character (or sequence) that cannot round-trip across that consumer: CR / LF /
+control characters (break line parsing), `$` (compose interpolation; the `$$`
+escape is compose-only and would corrupt a plain shell `source`), and a
+**whitespace-immediately-followed-by-`#` sequence** (compose treats it as a
+trailing inline comment and *truncates* the value — empirically `KEY=sk #x`
+parses to `sk`). Punctuation that round-trips raw is accepted: a standalone space,
+a `#` **not** preceded by whitespace (e.g. a URL fragment `host/p#frag`), `"`, and
+`'`. This applies to all four values — a grammar-valid `base_url` *path* may still
+carry such punctuation.
+
+External-service `api_key`s ship as `REPLACE_ME` for the operator and are **exempt**
+from the URL-safe alphabet validation — opaque provider keys may contain any
+characters (only the transport-safety check above applies). Only fields declared
+URL-safe (the generated postgres/keycloak credentials above) are alphabet-validated.
+
+#### `localLlm` (opt-in only) — backs the `claude-api`/`openai-api` services in local dev
+
+When the local LLM mock stack is installed (scaffold `--local-llm`), an **opt-in-only**
+top-level `localLlm` object appears in `config.json`:
+
+| `config.json` field | Kind | Validator | Drives |
+|---|---|---|---|
+| `localLlm.model` | opt-in, model name | Ollama model-name grammar `^[A-Za-z0-9._/-]+(:[A-Za-z0-9._-]+)?$` | the stamped `etc/local-llm/litellm/config.yaml` (`@@LLM_MODEL@@` → raw model) **and** the `LLM_MODEL` exported by `system.sh up`/`down` for the model-pull |
+| `localLlm.embeddingModel` | opt-in, model name (optional) | same grammar | the `local-embed` entry in `config.yaml` (`@@LLM_EMBED_MODEL@@`) + the exported `LLM_EMBED_MODEL`; also makes `build-config` emit `OPENAI_EMBEDDING_MODEL=local-embed` |
+
+The model-name grammar accepts a namespaced repo (`/`) and a single `:tag` suffix and
+rejects whitespace / shell metacharacters / YAML-sensitive characters, so a hostile or
+hand-edited value cannot corrupt the stamped `config.yaml` or the exported `LLM_MODEL`.
+
+`build-config` behavior for `localLlm` (no `.env` is written for it):
+
+- **Absent `localLlm`** → no-op (the `claude-api`/`openai-api` `.env` vars still emit).
+- **`.localLlm` present but not an object** → fails clearly (a malformed hand-edit must
+  not silently skip stamping while the app still points at the local gateway).
+- **`localLlm.model` present** → validates it, then stamps the **gitignored**
+  `etc/local-llm/litellm/config.yaml` from `config.yaml.template` by replacing every
+  `@@LLM_MODEL@@` (it appears in both the wildcard `"*"` route and the `local` alias)
+  with the raw model. The template line is already `ollama_chat/@@LLM_MODEL@@`, so the
+  `ollama_chat/` prefix is **not** re-added.
+- **Embeddings block (R12)** — the `local-embed` entry lives between
+  `# >>> embeddings` / `# <<< embeddings` sentinel markers. `build-config` does a
+  **block operation**: when `embeddingModel` is present it keeps the block, strips the
+  marker lines, and substitutes `@@LLM_EMBED_MODEL@@`; when absent it **deletes the
+  entire marked block** (no orphan entry, no leftover token, valid YAML either way).
+- **`embeddingModel` set without `model`** → fails clearly (embeddings require a chat
+  opt-in).
+- **`localLlm.model` present but `config.yaml.template` missing** → fails clearly
+  (opt-in invariant — never silently skipped). The template is also structurally
+  validated (markers balanced/non-duplicated, required tokens present) and a post-stamp
+  scan fails if any `@@…@@` token remains in the generated `config.yaml`.
+
+**The local LLM mock stack itself is internal dev tooling — NOT a `systems[]`
+component and NOT itself a `services{}` external dependency.** It *backs* the
+`claude-api`/`openai-api` services in local dev (the app keeps talking to the same two
+service endpoints; only their `base_url` repoints to the local gateway), mirroring how
+the observability stack is classified as dev tooling rather than a `systems[]` entry.
+See `docs/local-llm.md` for the stack itself.
 
 ### Class-library components
 

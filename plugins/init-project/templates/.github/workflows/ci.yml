@@ -130,6 +130,30 @@ jobs:
       - name: Run shell suite under kcov + 100% line gate
         run: bash tests/coverage.sh --require-kcov
 
+  local-llm-mock:
+    name: local LLM mock stack (Docker integration)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends jq
+
+      # Docker-GATED integration proof for the opt-in local LLM mock stack. The
+      # script SELF-SKIPS (exit 0) when Docker is unavailable OR the stack is not
+      # installed (a non-opt-in scaffold has no etc/local-llm/), so this job is
+      # harmless/green for projects that didn't opt in. When the stack IS present it
+      # brings up `--profile ai-mock` (LiteLLM only, NO Ollama, NO model — fast/free)
+      # and asserts canned responses on BOTH the OpenAI /v1/chat/completions and the
+      # unified Anthropic /v1/messages surfaces, plus that a tools-bearing request is
+      # tolerated (no 5xx) on both — a request-parsing regression signal, NOT a
+      # structured tool-use round-trip. The real-inference `--profile ai` smoke is
+      # MANUAL (see docs/local-llm.md), never a CI gate.
+      - name: Local LLM mock integration (ai-mock, Docker-gated)
+        run: bash tests/integration/local-llm-mock.sh
+
   config:
     name: config validation + drift
     runs-on: ubuntu-latest

@@ -40,7 +40,8 @@ Make the dispatcher forward args and orchestrate the `etc/local-llm/` stack behi
 - [ ] up/down/system.sh additions at 100% line coverage + per-branch; docker calls stubbed (R10)
 
 ## Done summary
-_(filled on completion)_
-
+Wired system.sh up/down opt-in local-llm (ai/ai-mock) compose-profile orchestration: a new sourced private helper _local-llm.sh (profile-grammar parse, type-safe jq LLM_MODEL/LLM_EMBED_MODEL export, and the up --profile ai preflight with both-direction stale-config guard across all chat routes + the embed route), plus arg-forwarding, COMPOSE_PROFILES sanitization, not-installed errors, and the up/down asymmetry. Covered every branch (incl. dispatcher arg-forwarding) with docker-stubbed shell tests (157 passing).
 ## Evidence
-_(filled on completion)_
+- Commits: 7c8f17b, 79cf607
+- Tests: bash tests/system-cli/system_cli_test.sh (157 passed, 0 failed), shellcheck -x src/system-cli/_local-llm.sh up.sh down.sh (clean)
+- PRs:

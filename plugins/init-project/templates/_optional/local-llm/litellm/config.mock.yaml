@@ -1,0 +1,22 @@
+# LiteLLM proxy config for the DETERMINISTIC MOCK mode (--profile ai-mock).
+#
+# COMMITTED, STATIC — no build-config stamping, no model, no Ollama backend. A
+# wildcard route with `mock_response` short-circuits the backend and returns a single
+# canned reply for ANY model name on BOTH chat surfaces (OpenAI /v1/chat/completions
+# AND the unified Anthropic /v1/messages). This is the CI/test path: fast, free,
+# deterministic. ai-mock is CHAT-ONLY by design (no embeddings entry).
+#
+# The canned text below is a SINGLE editable mock_response (per-model/per-endpoint
+# mocking is a deliberate v1 non-goal). Edit this string to change the canned reply;
+# see docs/local-llm.md. Because mock_response short-circuits the backend, this CANNOT
+# emit structured tool_calls / tool_use — a tools-bearing request is merely TOLERATED
+# (no 5xx, well-formed response); structured tool-use fidelity is a MANUAL real-mode
+# check only.
+
+model_list:
+  - model_name: "*"
+    litellm_params:
+      # `model:` is required by LiteLLM's schema; with mock_response set, the backend
+      # is never actually called, so this is a placeholder, not a real route.
+      model: openai/mock
+      mock_response: "This is a canned mock response from the local LLM mock stack (LiteLLM --profile ai-mock). Edit config.mock.yaml to change it."
