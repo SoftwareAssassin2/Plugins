@@ -39,6 +39,7 @@ the first time someone other than the original author tries it.
 | VS Code extensions | `customizations.vscode.extensions` in `.devcontainer/devcontainer.json` |
 | Runtime service containers (compose-managed) | the component's own `src/<component>/` (e.g. `src/postgres/`, `src/keycloak/`) — NOT `.devcontainer/` |
 | Observability stack (compose-managed dev tooling) | its own `src/<component>/` (`src/otel-collector/`, `src/prometheus/`, `src/grafana/`) — NOT `.devcontainer/` |
+| Opt-in local LLM mock stack (compose-managed dev tooling) | `etc/local-llm/` (LiteLLM + Ollama) — NOT `.devcontainer/`; see `docs/local-llm.md` |
 
 **Best-effort steps.** Plugin installs, MCP registration, and similar
 enable-steps are best-effort: each is isolated so a single failure warns but
@@ -67,6 +68,13 @@ project. The compose-managed containers live outside it, each under its own
   shared Docker network named `observability` that `./system.sh up` creates before
   starting them. They are orchestrated by `./system.sh up` / `down` alongside the
   service components.
+- **The opt-in local LLM mock stack.** LiteLLM + Ollama are the *same kind* of
+  internal dev tooling (no `systems[]` entry, not an external `services{}`
+  dependency), but they are an **opt-in** stack and live under `etc/local-llm/`
+  rather than `src/` — laid down only when a project is scaffolded with
+  `--local-llm`. They sit behind the `ai`/`ai-mock` compose profiles, so the
+  default `./system.sh up` starts none of it; `./system.sh up --profile ai`
+  (or `ai-mock`) brings them up alongside the other stacks. See `docs/local-llm.md`.
 
 In every case the dev container provides the `docker` CLI + `docker-in-docker`
 feature so a contributor can drive those compose stacks from inside the dev

@@ -18,6 +18,7 @@ External dependencies the system *connects to* (not part of it) are entries unde
 |---|---|
 | `src/system-cli/` | Repo tooling (the `system.sh` dispatcher's subcommands), not a deployable component. |
 | `src/otel-collector/`, `src/prometheus/`, `src/grafana/` | The observability stack — local dev tooling brought up by `system.sh up`. No host/port secrets to distribute, so no `systems[]` entries (they wire together over a shared Docker network, not via `config.json`). |
+| `etc/local-llm/` | The opt-in local LLM mock stack (LiteLLM + Ollama) — local dev tooling brought up by `system.sh up --profile ai`/`ai-mock`. It *backs* the `claude-api`/`openai-api` `services{}` entries in local dev; it is not itself a `systems[]` component or a `services{}` entry. See `docs/local-llm.md`. |
 | `tests/<Component>.Tests/` | Test projects live under the top-level `tests/` directory, not `src/`. |
 
 When you add a new component, add BOTH the `src/<component>/` folder AND the `systems[]` entry — never one without the other.
@@ -56,6 +57,7 @@ When adding a new standard:
 | `docs/tdd.md` | Writing or modifying tests, adding code that must hit 100% coverage, or touching CI coverage gates. |
 | `docs/config-management.md` | Adding, removing, or distributing configuration settings (`config.json` → per-component `.env`). |
 | `docs/dev-container.md` | Adding any dependency (system package, CLI, runtime, Claude plugin/marketplace, MCP server, or editor extension) the repo needs to operate. |
+| `docs/local-llm.md` | Working with the opt-in local LLM mock stack — switching between the `ai` (real inference) and `ai-mock` (deterministic mock) profiles, choosing a model, editing the canned mock response, GPU/offline workflows, or removing the stack. |
 | `docs/front-end.md` | Building or changing an Angular SPA — routing, build profile, styling, testing. |
 | `docs/keycloak.md` | Touching authentication, the Keycloak realm, identity, or database session-context / row-level security. |
 

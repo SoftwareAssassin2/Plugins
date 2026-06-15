@@ -21,7 +21,7 @@ You can develop without the dev container, but you'll need to install the toolch
 `config.json` is the single source of truth for local development:
 
 - `systems[]` — one entry per component under `src/`, including the `postgres` database and `keycloak` identity provider.
-- `services{}` — external dependencies the system connects to (their credentials start as `REPLACE_ME` — fill them in locally).
+- `services{}` — external dependencies the system connects to (their credentials start as `REPLACE_ME` — fill them in locally). Two are always present: `claude-api` (Anthropic-compatible) and `openai-api` (OpenAI-compatible). The opt-in local LLM mock stack (see below) backs these in local dev.
 
 Generated local-dev secrets (Postgres role passwords, Keycloak admin) are created at scaffold time and committed for single-operator local dev — they are **not** production secrets. Real secrets enter only via `config.deploy.json` (`{{VAR-NAME}}` placeholders the CI/CD pipeline renders at deploy). See [`docs/config-management.md`](docs/config-management.md).
 
@@ -57,6 +57,37 @@ A typical first run:
 ./system.sh migrate        # apply the database schema
 ```
 
+## Local LLM mock (opt-in)
+
+If this project was scaffolded with `--local-llm`, it ships an **opt-in,
+local-dev-only LLM gateway** under `etc/local-llm/` (LiteLLM + Ollama). It lets the
+app's outbound LLM calls hit a **local gateway** (`127.0.0.1:4000`) instead of the
+real paid/cloud providers — without any app-code changes. The scaffold repoints the
+`claude-api` / `openai-api` `services{}` `base_url`s at the local gateway, so the
+`Api` reads the same env vars (`ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY` /
+`OPENAI_BASE_URL` / `OPENAI_API_KEY`) and simply points them locally.
+
+Two modes, selected by compose profile — the default `./system.sh up` starts
+neither:
+
+| Command | What it does |
+|---|---|
+| `./system.sh up --profile ai-mock` | Deterministic **mock** — LiteLLM only (no Ollama), a single canned response. Fast, free, what CI uses. |
+| `./system.sh up --profile ai` | **Real** local inference — LiteLLM + Ollama + a one-shot model pull. For manual dev/demos. |
+
+**Run `./system.sh build-config` before `--profile ai`** — it stamps the chosen
+model (from `config.json` → `localLlm.model`) into the gitignored LiteLLM runtime
+config and exports it for the model pull. (`--profile ai-mock` needs no stamping.)
+
+```bash
+./system.sh build-config         # stamps the local-LLM runtime config + model
+./system.sh up --profile ai      # real inference (pulls the model on first boot)
+```
+
+Full details — model selection, the optional embeddings model, the GPU override,
+the offline / pre-pull workflow, editing the canned mock response, and **complete
+removal** — are in [`docs/local-llm.md`](docs/local-llm.md).
+
 ## Project layout
 
 | Folder | Purpose |
@@ -64,7 +95,7 @@ A typical first run:
 | `src/` | One sub-folder per component (`.NET` projects, Angular SPAs, `postgres`, `keycloak`), plus `src/system-cli/` for the dispatcher subcommands. |
 | `tests/` | Test projects (`tests/<Component>.Tests/`). |
 | `docs/` | Development standards and business direction. |
-| `etc/` | Supporting tooling, including the observability compose stack. |
+| `etc/` | Supporting tooling, including the observability compose stack and the opt-in local LLM mock stack (`etc/local-llm/`, if scaffolded with `--local-llm`). |
 | `.devcontainer/` | Dev container definition and setup. |
 | `.claude/` | Claude Code configuration (status line, hooks, settings). |
 
