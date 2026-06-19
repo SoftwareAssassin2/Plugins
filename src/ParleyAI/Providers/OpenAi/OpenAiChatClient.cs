@@ -96,10 +96,16 @@ public sealed class OpenAiChatClient : IAiChatClient
                     .ConfigureAwait(false);
             return OpenAiMessageMapper.MapResponse(result.Value);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Cooperative cancellation propagates un-wrapped.
+            // COOPERATIVE cancellation (the caller's token fired) propagates un-wrapped.
             throw;
+        }
+        catch (OperationCanceledException ex)
+        {
+            // A TaskCanceledException NOT driven by the caller token is a TRANSPORT TIMEOUT
+            // (e.g. HttpClient.Timeout / SocketsHttpHandler) — map it to Transient, not cancellation.
+            throw OpenAiErrorMapper.MapTimeout(ex);
         }
         catch (ClientResultException ex)
         {

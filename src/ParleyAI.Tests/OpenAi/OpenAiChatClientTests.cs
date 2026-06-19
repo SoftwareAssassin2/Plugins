@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -101,6 +100,19 @@ public sealed class OpenAiChatClientTests
     }
 
     [Fact]
+    public async Task Error_429_token_limit_via_error_code_maps_to_TokenLimit()
+    {
+        // No x-ratelimit-remaining-tokens header — only a machine code variant in the body.
+        var handler = new FakeHttpMessageHandler(_ => OpenAiErrorFixtures.Openai429TpmCodeOnly());
+        OpenAiChatClient client = ClientOver(handler, "http://localhost:4010/v1");
+
+        ParleyAIException ex = await Assert.ThrowsAsync<ParleyAIException>(
+            () => client.CompleteChatAsync(SimpleRequest()));
+
+        Assert.Equal(ParleyAIErrorCategory.TokenLimit, ex.Category);
+    }
+
+    [Fact]
     public async Task Error_429_request_limit_maps_to_RateLimit_with_retry_after_ms()
     {
         var handler = new FakeHttpMessageHandler(_ => OpenAiErrorFixtures.Openai429Rpm());
@@ -176,6 +188,22 @@ public sealed class OpenAiChatClientTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => client.CompleteChatAsync(SimpleRequest(), cts.Token));
         // NOT wrapped in ParleyAIException.
+    }
+
+    [Fact]
+    public async Task Transport_timeout_not_driven_by_caller_token_maps_to_Transient()
+    {
+        // A TaskCanceledException with NO caller cancellation = a transport timeout
+        // (HttpClient.Timeout / SocketsHttpHandler), which must map to Transient — NOT pass through.
+        var handler = new FakeHttpMessageHandler(_ =>
+            throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout."));
+        OpenAiChatClient client = ClientOver(handler, "http://localhost:4010/v1");
+
+        ParleyAIException ex = await Assert.ThrowsAsync<ParleyAIException>(
+            () => client.CompleteChatAsync(SimpleRequest(), CancellationToken.None));
+
+        Assert.Equal(ParleyAIErrorCategory.Transient, ex.Category);
+        Assert.Equal(ProviderKeys.OpenAi, ex.ProviderKey);
     }
 
     [Fact]

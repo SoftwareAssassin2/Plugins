@@ -73,6 +73,20 @@ internal static class OpenAiErrorMapper
             innerException: ex);
 
     /// <summary>
+    /// Maps a transport-level timeout (a <see cref="OperationCanceledException"/> NOT driven by the
+    /// caller's <see cref="System.Threading.CancellationToken"/>) onto a
+    /// <see cref="ParleyAIErrorCategory.Transient"/> <see cref="ParleyAIException"/>.
+    /// </summary>
+    public static ParleyAIException MapTimeout(OperationCanceledException ex) =>
+        new ParleyAIException(
+            ex.Message,
+            ParleyAIErrorCategory.Transient,
+            ProviderKeys.OpenAi,
+            statusCode: null,
+            retryAfter: null,
+            innerException: ex);
+
+    /// <summary>
     /// Maps any other unexpected exception onto an <see cref="ParleyAIErrorCategory.Unknown"/>
     /// <see cref="ParleyAIException"/>.
     /// </summary>
@@ -91,7 +105,7 @@ internal static class OpenAiErrorMapper
         {
             bool tokenLimit =
                 string.Equals(remainingTokens?.Trim(), "0", StringComparison.Ordinal)
-                || (body is not null && body.Contains("tokens per min", StringComparison.OrdinalIgnoreCase));
+                || IndicatesTokensPerMinute(body);
             return tokenLimit ? ParleyAIErrorCategory.TokenLimit : ParleyAIErrorCategory.RateLimit;
         }
 
@@ -103,6 +117,29 @@ internal static class OpenAiErrorMapper
             >= 500 and <= 599 => ParleyAIErrorCategory.Transient,
             _ => ParleyAIErrorCategory.Unknown,
         };
+    }
+
+    /// <summary>
+    /// Detects a tokens-per-minute signal in the error body — either the human-readable message
+    /// (<c>tokens per min</c>) or a machine <c>code</c> variant (<c>tokens_per_min[ute]</c> /
+    /// <c>tokens-per-min[ute]</c>). Whitespace/separator-insensitive so message and code shapes
+    /// both match.
+    /// </summary>
+    internal static bool IndicatesTokensPerMinute(string? body)
+    {
+        if (string.IsNullOrEmpty(body))
+        {
+            return false;
+        }
+
+        // Collapse the separators OpenAI uses between the words (space / underscore / hyphen) so a
+        // single substring check covers "tokens per min", "tokens_per_minute", "tokens-per-min", etc.
+        string normalized = body
+            .Replace('_', ' ')
+            .Replace('-', ' ')
+            .ToLowerInvariant();
+
+        return normalized.Contains("tokens per min");
     }
 
     private static TimeSpan? ParseRetryAfter(PipelineResponse? response)

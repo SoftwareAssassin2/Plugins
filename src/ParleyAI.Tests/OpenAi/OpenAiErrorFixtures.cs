@@ -33,6 +33,18 @@ internal static class OpenAiErrorFixtures
             new KeyValuePair<string, string>("retry-after-ms", "1500"),
         });
 
+    /// <summary>
+    /// 429 with NO token header but a machine <c>code</c> variant (<c>tokens_per_minute</c>) ⇒
+    /// TokenLimit (proves the code/separator-insensitive detector, not just the exact phrase).
+    /// </summary>
+    public static HttpResponseMessage Openai429TpmCodeOnly() => FakeHttpMessageHandler.Error(
+        HttpStatusCode.TooManyRequests,
+        "{\"error\":{\"message\":\"Rate limit reached\",\"code\":\"tokens_per_minute\"}}",
+        new[]
+        {
+            new KeyValuePair<string, string>("x-ratelimit-remaining-requests", "7"),
+        });
+
     /// <summary>401 ⇒ Authentication.</summary>
     public static HttpResponseMessage Openai401() => FakeHttpMessageHandler.Error(
         HttpStatusCode.Unauthorized,
