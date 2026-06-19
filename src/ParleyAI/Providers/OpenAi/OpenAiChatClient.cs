@@ -49,8 +49,25 @@ public sealed class OpenAiChatClient : IAiChatClient
     /// having applied the ctor &gt; flat-key precedence in the DI layer.
     /// </param>
     /// <param name="httpClient">The keyed, singleton-safe transport <see cref="HttpClient"/>.</param>
+    /// <exception cref="ArgumentException">
+    /// The API key is missing/blank, or the base URL is present but not an absolute URI.
+    /// </exception>
+    public OpenAiChatClient(OpenAiChatClientSettings settings, HttpClient httpClient)
+        : this(settings, httpClient, telemetryOptions: null)
+    {
+    }
+
+    /// <summary>
+    /// Constructs the client from resolved settings + the keyed transport <see cref="HttpClient"/>,
+    /// with optional GenAI telemetry tuning.
+    /// </summary>
+    /// <param name="settings">
+    /// The resolved connection settings (required API key + optional verbatim base URL), already
+    /// having applied the ctor &gt; flat-key precedence in the DI layer.
+    /// </param>
+    /// <param name="httpClient">The keyed, singleton-safe transport <see cref="HttpClient"/>.</param>
     /// <param name="telemetryOptions">
-    /// Optional GenAI telemetry tuning (content-capture gate; default off). Spans + metrics are emitted
+    /// GenAI telemetry tuning (content-capture gate; default off). Spans + metrics are emitted
     /// regardless; <c>null</c> ⇒ defaults (no content capture).
     /// </param>
     /// <exception cref="ArgumentException">
@@ -59,7 +76,7 @@ public sealed class OpenAiChatClient : IAiChatClient
     public OpenAiChatClient(
         OpenAiChatClientSettings settings,
         HttpClient httpClient,
-        ParleyAiTelemetryOptions? telemetryOptions = null)
+        ParleyAiTelemetryOptions? telemetryOptions)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(httpClient);

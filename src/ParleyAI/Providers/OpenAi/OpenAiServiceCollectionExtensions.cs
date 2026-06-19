@@ -47,16 +47,34 @@ public static class OpenAiServiceCollectionExtensions
     /// <param name="configureOverride">
     /// Optional ctor-override: values set here win over the flat config keys.
     /// </param>
+    /// <returns>The keyed <see cref="IHttpClientBuilder"/> for the <c>"openai"</c> transport client.</returns>
+    public static IHttpClientBuilder AddOpenAiChatClient(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        Action<OpenAiChatClientSettings>? configureOverride = null) =>
+        services.AddOpenAiChatClient(configuration, configureOverride, telemetryOptions: null);
+
+    /// <summary>
+    /// Registers the OpenAI provider building blocks (with GenAI telemetry tuning) and returns the
+    /// keyed <see cref="IHttpClientBuilder"/>.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">
+    /// Configuration carrying the flat <c>OPENAI_API_KEY</c> / <c>OPENAI_BASE_URL</c> keys.
+    /// </param>
+    /// <param name="configureOverride">
+    /// Optional ctor-override: values set here win over the flat config keys.
+    /// </param>
     /// <param name="telemetryOptions">
-    /// Optional GenAI telemetry tuning (content-capture gate; default off) passed to the client. Spans
-    /// + metrics are emitted regardless.
+    /// GenAI telemetry tuning (content-capture gate; default off) passed to the client. Spans + metrics
+    /// are emitted regardless; <c>null</c> ⇒ defaults.
     /// </param>
     /// <returns>The keyed <see cref="IHttpClientBuilder"/> for the <c>"openai"</c> transport client.</returns>
     public static IHttpClientBuilder AddOpenAiChatClient(
         this IServiceCollection services,
         IConfiguration configuration,
-        Action<OpenAiChatClientSettings>? configureOverride = null,
-        ParleyAiTelemetryOptions? telemetryOptions = null)
+        Action<OpenAiChatClientSettings>? configureOverride,
+        ParleyAiTelemetryOptions? telemetryOptions)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);

@@ -49,16 +49,34 @@ public static class AnthropicServiceCollectionExtensions
     /// <param name="configureOverride">
     /// Optional ctor-override: values set here win over the flat config keys.
     /// </param>
+    /// <returns>The keyed <see cref="IHttpClientBuilder"/> for the <c>"anthropic"</c> transport client.</returns>
+    public static IHttpClientBuilder AddAnthropicChatClient(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        Action<AnthropicChatClientSettings>? configureOverride = null) =>
+        services.AddAnthropicChatClient(configuration, configureOverride, telemetryOptions: null);
+
+    /// <summary>
+    /// Registers the Anthropic provider building blocks (with GenAI telemetry tuning) and returns the
+    /// keyed <see cref="IHttpClientBuilder"/>.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">
+    /// Configuration carrying the flat <c>ANTHROPIC_API_KEY</c> / <c>ANTHROPIC_BASE_URL</c> keys.
+    /// </param>
+    /// <param name="configureOverride">
+    /// Optional ctor-override: values set here win over the flat config keys.
+    /// </param>
     /// <param name="telemetryOptions">
-    /// Optional GenAI telemetry tuning (content-capture gate; default off) passed to the client. Spans
-    /// + metrics are emitted regardless.
+    /// GenAI telemetry tuning (content-capture gate; default off) passed to the client. Spans + metrics
+    /// are emitted regardless; <c>null</c> ⇒ defaults.
     /// </param>
     /// <returns>The keyed <see cref="IHttpClientBuilder"/> for the <c>"anthropic"</c> transport client.</returns>
     public static IHttpClientBuilder AddAnthropicChatClient(
         this IServiceCollection services,
         IConfiguration configuration,
-        Action<AnthropicChatClientSettings>? configureOverride = null,
-        ParleyAiTelemetryOptions? telemetryOptions = null)
+        Action<AnthropicChatClientSettings>? configureOverride,
+        ParleyAiTelemetryOptions? telemetryOptions)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
