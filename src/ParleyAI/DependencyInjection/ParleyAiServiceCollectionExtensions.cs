@@ -16,15 +16,17 @@ namespace ParleyAI.DependencyInjection;
 /// <see cref="AddParleyAi(IServiceCollection, IConfiguration, Action{ParleyAiOptions}?)"/> assembles
 /// the cross-provider composition: it calls the per-provider building blocks (fn-4.2/.3), registers
 /// the PUBLIC keyed <see cref="IAiChatClient"/> per provider via a composition factory (applying the
-/// optional <see cref="AiChatClientDecorator"/> hook when present), attaches the standard resilience
-/// pipeline to each provider's keyed <see cref="IHttpClientBuilder"/> EXACTLY ONCE, and registers
-/// the <see cref="IAiChatClientFactory"/>. There is NO unkeyed default — unkeyed resolution throws.
+/// optional decoration hook when present), attaches the standard resilience pipeline to each
+/// provider's keyed <see cref="IHttpClientBuilder"/> EXACTLY ONCE, and registers the
+/// <see cref="IAiChatClientFactory"/>. There is NO unkeyed default — unkeyed resolution throws.
 /// </para>
 /// <para>
 /// <b>Decoration (no .4/.5 cycle):</b> the public keyed <see cref="IAiChatClient"/> is composed as
-/// <c>Compose(sp, key, bareProvider)</c>: if a singleton <see cref="AiChatClientDecorator"/> is
-/// registered (fn-4.5 registers it for AIMD; this task registers NONE), it is invoked and its result
-/// is the public client; otherwise the bare provider is returned. No descriptor surgery.
+/// <c>Compose(sp, key, bareProvider)</c>: if a singleton
+/// <c>Func&lt;IServiceProvider, string /*providerKey*/, IAiChatClient /*inner*/, IAiChatClient&gt;</c>
+/// is registered (fn-4.5 registers it for AIMD; this task registers NONE), it is invoked and its
+/// result is the public client; otherwise the bare provider is returned. One decorator, v1 — no
+/// chaining, no descriptor surgery.
 /// </para>
 /// <para>
 /// <b>Resilience (no stacking):</b> the SDK-native retry is disabled in .2/.3, so this is the single
@@ -108,14 +110,16 @@ public static class ParleyAiServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Composes the public keyed <see cref="IAiChatClient"/>: applies the optional
-    /// <see cref="AiChatClientDecorator"/> when registered, else returns the bare provider.
+    /// Composes the public keyed <see cref="IAiChatClient"/>: applies the optional decoration hook
+    /// (the concrete singleton <c>Func&lt;IServiceProvider, string, IAiChatClient, IAiChatClient&gt;</c>)
+    /// when registered, else returns the bare provider.
     /// </summary>
     private static IAiChatClient Compose(IServiceProvider sp, string providerKey, IAiChatClient bareInner)
     {
-        // ONE optional decorator (v1, no chaining). fn-4.4 registers none → bare; fn-4.5 registers
-        // it (AIMD) → wrapped. No descriptor surgery either way.
-        AiChatClientDecorator? decorator = sp.GetService<AiChatClientDecorator>();
+        // ONE optional decorator (v1, no chaining). The hook is the EXACT spec-defined delegate type
+        // Func<IServiceProvider, string, IAiChatClient, IAiChatClient> — fn-4.4 registers none → bare;
+        // fn-4.5 registers it (AIMD) → wrapped. No descriptor surgery either way.
+        var decorator = sp.GetService<Func<IServiceProvider, string, IAiChatClient, IAiChatClient>>();
         return decorator is null ? bareInner : decorator(sp, providerKey, bareInner);
     }
 

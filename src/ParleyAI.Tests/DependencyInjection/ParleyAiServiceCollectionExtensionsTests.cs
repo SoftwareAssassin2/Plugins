@@ -158,8 +158,10 @@ public sealed class ParleyAiServiceCollectionExtensionsTests
         var services = new ServiceCollection();
         services.AddParleyAi(BothProvidersConfigured());
 
-        // Simulate fn-4.5: register the single optional decorator hook (no descriptor surgery).
-        services.AddSingleton<AiChatClientDecorator>((_, key, inner) => new WrappingClient(inner, key));
+        // Simulate fn-4.5: register the single optional decorator hook as the EXACT spec-defined
+        // Func<IServiceProvider, string, IAiChatClient, IAiChatClient> delegate (no descriptor surgery).
+        services.AddSingleton<Func<IServiceProvider, string, IAiChatClient, IAiChatClient>>(
+            (_, key, inner) => new WrappingClient(inner, key));
 
         using ServiceProvider provider = services.BuildServiceProvider();
 
@@ -291,6 +293,62 @@ public sealed class ParleyAiServiceCollectionExtensionsTests
         await Assert.ThrowsAsync<ParleyAIException>(() => client.CompleteChatAsync(SampleRequest()));
 
         // Exactly ONE attempt despite MaxRetryAttempts=3 — the retry predicate excludes 429.
+        Assert.Equal(1, counting.Attempts);
+    }
+
+    [Fact]
+    public async Task Resilience_is_attached_through_the_anthropic_builder_and_retries_a_transient_5xx()
+    {
+        // Per-provider attachment: the same retry behavior must hold through the ANTHROPIC builder,
+        // proving resilience is wired to its keyed transport (not just OpenAI's).
+        var counting = new CountingHandler(_ => CountingHandler.Error(HttpStatusCode.ServiceUnavailable));
+
+        var services = new ServiceCollection();
+        services.AddParleyAi(
+            Config(("ANTHROPIC_API_KEY", "sk-ant"), ("ANTHROPIC_BASE_URL", "http://localhost:4011")),
+            opts => opts.ConfigureAnthropicResilience = r =>
+            {
+                r.MaxRetryAttempts = 2;
+                r.BaseRetryDelay = TimeSpan.Zero;
+            });
+
+        services.AddHttpClient(AnthropicServiceCollectionExtensions.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => counting);
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+        var client = provider.GetRequiredKeyedService<IAiChatClient>(ProviderKeys.Anthropic);
+
+        await Assert.ThrowsAsync<ParleyAIException>(() => client.CompleteChatAsync(
+            new ChatRequest("claude-3-5-sonnet", new[] { new ChatMessage(Role.User, "hi") })));
+
+        // 1 initial + 2 retries = 3 attempts through the Anthropic pipeline.
+        Assert.Equal(3, counting.Attempts);
+    }
+
+    [Fact]
+    public async Task A_429_through_the_anthropic_builder_is_not_retried()
+    {
+        // A 429 must surface immediately through the Anthropic pipeline too (no retry → AIMD signal).
+        var counting = new CountingHandler(_ => CountingHandler.Error(HttpStatusCode.TooManyRequests));
+
+        var services = new ServiceCollection();
+        services.AddParleyAi(
+            Config(("ANTHROPIC_API_KEY", "sk-ant"), ("ANTHROPIC_BASE_URL", "http://localhost:4011")),
+            opts => opts.ConfigureAnthropicResilience = r =>
+            {
+                r.MaxRetryAttempts = 3;
+                r.BaseRetryDelay = TimeSpan.Zero;
+            });
+
+        services.AddHttpClient(AnthropicServiceCollectionExtensions.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => counting);
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+        var client = provider.GetRequiredKeyedService<IAiChatClient>(ProviderKeys.Anthropic);
+
+        await Assert.ThrowsAsync<ParleyAIException>(() => client.CompleteChatAsync(
+            new ChatRequest("claude-3-5-sonnet", new[] { new ChatMessage(Role.User, "hi") })));
+
         Assert.Equal(1, counting.Attempts);
     }
 
