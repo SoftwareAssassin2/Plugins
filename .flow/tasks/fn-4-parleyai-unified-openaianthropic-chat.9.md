@@ -27,7 +27,8 @@ Wire the published `ParleyAI` into the (net10) scaffold: `Api.csproj` PackageRef
 - [ ] Docs updated: `config-management.md`, `README.md`, `SKILL.md`/`main.md`/`marketplace.json`; does NOT modify `build-config.sh`/`config.json` services
 
 ## Done summary
-_(filled on completion)_
-
+Wired the published ParleyAI NuGet package into the net10 /init-project scaffold: Api.csproj PackageReference via $(LlmWrapperVersion) + pinned OpenTelemetry pkg refs, Program.cs keyed-DI AddParleyAi (no default) + AddOpenTelemetry registering ParleyAI's ActivitySource/Meter (via public constants) with an OTLP exporter on both signals at the SDK-default loopback, plus static scaffold_test assertions and docs (config-management.md, README, SKILL.md, marketplace.json).
 ## Evidence
-_(filled on completion)_
+- Commits: bb7554c801de31be8f27fa61e76c2dd087e3efbe
+- Tests: bash plugins/init-project/tests/scaffold_test.sh (static offline scaffold assertions)
+- PRs:
