@@ -1,3 +1,6 @@
 .DS_Store
 .flow/bin/
 .worktrees/
+
+# NuGet pack output (dotnet pack -o ./artifacts). Regenerated; never committed.
+/artifacts/
