@@ -73,7 +73,10 @@ internal static class AnthropicMessageMapper
     /// <summary>Maps the Anthropic SDK response onto the neutral response shape.</summary>
     public static ChatResponse MapResponse(MessageResponse response)
     {
-        string content = response.FirstMessage?.Text ?? ExtractFirstText(response) ?? string.Empty;
+        // Anthropic responses are content-block arrays; concatenate ALL text blocks in order so a
+        // multi-block response is not truncated to its first block (non-text blocks are ignored —
+        // v1 is text-only chat).
+        string content = ExtractText(response);
 
         var usage = new TokenUsage(
             response.Usage?.InputTokens ?? 0,
@@ -92,22 +95,24 @@ internal static class AnthropicMessageMapper
         _ => FinishReason.Unknown,
     };
 
-    private static string? ExtractFirstText(MessageResponse response)
+    internal static string ExtractText(MessageResponse response)
     {
-        if (response.Content is null)
+        if (response.Content is null || response.Content.Count == 0)
         {
-            return null;
+            // Fall back to the SDK's convenience accessor when the block list is unavailable.
+            return response.FirstMessage?.Text ?? string.Empty;
         }
 
+        var builder = new System.Text.StringBuilder();
         foreach (ContentBase block in response.Content)
         {
-            if (block is TextContent text)
+            if (block is TextContent { Text: { } text })
             {
-                return text.Text;
+                builder.Append(text);
             }
         }
 
-        return null;
+        return builder.Length > 0 ? builder.ToString() : (response.FirstMessage?.Text ?? string.Empty);
     }
 
     private static void ValidateSingleLeadingSystem(IReadOnlyList<ParleyChatMessage> messages)
