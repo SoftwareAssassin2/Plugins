@@ -1,0 +1,20 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-15T07:47:39.438297Z",
+  "depends_on": [
+    "fn-4-parleyai-unified-openaianthropic-chat.2",
+    "fn-4-parleyai-unified-openaianthropic-chat.3"
+  ],
+  "id": "fn-4-parleyai-unified-openaianthropic-chat.4",
+  "impl": null,
+  "priority": null,
+  "review": null,
+  "spec": "fn-4-parleyai-unified-openaianthropic-chat",
+  "spec_path": ".flow/tasks/fn-4-parleyai-unified-openaianthropic-chat.4.md",
+  "status": "todo",
+  "sync": null,
+  "title": "Unified DI + IAiChatClientFactory + standard resilience",
+  "updated_at": "2026-06-15T11:51:43.650391Z"
+}

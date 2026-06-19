@@ -10,13 +10,13 @@
     "fn-2-init-project-scaffolding-skill-init",
     "fn-3-local-llm-mock-stack-for-init-project"
   ],
-  "id": "fn-4-openaianthropic-api-wrapper-nuget",
+  "id": "fn-4-parleyai-unified-openaianthropic-chat",
   "next_task": 1,
   "plan_review_status": "unknown",
   "plan_reviewed_at": null,
-  "spec_path": ".flow/specs/fn-4-openaianthropic-api-wrapper-nuget.md",
+  "spec_path": ".flow/specs/fn-4-parleyai-unified-openaianthropic-chat.md",
   "status": "open",
-  "title": "OpenAI/Anthropic API wrapper NuGet packages + /init-project integration",
+  "title": "ParleyAI \u2014 unified OpenAI/Anthropic chat client NuGet package + /init-project integration",
   "tracker": {
     "baseHashFlow": null,
     "baseHashTracker": null,
@@ -27,5 +27,5 @@
     "mergeBaseTracker": null,
     "url": null
   },
-  "updated_at": "2026-06-15T09:44:20.696239Z"
+  "updated_at": "2026-06-15T11:07:09.518607Z"
 }

@@ -1,0 +1,19 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-15T07:47:39.108829Z",
+  "depends_on": [
+    "fn-4-parleyai-unified-openaianthropic-chat.1"
+  ],
+  "id": "fn-4-parleyai-unified-openaianthropic-chat.2",
+  "impl": null,
+  "priority": null,
+  "review": null,
+  "spec": "fn-4-parleyai-unified-openaianthropic-chat",
+  "spec_path": ".flow/tasks/fn-4-parleyai-unified-openaianthropic-chat.2.md",
+  "status": "todo",
+  "sync": null,
+  "title": "OpenAI provider: Endpoint+Transport base-URL override + keyed DI",
+  "updated_at": "2026-06-15T11:58:46.692227Z"
+}

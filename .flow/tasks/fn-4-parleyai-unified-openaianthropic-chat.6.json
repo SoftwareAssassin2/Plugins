@@ -1,0 +1,20 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-15T07:47:39.761028Z",
+  "depends_on": [
+    "fn-4-parleyai-unified-openaianthropic-chat.2",
+    "fn-4-parleyai-unified-openaianthropic-chat.3"
+  ],
+  "id": "fn-4-parleyai-unified-openaianthropic-chat.6",
+  "impl": null,
+  "priority": null,
+  "review": null,
+  "spec": "fn-4-parleyai-unified-openaianthropic-chat",
+  "spec_path": ".flow/tasks/fn-4-parleyai-unified-openaianthropic-chat.6.md",
+  "status": "todo",
+  "sync": null,
+  "title": "OpenTelemetry GenAI telemetry (library side)",
+  "updated_at": "2026-06-15T11:20:24.794342Z"
+}
