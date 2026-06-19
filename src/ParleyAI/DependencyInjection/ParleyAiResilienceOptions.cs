@@ -91,6 +91,17 @@ public sealed class ParleyAiResilienceOptions
             UseJitter = true,
             Delay = BaseRetryDelay,
             ShouldHandle = static args => new ValueTask<bool>(IsTransient(args.Outcome)),
+
+            // Dispose the discarded failed response before the next attempt. A generic Polly retry
+            // over HttpResponseMessage does NOT dispose handled outcomes, so a retried 5xx (with a
+            // body) would otherwise hold its content buffer / socket until GC — a resource-exhaustion
+            // risk during a downstream outage. (The final, non-retried outcome is returned to the
+            // caller pipeline and disposed there.)
+            OnRetry = static args =>
+            {
+                args.Outcome.Result?.Dispose();
+                return default;
+            },
         });
 
         // Innermost: bound a single attempt; a breach → TimeoutRejectedException (retried as transient).
