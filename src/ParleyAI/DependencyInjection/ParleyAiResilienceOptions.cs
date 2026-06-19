@@ -122,16 +122,18 @@ public sealed class ParleyAiResilienceOptions
 
         if (outcome.Result is { } response)
         {
-            int status = (int)response.StatusCode;
-
-            // 429 is NEVER retried here — surfaces to AIMD (fn-4.5).
-            if (status == 429)
+            // A WHITELIST of true transient statuses — NOT a blanket `>= 500`. 429 is deliberately
+            // absent (surfaces to AIMD, fn-4.5); non-transient 5xx (e.g. 501 Not Implemented, 505 HTTP
+            // Version Not Supported) are NOT retried — retrying them only adds latency/load.
+            return (int)response.StatusCode switch
             {
-                return false;
-            }
-
-            // 408 Request Timeout + 5xx server errors are transient.
-            return status == 408 || status >= 500;
+                408 => true, // Request Timeout
+                500 => true, // Internal Server Error
+                502 => true, // Bad Gateway
+                503 => true, // Service Unavailable
+                504 => true, // Gateway Timeout
+                _ => false,
+            };
         }
 
         return false;

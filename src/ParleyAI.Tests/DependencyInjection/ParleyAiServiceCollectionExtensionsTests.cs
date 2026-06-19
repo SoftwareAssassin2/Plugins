@@ -266,6 +266,32 @@ public sealed class ParleyAiServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public async Task A_non_transient_5xx_is_not_retried()
+    {
+        // Only SELECTED 5xx are transient (500/502/503/504). A 501 Not Implemented is NOT transient
+        // and must surface immediately (one attempt) despite a generous MaxRetryAttempts.
+        var counting = new CountingHandler(_ => CountingHandler.Error(HttpStatusCode.NotImplemented));
+
+        var services = new ServiceCollection();
+        services.AddParleyAi(Config(("OPENAI_API_KEY", "sk-openai")), opts =>
+            opts.ConfigureOpenAiResilience = r =>
+            {
+                r.MaxRetryAttempts = 3;
+                r.BaseRetryDelay = TimeSpan.Zero;
+            });
+
+        services.AddHttpClient(OpenAiServiceCollectionExtensions.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => counting);
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+        var client = provider.GetRequiredKeyedService<IAiChatClient>(ProviderKeys.OpenAi);
+
+        await Assert.ThrowsAsync<ParleyAIException>(() => client.CompleteChatAsync(SampleRequest()));
+
+        Assert.Equal(1, counting.Attempts);
+    }
+
+    [Fact]
     public async Task With_resilience_disabled_a_transient_5xx_makes_exactly_one_attempt()
     {
         // Resilience OFF → no retry handler → exactly ONE HTTP attempt (no SDK-native retry either).
