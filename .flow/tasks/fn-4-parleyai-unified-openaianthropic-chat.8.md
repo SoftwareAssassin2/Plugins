@@ -33,7 +33,8 @@ Author the **plugin-repo-level** NuGet publish workflow (the repo's first `.gith
 - [ ] Repo-root `README.md` documents `./src/` + release procedure; `actionlint` clean
 
 ## Done summary
-_(filled on completion)_
-
+Authored the plugin-repo NuGet publish workflow (.github/workflows/nuget.yml): path-filtered build-test on src/**, tag-gated release path (pack -> publish-oidc XOR publish-apikey -> verify-package-restorable) with tag-asserted version pin, SHA-pinned NuGet/login OIDC step, separate exit-code-gated .nupkg/.snupkg pushes, flat-container restorability poll, and net10 SDK + pinned actions throughout. Added the scaffold version-pin source (Directory.Build.props with LlmWrapperVersion 0.1.0) and a repo-root README documenting ./src/, build/pack, release procedure, and scaffold consumption. actionlint clean; 117 tests pass; pack verified.
 ## Evidence
-_(filled on completion)_
+- Commits: 6f0dc3eed2ca8e810fc3cdc85d1fd8372fd009eb
+- Tests: dotnet test src/ParleyAI.sln --configuration Release, actionlint .github/workflows/nuget.yml, dotnet pack src/ParleyAI/ParleyAI.csproj --configuration Release -o ./artifacts /p:Version=0.1.0
+- PRs:
