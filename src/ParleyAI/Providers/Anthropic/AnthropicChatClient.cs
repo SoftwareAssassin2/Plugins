@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Anthropic.SDK;
 using Anthropic.SDK.Messaging;
 using ParleyAI.Abstractions;
+using ParleyAI.Telemetry;
 
 namespace ParleyAI.Providers.Anthropic;
 
@@ -37,6 +38,7 @@ namespace ParleyAI.Providers.Anthropic;
 public sealed class AnthropicChatClient : IAiChatClient
 {
     private readonly AnthropicClient _client;
+    private readonly ChatTelemetryRecorder _telemetry;
 
     /// <summary>
     /// Constructs the client from resolved settings + the keyed transport <see cref="HttpClient"/>
@@ -61,10 +63,17 @@ public sealed class AnthropicChatClient : IAiChatClient
     /// The keyed, singleton-safe transport <see cref="HttpClient"/> whose pipeline carries the
     /// rewrite handler (for the configured <see cref="AnthropicChatClientSettings.BaseUrl"/>).
     /// </param>
+    /// <param name="telemetryOptions">
+    /// Optional GenAI telemetry tuning (content-capture gate; default off). Spans + metrics are emitted
+    /// regardless; <c>null</c> ⇒ defaults (no content capture).
+    /// </param>
     /// <exception cref="ArgumentException">
     /// The API key is missing/blank, or the base URL is present but not an http(s) root-only URI.
     /// </exception>
-    internal AnthropicChatClient(AnthropicChatClientSettings settings, HttpClient httpClient)
+    internal AnthropicChatClient(
+        AnthropicChatClientSettings settings,
+        HttpClient httpClient,
+        ParleyAiTelemetryOptions? telemetryOptions = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(httpClient);
@@ -85,11 +94,18 @@ public sealed class AnthropicChatClient : IAiChatClient
         }
 
         _client = new AnthropicClient(new APIAuthentication(settings.ApiKey), httpClient);
+        _telemetry = BuildRecorder(telemetryOptions);
     }
 
     /// <summary>Test/advanced seam: inject a pre-built <see cref="AnthropicClient"/> directly.</summary>
-    internal AnthropicChatClient(AnthropicClient client) =>
+    internal AnthropicChatClient(AnthropicClient client, ParleyAiTelemetryOptions? telemetryOptions = null)
+    {
         _client = client ?? throw new ArgumentNullException(nameof(client));
+        _telemetry = BuildRecorder(telemetryOptions);
+    }
+
+    private static ChatTelemetryRecorder BuildRecorder(ParleyAiTelemetryOptions? telemetryOptions) =>
+        new(GenAiAttributes.ProviderAnthropic, telemetryOptions?.CaptureMessageContent ?? false);
 
     /// <inheritdoc />
     public async Task<ChatResponse> CompleteChatAsync(
@@ -98,6 +114,15 @@ public sealed class AnthropicChatClient : IAiChatClient
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // Instrument the whole logical call (incl. mapping) so the span/metrics see the FINAL mapped
+        // outcome — the recorder is INSIDE the client, not a decorator, so it never competes with the
+        // single AIMD decoration hook.
+        return await _telemetry.RecordAsync(request, ct => CompleteCoreAsync(request, ct), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<ChatResponse> CompleteCoreAsync(ChatRequest request, CancellationToken cancellationToken)
+    {
         // Validation + role mapping (throws InvalidRequest for the single-leading-System rule).
         MessageParameters parameters = AnthropicMessageMapper.MapRequest(request);
 

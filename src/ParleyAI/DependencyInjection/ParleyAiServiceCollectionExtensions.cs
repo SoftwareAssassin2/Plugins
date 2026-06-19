@@ -8,6 +8,7 @@ using ParleyAI.Abstractions.Options;
 using ParleyAI.Providers.Anthropic;
 using ParleyAI.Providers.OpenAi;
 using ParleyAI.RateLimiting;
+using ParleyAI.Telemetry;
 
 namespace ParleyAI.DependencyInjection;
 
@@ -61,16 +62,20 @@ public static class ParleyAiServiceCollectionExtensions
         var options = new ParleyAiOptions();
         configure?.Invoke(options);
 
+        // GenAI telemetry tuning (content-capture gate, default OFF), resolved ONCE and shared by both
+        // providers. Spans + metrics are emitted regardless; this only gates content capture.
+        ParleyAiTelemetryOptions telemetry = BuildTelemetry(options.ConfigureTelemetry);
+
         // OpenAI: building block (keyed concrete + named HttpClient + exposed builder) → resilience
         // → public composed keyed IAiChatClient.
-        IHttpClientBuilder openAiBuilder = services.AddOpenAiChatClient(configuration, options.ConfigureOpenAi);
+        IHttpClientBuilder openAiBuilder = services.AddOpenAiChatClient(configuration, options.ConfigureOpenAi, telemetry);
         AttachResilience(openAiBuilder, ProviderKeys.OpenAi, options.ConfigureOpenAiResilience);
         services.AddKeyedSingleton<IAiChatClient>(
             ProviderKeys.OpenAi,
             (sp, key) => Compose(sp, (string)key!, sp.GetRequiredKeyedService<OpenAiChatClient>(key)));
 
         // Anthropic: same shape.
-        IHttpClientBuilder anthropicBuilder = services.AddAnthropicChatClient(configuration, options.ConfigureAnthropic);
+        IHttpClientBuilder anthropicBuilder = services.AddAnthropicChatClient(configuration, options.ConfigureAnthropic, telemetry);
         AttachResilience(anthropicBuilder, ProviderKeys.Anthropic, options.ConfigureAnthropicResilience);
         services.AddKeyedSingleton<IAiChatClient>(
             ProviderKeys.Anthropic,
@@ -141,6 +146,14 @@ public static class ParleyAiServiceCollectionExtensions
         var aimd = new AimdOptions();
         configure?.Invoke(aimd);
         return aimd;
+    }
+
+    /// <summary>Builds the shared <see cref="ParleyAiTelemetryOptions"/> from the optional tuning delegate.</summary>
+    private static ParleyAiTelemetryOptions BuildTelemetry(Action<ParleyAiTelemetryOptions>? configure)
+    {
+        var telemetry = new ParleyAiTelemetryOptions();
+        configure?.Invoke(telemetry);
+        return telemetry;
     }
 
     /// <summary>

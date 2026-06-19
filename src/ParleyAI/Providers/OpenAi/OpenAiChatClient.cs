@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using OpenAI;
 using OpenAI.Chat;
 using ParleyAI.Abstractions;
+using ParleyAI.Telemetry;
 using OpenAiChatMessage = OpenAI.Chat.ChatMessage;
 
 namespace ParleyAI.Providers.OpenAi;
@@ -38,6 +39,7 @@ public sealed class OpenAiChatClient : IAiChatClient
 {
     private readonly ChatClient? _explicitModelClient;
     private readonly Func<string, ChatClient> _clientForModel;
+    private readonly ChatTelemetryRecorder _telemetry;
 
     /// <summary>
     /// Constructs the client from resolved settings + the keyed transport <see cref="HttpClient"/>.
@@ -47,10 +49,17 @@ public sealed class OpenAiChatClient : IAiChatClient
     /// having applied the ctor &gt; flat-key precedence in the DI layer.
     /// </param>
     /// <param name="httpClient">The keyed, singleton-safe transport <see cref="HttpClient"/>.</param>
+    /// <param name="telemetryOptions">
+    /// Optional GenAI telemetry tuning (content-capture gate; default off). Spans + metrics are emitted
+    /// regardless; <c>null</c> ⇒ defaults (no content capture).
+    /// </param>
     /// <exception cref="ArgumentException">
     /// The API key is missing/blank, or the base URL is present but not an absolute URI.
     /// </exception>
-    public OpenAiChatClient(OpenAiChatClientSettings settings, HttpClient httpClient)
+    public OpenAiChatClient(
+        OpenAiChatClientSettings settings,
+        HttpClient httpClient,
+        ParleyAiTelemetryOptions? telemetryOptions = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(httpClient);
@@ -68,14 +77,19 @@ public sealed class OpenAiChatClient : IAiChatClient
         // One OpenAIClient; ChatClient is created per request model (cheap, shares the pipeline).
         var openAiClient = new OpenAIClient(credential, options);
         _clientForModel = model => openAiClient.GetChatClient(model);
+        _telemetry = BuildRecorder(telemetryOptions);
     }
 
     /// <summary>Test/advanced seam: inject a pre-built <see cref="ChatClient"/> directly.</summary>
-    internal OpenAiChatClient(ChatClient chatClient)
+    internal OpenAiChatClient(ChatClient chatClient, ParleyAiTelemetryOptions? telemetryOptions = null)
     {
         _explicitModelClient = chatClient ?? throw new ArgumentNullException(nameof(chatClient));
         _clientForModel = _ => _explicitModelClient;
+        _telemetry = BuildRecorder(telemetryOptions);
     }
+
+    private static ChatTelemetryRecorder BuildRecorder(ParleyAiTelemetryOptions? telemetryOptions) =>
+        new(GenAiAttributes.ProviderOpenAi, telemetryOptions?.CaptureMessageContent ?? false);
 
     /// <inheritdoc />
     public async Task<ChatResponse> CompleteChatAsync(
@@ -84,6 +98,15 @@ public sealed class OpenAiChatClient : IAiChatClient
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // Instrument the whole logical call (incl. mapping) so the span/metrics see the FINAL mapped
+        // outcome — the recorder is INSIDE the client, not a decorator, so it never competes with the
+        // single AIMD decoration hook.
+        return await _telemetry.RecordAsync(request, ct => CompleteCoreAsync(request, ct), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<ChatResponse> CompleteCoreAsync(ChatRequest request, CancellationToken cancellationToken)
+    {
         // Validation + role mapping (throws InvalidRequest for the single-leading-System rule).
         var messages = OpenAiMessageMapper.MapMessages(request.Messages);
         ChatCompletionOptions completionOptions = BuildCompletionOptions(request);

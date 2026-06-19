@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ParleyAI.Abstractions;
+using ParleyAI.Telemetry;
 
 namespace ParleyAI.Providers.OpenAi;
 
@@ -12,7 +13,7 @@ namespace ParleyAI.Providers.OpenAi;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="AddOpenAiChatClient(IServiceCollection, IConfiguration, Action{OpenAiChatClientSettings}?)"/>
+/// <see cref="AddOpenAiChatClient(IServiceCollection, IConfiguration, Action{OpenAiChatClientSettings}?, ParleyAI.Telemetry.ParleyAiTelemetryOptions?)"/>
 /// is a documented building block; the public no-glue consumer API is <c>AddParleyAi</c> (fn-4.4).
 /// It registers a named, singleton-safe <see cref="HttpClient"/> (<c>"openai"</c>) and a keyed
 /// CONCRETE <see cref="OpenAiChatClient"/> under <see cref="ProviderKeys.OpenAi"/>; it does NOT
@@ -46,11 +47,16 @@ public static class OpenAiServiceCollectionExtensions
     /// <param name="configureOverride">
     /// Optional ctor-override: values set here win over the flat config keys.
     /// </param>
+    /// <param name="telemetryOptions">
+    /// Optional GenAI telemetry tuning (content-capture gate; default off) passed to the client. Spans
+    /// + metrics are emitted regardless.
+    /// </param>
     /// <returns>The keyed <see cref="IHttpClientBuilder"/> for the <c>"openai"</c> transport client.</returns>
     public static IHttpClientBuilder AddOpenAiChatClient(
         this IServiceCollection services,
         IConfiguration configuration,
-        Action<OpenAiChatClientSettings>? configureOverride = null)
+        Action<OpenAiChatClientSettings>? configureOverride = null,
+        ParleyAiTelemetryOptions? telemetryOptions = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -73,7 +79,7 @@ public static class OpenAiServiceCollectionExtensions
             OpenAiChatClientSettings settings = ResolveSettings(configuration, configureOverride);
             IHttpClientFactory httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
             HttpClient httpClient = httpClientFactory.CreateClient(HttpClientName);
-            return new OpenAiChatClient(settings, httpClient);
+            return new OpenAiChatClient(settings, httpClient, telemetryOptions);
         });
 
         return httpClientBuilder;

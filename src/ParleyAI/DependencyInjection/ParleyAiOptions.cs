@@ -2,6 +2,7 @@ using System;
 using ParleyAI.Abstractions.Options;
 using ParleyAI.Providers.Anthropic;
 using ParleyAI.Providers.OpenAi;
+using ParleyAI.Telemetry;
 
 namespace ParleyAI.DependencyInjection;
 
@@ -55,4 +56,13 @@ public sealed class ParleyAiOptions
     /// isolation — disabling one leaves the other decorated; a global-off is just both disabled).
     /// </summary>
     public Action<AimdOptions>? ConfigureAnthropicAimd { get; set; }
+
+    /// <summary>
+    /// Optional tuning of the OpenTelemetry GenAI telemetry both providers emit — currently the
+    /// (default-OFF) message-content capture gate. ParleyAI always emits <c>gen_ai.*</c> spans + the
+    /// pinned metric instruments on the named source/meter; ParleyAI takes no OTLP-exporter dependency
+    /// (the consuming app registers the exporter, fn-4.9). Applied to a fresh
+    /// <see cref="ParleyAiTelemetryOptions"/> shared by both providers.
+    /// </summary>
+    public Action<ParleyAiTelemetryOptions>? ConfigureTelemetry { get; set; }
 }

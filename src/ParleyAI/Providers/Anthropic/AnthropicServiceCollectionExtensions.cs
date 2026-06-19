@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ParleyAI.Abstractions;
+using ParleyAI.Telemetry;
 
 namespace ParleyAI.Providers.Anthropic;
 
@@ -12,7 +13,7 @@ namespace ParleyAI.Providers.Anthropic;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="AddAnthropicChatClient(IServiceCollection, IConfiguration, Action{AnthropicChatClientSettings}?)"/>
+/// <see cref="AddAnthropicChatClient(IServiceCollection, IConfiguration, Action{AnthropicChatClientSettings}?, ParleyAI.Telemetry.ParleyAiTelemetryOptions?)"/>
 /// is a documented building block; the public no-glue consumer API is <c>AddParleyAi</c> (fn-4.4).
 /// It registers a named, singleton-safe <see cref="HttpClient"/> (<c>"anthropic"</c>) whose pipeline
 /// carries the origin-rewrite <see cref="AnthropicOriginRewriteHandler"/>, plus a keyed CONCRETE
@@ -48,11 +49,16 @@ public static class AnthropicServiceCollectionExtensions
     /// <param name="configureOverride">
     /// Optional ctor-override: values set here win over the flat config keys.
     /// </param>
+    /// <param name="telemetryOptions">
+    /// Optional GenAI telemetry tuning (content-capture gate; default off) passed to the client. Spans
+    /// + metrics are emitted regardless.
+    /// </param>
     /// <returns>The keyed <see cref="IHttpClientBuilder"/> for the <c>"anthropic"</c> transport client.</returns>
     public static IHttpClientBuilder AddAnthropicChatClient(
         this IServiceCollection services,
         IConfiguration configuration,
-        Action<AnthropicChatClientSettings>? configureOverride = null)
+        Action<AnthropicChatClientSettings>? configureOverride = null,
+        ParleyAiTelemetryOptions? telemetryOptions = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -85,7 +91,7 @@ public static class AnthropicServiceCollectionExtensions
             AnthropicChatClientSettings settings = ResolveSettings(configuration, configureOverride);
             IHttpClientFactory httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
             HttpClient httpClient = httpClientFactory.CreateClient(HttpClientName);
-            return new AnthropicChatClient(settings, httpClient);
+            return new AnthropicChatClient(settings, httpClient, telemetryOptions);
         });
 
         return httpClientBuilder;
