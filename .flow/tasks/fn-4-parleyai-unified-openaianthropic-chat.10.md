@@ -23,7 +23,8 @@ The **release-gated `verify-scaffold-restore`** CI job: `needs:` the `verify-pac
 - [ ] No changes to the offline `scaffold_test.sh`
 
 ## Done summary
-_(filled on completion)_
-
+Added the release-gated `verify-scaffold-restore` job to `.github/workflows/nuget.yml`: it `needs: verify-package-restorable` and is gated `if: needs.verify-package-restorable.result == 'success' && startsWith(github.ref,'refs/tags/nuget-v')`, pins `actions/setup-dotnet` to `10.0.x`, installs `jq`, then scaffolds a fresh project, runs `./system.sh build-config`, and `dotnet restore`+`build`s `src/system.sln` against the PUBLISHED ParleyAI (pinned `$(LlmWrapperVersion)`). Network-enabled and tag-only; the offline `scaffold_test.sh` path is untouched.
 ## Evidence
-_(filled on completion)_
+- Commits: e848f3db05a9c221d12b8fd3600f03018a4ef547
+- Tests: actionlint .github/workflows/nuget.yml (clean), local smoke: plugins/init-project/scaffold.sh scaffoldrestore ... --force + ./system.sh build-config (exit 0, src/system.sln present, ParleyAI PackageReference via $(LlmWrapperVersion))
+- PRs:
