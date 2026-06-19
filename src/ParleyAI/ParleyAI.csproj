@@ -50,6 +50,10 @@
        them transitively (R2). -->
   <ItemGroup>
     <PackageReference Include="OpenAI" Version="2.11.0" />
+    <!-- Pinned for the Anthropic provider (fn-4.3). Audited: Anthropic.SDK 5.10.0 ships NO
+         retry/resilience layer by default (its RetryInterceptor is an opt-in Examples type, never
+         wired), so the provider's single-HTTP-attempt contract holds without an off-switch and the
+         standard resilience handler (fn-4.4) remains the sole retry authority. -->
     <PackageReference Include="Anthropic.SDK" Version="5.10.0" />
     <!-- DI building blocks: keyed registration, IHttpClientFactory (named, singleton-safe
          client + IHttpClientBuilder exposure), flat IConfiguration mapping, opt-in
