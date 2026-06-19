@@ -175,32 +175,46 @@ public sealed class AimdRateController
             Replenish();
 
             long now = _timeProvider.GetTimestamp();
+
+            // The suppression window for THIS hit: the longer of the category cooldown and any
+            // provider-advised RetryAfter (a RetryAfter exceeding the cooldown is honored).
+            TimeSpan window = backoff.Cooldown;
+            if (retryAfter is { } ra && ra > window)
+            {
+                window = ra;
+            }
+
+            long windowEnd = now + ToTicks(window);
+
             if (now < _cooldownUntilTimestamp)
             {
-                // A decrease already happened this window — one decrease per cooldown. Skip.
+                // A decrease already happened this window — one decrease per cooldown, so SKIP the
+                // further multiplicative decrease. BUT still honor a longer RetryAfter/cooldown from
+                // this hit by extending the suppression window (never shorten it): a second 429 with a
+                // longer RetryAfter during cooldown must not let the controller resume ramping early.
+                if (windowEnd > _cooldownUntilTimestamp)
+                {
+                    _cooldownUntilTimestamp = windowEnd;
+                }
+
                 return;
             }
 
             // Multiplicative decrease, floored.
             _currentRate = Math.Max(_options.RateFloor, _currentRate * backoff.MultiplicativeDecreaseFactor);
 
-            // Open the cooldown: the longer of the category cooldown and any provider RetryAfter, so a
-            // RetryAfter that exceeds the cooldown is honored (no premature ramp).
-            TimeSpan cooldown = backoff.Cooldown;
-            if (retryAfter is { } ra && ra > cooldown)
-            {
-                cooldown = ra;
-            }
-
-            _cooldownUntilTimestamp = now + ToTicks(cooldown);
+            // Open the cooldown.
+            _cooldownUntilTimestamp = windowEnd;
 
             // Clamp any pre-back-off token surplus down to the new (reduced) rate's burst cap so a
             // stale surplus cannot let a large burst through at the old rate before the lower rate
             // bites — but do NOT drain to zero: leaving up to one burst-cap of permits keeps already
-            // in-flight / immediately-following callers from stalling on a pacing wait.
-            if (_availableTokens > _currentRate)
+            // in-flight / immediately-following callers from stalling on a pacing wait. The burst cap
+            // is floored at one whole permit (matching Replenish) so sub-1 rates never deadlock.
+            double burstCap = Math.Max(1.0, _currentRate);
+            if (_availableTokens > burstCap)
             {
-                _availableTokens = _currentRate;
+                _availableTokens = burstCap;
             }
         }
     }
@@ -218,7 +232,11 @@ public sealed class AimdRateController
             return;
         }
 
-        double burstCap = _currentRate; // at most one second of tokens buffered
+        // At most one second of tokens buffered, but NEVER below a single whole permit: a configured
+        // rate < 1 req/s would otherwise cap the bucket below the 1.0 a single AcquireAsync needs and
+        // stall every caller after the seeded permit. The floor of 1 lets one request through per
+        // (1 / rate) seconds at sub-1 rates without deadlocking.
+        double burstCap = Math.Max(1.0, _currentRate);
         _availableTokens = Math.Min(burstCap, _availableTokens + (elapsedSeconds * _currentRate));
     }
 

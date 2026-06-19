@@ -102,6 +102,25 @@ public sealed class AimdDependencyInjectionTests
     }
 
     [Fact]
+    public void Each_built_provider_gets_its_own_controller_cache()
+    {
+        // The controller cache lives INSIDE the singleton factory, so two ServiceProviders built from
+        // the SAME IServiceCollection do NOT share controller state across containers.
+        var services = new ServiceCollection();
+        services.AddParleyAi(BothProvidersConfigured());
+
+        using ServiceProvider providerA = services.BuildServiceProvider();
+        using ServiceProvider providerB = services.BuildServiceProvider();
+
+        var openaiA = (AimdChatClientDecorator)providerA.GetRequiredKeyedService<IAiChatClient>(ProviderKeys.OpenAi);
+        var openaiB = (AimdChatClientDecorator)providerB.GetRequiredKeyedService<IAiChatClient>(ProviderKeys.OpenAi);
+
+        // Distinct decorators wrapping distinct per-container bare clients — no cross-container leak.
+        Assert.NotSame(openaiA, openaiB);
+        Assert.NotSame(openaiA.Inner, openaiB.Inner);
+    }
+
+    [Fact]
     public async Task Limiter_swap_is_thread_safe_under_concurrent_success_and_backoff()
     {
         // Drive concurrent OnSuccess (rate swap up) and OnBackoff (rate swap down) against ONE

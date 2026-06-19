@@ -209,6 +209,54 @@ public sealed class AimdRateControllerTests
     }
 
     [Fact]
+    public async Task A_sub_one_rate_does_not_deadlock_acquire()
+    {
+        // A configured rate below 1 req/s must still let one request through per (1/rate) seconds —
+        // the burst cap is floored at one whole permit so the bucket can reach the 1.0 an acquire
+        // needs (regression: capping the bucket at rate < 1 stalled every caller after the seed).
+        (AimdRateController controller, FakeTimeProvider clock) = Build(o =>
+        {
+            o.RateFloor = 0.5;
+            o.RateCeiling = 0.5;
+            o.AdditiveIncreaseStep = 0.0;
+        });
+
+        await controller.AcquireAsync(CancellationToken.None); // seeded permit
+
+        Task second = controller.AcquireAsync(CancellationToken.None);
+        Assert.False(second.IsCompleted);
+
+        clock.Advance(TimeSpan.FromSeconds(2)); // 2s * 0.5/s = 1 token replenishes
+        await second; // completes — no deadlock
+    }
+
+    [Fact]
+    public void A_longer_RetryAfter_during_cooldown_extends_the_suppression_window()
+    {
+        // First RateLimit hit opens a 5s cooldown. A SECOND hit during that window carries a longer
+        // 20s RetryAfter — the further decrease is skipped (one decrease/window) but the suppression
+        // window MUST extend to 20s so the controller does not ramp before the provider-advised wait.
+        (AimdRateController controller, FakeTimeProvider clock) = Build();
+
+        controller.OnBackoff(ParleyAIErrorCategory.RateLimit, retryAfter: null); // 5s cooldown
+        double afterFirst = controller.CurrentRate;
+
+        clock.Advance(TimeSpan.FromSeconds(2)); // still inside the 5s cooldown
+        controller.OnBackoff(ParleyAIErrorCategory.RateLimit, retryAfter: TimeSpan.FromSeconds(20));
+        Assert.Equal(afterFirst, controller.CurrentRate); // no second decrease (one per window)
+
+        // At 6s total (past the original 5s, but inside the extended 20s) ramp is STILL suppressed.
+        clock.Advance(TimeSpan.FromSeconds(4)); // now at 6s
+        controller.OnSuccess();
+        Assert.Equal(afterFirst, controller.CurrentRate);
+
+        // Past the extended 20s window (from the 2s mark → 22s total), ramp resumes.
+        clock.Advance(TimeSpan.FromSeconds(16)); // now at 22s
+        controller.OnSuccess();
+        Assert.True(controller.CurrentRate > afterFirst);
+    }
+
+    [Fact]
     public async Task Acquire_honors_cancellation()
     {
         (AimdRateController controller, _) = Build(o =>

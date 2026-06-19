@@ -104,13 +104,16 @@ public static class ParleyAiServiceCollectionExtensions
         AimdOptions openAiAimd = BuildAimd(options.ConfigureOpenAiAimd);
         AimdOptions anthropicAimd = BuildAimd(options.ConfigureAnthropicAimd);
 
-        // One controller per provider key, lazily created on first decoration and cached for the
-        // ServiceProvider's lifetime (the hook is a singleton). ConcurrentDictionary keeps the
-        // get-or-add atomic under concurrent first-resolution.
-        var controllers = new ConcurrentDictionary<string, AimdRateController>(StringComparer.Ordinal);
+        services.AddSingleton<Func<IServiceProvider, string, IAiChatClient, IAiChatClient>>(_ =>
+        {
+            // One controller per provider key, lazily created on first decoration and cached for the
+            // ServiceProvider's lifetime. The cache is created INSIDE this singleton factory so each
+            // ServiceProvider built from the same IServiceCollection gets its OWN cache — otherwise
+            // controller state (and the resolved clock/jitter) would leak across containers.
+            // ConcurrentDictionary keeps the get-or-add atomic under concurrent first-resolution.
+            var controllers = new ConcurrentDictionary<string, AimdRateController>(StringComparer.Ordinal);
 
-        services.AddSingleton<Func<IServiceProvider, string, IAiChatClient, IAiChatClient>>(
-            _ => (sp, providerKey, inner) =>
+            return (sp, providerKey, inner) =>
             {
                 AimdOptions aimd = providerKey == ProviderKeys.Anthropic ? anthropicAimd : openAiAimd;
 
@@ -128,7 +131,8 @@ public static class ParleyAiServiceCollectionExtensions
                         sp.GetService<IJitterSource>() ?? DefaultJitterSource.Instance));
 
                 return new AimdChatClientDecorator(inner, controller);
-            });
+            };
+        });
     }
 
     /// <summary>Builds an <see cref="AimdOptions"/> from the optional per-provider tuning delegate.</summary>
