@@ -133,8 +133,11 @@ for c in \
   check "$c targets net10.0"               "grep -q '<TargetFramework>net10.0</TargetFramework>' \"\$WORK/demo-app/$c\""
   check "$c has no net9 TFM"               "! grep -q 'net9.0' \"\$WORK/demo-app/$c\""
   # No floating/range versions: reject wildcards (*), ranges/intervals ([ ] ( )),
-  # and comma-separated bounds anywhere in a Version= attribute.
-  check "$c uses exact (non-floating) PackageReference versions" "! grep -qE 'Version=\"[^\"]*[][()*,]' \"\$WORK/demo-app/$c\""
+  # and comma-separated bounds anywhere in a Version= attribute. An MSBuild property
+  # reference (Version="$(LlmWrapperVersion)") is a single concrete pin (resolved from
+  # Directory.Build.props, asserted == the release tag by the publish workflow), NOT a
+  # floating version — exclude that exact form before applying the floating-syntax gate.
+  check "$c uses exact (non-floating) PackageReference versions" "! grep -E 'Version=\"[^\"]*[][()*,]' \"\$WORK/demo-app/$c\" | grep -qv 'Version=\"[\$][(][A-Za-z]*[)]\"'"
 done
 # Consistent platform major.minor: every Microsoft.* / Npgsql EF PackageReference
 # version starts with 10.0; the Microsoft-owned stack shares one exact patch.
@@ -142,6 +145,33 @@ check "platform packages share 10.0 major.minor" '( for c in src/Api/Api.csproj 
 check "Microsoft-owned stack shares one exact 10.0.x patch" '[[ "$(grep -hoE "Include=\"Microsoft\.(AspNetCore\.Authentication\.JwtBearer|EntityFrameworkCore(\.Design)?)\" Version=\"[^\"]+\"" "$WORK/demo-app/src/Api/Api.csproj" "$WORK/demo-app/src/DataAccess/DataAccess.csproj" | grep -oE "10\.0\.[0-9]+" | sort -u | wc -l | tr -d " ")" == "1" ]]'
 check ".config/dotnet-tools.json dotnet-ef pinned to 10.0" 'jq -e ".tools.\"dotnet-ef\".version | startswith(\"10.0\")" "$WORK/demo-app/.config/dotnet-tools.json" >/dev/null'
 check "no stale net9 / .NET 9 strings in .NET output" '! grep -rqE "net9\.0|\.NET 9" "$WORK/demo-app/src" "$WORK/demo-app/tests" "$WORK/demo-app/.config" "$WORK/demo-app/.devcontainer/devcontainer.json"'
+
+# ParleyAI integration (fn-4 task .9, R6/R8): the scaffolded Api references the
+# published ParleyAI package via the scoped $(LlmWrapperVersion) property (pinned ONCE
+# in Directory.Build.props — NOT CPM), pulls the OpenTelemetry package refs, registers
+# the no-glue keyed DI (AddParleyAi — NO unkeyed default), and registers the ParleyAI
+# ActivitySource on tracing + Meter on metrics with an OTLP exporter on BOTH signals
+# (via the public ParleyAiTelemetry constants, never hardcoded literals). STATIC
+# assertions only — the LIVE published restore+build is fn-4.10's CI job (needs the
+# real package on nuget.org); these never restore.
+APICSPROJ="$WORK/demo-app/src/Api/Api.csproj"
+APIPROG="$WORK/demo-app/src/Api/Program.cs"
+check "Directory.Build.props pins \$(LlmWrapperVersion)" 'grep -qE "<LlmWrapperVersion>[0-9]" "$WORK/demo-app/Directory.Build.props"'
+check "Api.csproj references ParleyAI via \$(LlmWrapperVersion)" 'grep -qE "<PackageReference Include=\"ParleyAI\" Version=\"\\\$\(LlmWrapperVersion\)\"" "$APICSPROJ"'
+check "Api.csproj does NOT hardcode a ParleyAI version" '! grep -qE "Include=\"ParleyAI\" Version=\"[0-9]" "$APICSPROJ"'
+check "Api.csproj pulls OTel hosting + OTLP exporter pkg refs" 'grep -q "OpenTelemetry.Extensions.Hosting" "$APICSPROJ" && grep -q "OpenTelemetry.Exporter.OpenTelemetryProtocol" "$APICSPROJ"'
+check "Api.csproj OTel pkg refs pinned exactly (no floating)" '! grep -E "Include=\"OpenTelemetry[^\"]*\"" "$APICSPROJ" | grep -qE "Version=\"[^\"]*[][()*,]"'
+check "Program.cs registers AddParleyAi (no-glue keyed DI)" 'grep -q "AddParleyAi" "$APIPROG"'
+check "Program.cs registers AddOpenTelemetry" 'grep -q "AddOpenTelemetry" "$APIPROG"'
+check "Program.cs adds the ParleyAI ActivitySource on tracing" 'grep -q "AddSource(ParleyAiTelemetry.ActivitySourceName)" "$APIPROG"'
+check "Program.cs adds the ParleyAI Meter on metrics" 'grep -q "AddMeter(ParleyAiTelemetry.MeterName)" "$APIPROG"'
+check "Program.cs registers an OTLP exporter on BOTH signals" '[[ "$(grep -c "AddOtlpExporter()" "$APIPROG")" -ge 2 ]]'
+check "Program.cs telemetry uses public constants, NOT literals" '! grep -qE "AddSource\(\"ParleyAI\"\)|AddMeter\(\"ParleyAI\"\)" "$APIPROG"'
+check "Program.cs OTLP exporter sets NO explicit endpoint (SDK default loopback)" '! grep -qE "OTEL_EXPORTER_OTLP_ENDPOINT[[:space:]]*=|otel-collector:4317" <<<"$(grep -A1 "AddOtlpExporter()" "$APIPROG" | grep -v "^--")"'
+check "Api.csproj targets net10.0 (ParleyAI is net10-only)" 'grep -q "<TargetFramework>net10.0</TargetFramework>" "$APICSPROJ"'
+# build-config / config.json services model is fn-3's — this task does NOT add an
+# openai/anthropic systems[]-or-services entry, and does NOT touch build-config.sh.
+check ".9 does NOT add a ParleyAI/openai/anthropic config.json service entry" '! jq -e "(.services | keys) as \$k | (\$k | index(\"parleyai\")) or (\$k | index(\"anthropic-api\")) or (\$k | index(\"openai\"))" "$WORK/demo-app/config.json" >/dev/null 2>&1'
 
 # EF migrations + RLS baseline + Keycloak-gated DB auth (fn-2 task .11). The initial
 # EF migration (code-first) ships in DataAccess with the owner-wrapped RLS baseline;

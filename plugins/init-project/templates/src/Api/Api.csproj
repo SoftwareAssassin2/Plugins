@@ -18,6 +18,22 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- ParleyAI: the unified OpenAI/Anthropic chat client. The version is pinned
+         ONCE for the whole scaffold in Directory.Build.props ($(LlmWrapperVersion)) —
+         NOT here and NOT via Central Package Management — so a release tag and the
+         referenced version can never drift. AddParleyAi reads the four flat LLM env
+         vars (OPENAI_*/ANTHROPIC_*) that `system.sh build-config` already emits into
+         src/Api/.env, so there is no caller glue. -->
+    <PackageReference Include="ParleyAI" Version="$(LlmWrapperVersion)" />
+    <!-- OpenTelemetry: register ParleyAI's ActivitySource + Meter and export them.
+         ParleyAI itself takes NO OTLP-exporter dependency — wiring the exporter is the
+         consuming application's job (here). Pinned inline (not on the 10.0 platform
+         major.minor — these track the OpenTelemetry SDK release line, 1.x). -->
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\BusinessLogic\BusinessLogic.csproj" />
   </ItemGroup>
 

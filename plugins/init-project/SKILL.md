@@ -1,6 +1,6 @@
 ---
 name: init-project
-description: Scaffold a brand-new opinionated mono-repo project with Chris's preferred defaults (root layout, CLAUDE.md, dev container, standards docs, system.sh dispatcher CLI, a starter .NET solution + Angular SPAs, Postgres + Keycloak). Use when starting a new project / "init project" / "scaffold a new repo". Asks only for a project name + short description, then copies the build-time-complete templates and applies minimal placeholder substitution.
+description: Scaffold a brand-new opinionated mono-repo project with Chris's preferred defaults (root layout, CLAUDE.md, dev container, standards docs, system.sh dispatcher CLI, a starter .NET solution + Angular SPAs, Postgres + Keycloak, a pre-wired ParleyAI AI client (OpenAI/Anthropic), net10). Use when starting a new project / "init project" / "scaffold a new repo". Asks only for a project name + short description, then copies the build-time-complete templates and applies minimal placeholder substitution.
 argument-hint: "[optional: project name / description]"
 ---
 

@@ -5,6 +5,11 @@ using DataAccess;
 using DataAccess.Rls;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
+using ParleyAI.Abstractions;
+using ParleyAI.DependencyInjection;
+using ParleyAI.Telemetry;
 
 // Bootstrap/startup wiring — excluded from the coverage gate per docs/tdd.md §5.
 // Keep this thin: validate, delegate into BusinessLogic, shape the response
@@ -63,6 +68,55 @@ builder.Services
         };
     });
 builder.Services.AddAuthorization();
+
+// Unified OpenAI/Anthropic chat client (ParleyAI). One no-glue call registers BOTH
+// providers as KEYED IAiChatClient ("openai" / "anthropic") — there is NO unkeyed
+// default, so a consumer must name the provider. AddParleyAi reads the flat env-var
+// contract `system.sh build-config` emits into src/Api/.env (OPENAI_BASE_URL/
+// OPENAI_API_KEY/ANTHROPIC_BASE_URL/ANTHROPIC_API_KEY) straight off IConfiguration —
+// no section binding, no caller glue. When a *_BASE_URL is absent the provider SDK
+// default applies; the keys are required. Per-provider validation is LAZY (at
+// resolve, not here), so a fresh scaffold boots even if a provider is never used.
+builder.Services.AddParleyAi(builder.Configuration);
+
+// Example usage — inject (or resolve) BOTH providers in the SAME method; pick per
+// call. Keyed injection in a controller/minimal-API handler:
+//
+//     app.MapPost("/chat", async (
+//         [FromKeyedServices(ProviderKeys.OpenAi)]    IAiChatClient openai,
+//         [FromKeyedServices(ProviderKeys.Anthropic)] IAiChatClient anthropic,
+//         ChatRequest request,
+//         CancellationToken ct) =>
+//     {
+//         var a = await openai.CompleteChatAsync(request, ct);
+//         var b = await anthropic.CompleteChatAsync(request, ct);
+//         return Results.Ok(new { openai = a, anthropic = b });
+//     });
+//
+// Or select at runtime via the factory:
+//     IAiChatClient client = factory.Create(ProviderKeys.OpenAi);
+
+// OpenTelemetry: register ParleyAI's GenAI ActivitySource (tracing) + Meter (metrics)
+// and export BOTH over OTLP. ParleyAI takes no exporter dependency itself — wiring the
+// exporter is this app's job. The source/meter names are referenced via the PUBLIC
+// constants (ParleyAiTelemetry.ActivitySourceName / .MeterName) — NEVER the literal
+// string — because a name mismatch silently no-ops all ParleyAI telemetry.
+//
+// NO explicit OTLP endpoint: the SDK default (http://localhost:4317) is correct. The
+// Api runs as a process (`dotnet run`) in the SAME place the compose stacks run — the
+// host, or inside the dev container via docker-in-docker — and the otel-collector
+// publishes its gRPC port to that loopback (127.0.0.1:4317), so a dev-container-run Api
+// reaches it at localhost:4317 too. IF a deployment instead puts the Api in a SEPARATE
+// container from the collector, set the standard OTEL_EXPORTER_OTLP_ENDPOINT
+// (e.g. http://otel-collector:4317) — but containerizing the Api is OUT OF SCOPE here
+// (no env emission, no build-config change); the env var is the override mechanism.
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing
+        .AddSource(ParleyAiTelemetry.ActivitySourceName)
+        .AddOtlpExporter())
+    .WithMetrics(metrics => metrics
+        .AddMeter(ParleyAiTelemetry.MeterName)
+        .AddOtlpExporter());
 
 var app = builder.Build();
 
