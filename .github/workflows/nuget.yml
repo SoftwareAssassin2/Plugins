@@ -290,3 +290,70 @@ jobs:
           done
           echo "ERROR: ParleyAI@$version did not appear on the flat-container index after polling" >&2
           exit 1
+
+  # ---------------------------------------------------------------------------
+  # Live published-restore proof (fn-4.10). Distinct from the flat-container
+  # availability poll in verify-package-restorable: that job only proves the
+  # `.nupkg` is INDEXED; this job proves a FRESH /init-project scaffold actually
+  # RESTORES + BUILDS against the PUBLISHED ParleyAI at the pinned
+  # `$(LlmWrapperVersion)`. The release is not complete until this passes.
+  #
+  # `needs: verify-package-restorable` (NOT a publish job directly) so it runs
+  # only AFTER the index confirms the package is restorable, and gated on that
+  # gate having SUCCEEDED on a release tag. No `always()` here — that belongs on
+  # the aggregation gate above; this job must NOT run if the index never showed
+  # the package.
+  #
+  # Network-enabled and tag-only by construction. The offline scaffold_test.sh
+  # (static generated-artifact assertions) is a SEPARATE, unchanged path and is
+  # never invoked here.
+  # ---------------------------------------------------------------------------
+  verify-scaffold-restore:
+    name: verify scaffold restore (live published ParleyAI)
+    needs: verify-package-restorable
+    if: needs.verify-package-restorable.result == 'success' && startsWith(github.ref, 'refs/tags/nuget-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Set up .NET SDK 10
+        uses: actions/setup-dotnet@v4.1.0
+        with:
+          dotnet-version: "10.0.x"
+
+      # The scaffold's `./system.sh build-config` dispatches to build-config.sh,
+      # which uses `jq` to read/validate config.json. jq is not guaranteed on the
+      # runner, so install it explicitly (mirrors the scaffold CI's config job).
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends jq
+
+      # Scaffold a throwaway project from the init-project templates. The scaffold
+      # references the PUBLISHED ParleyAI via Directory.Build.props' pinned
+      # $(LlmWrapperVersion) (== the release tag, asserted in `pack`), so the
+      # restore below resolves the package we just published.
+      - name: Scaffold a fresh project
+        run: |
+          set -euo pipefail
+          plugins/init-project/scaffold.sh scaffoldrestore "Live published-restore smoke" --force
+          ls -la scaffoldrestore
+
+      # build-config defaults to ./config.json (no --config needed). This stamps
+      # the generated .env / SPA config the build expects.
+      - name: Run build-config
+        working-directory: scaffoldrestore
+        run: ./system.sh build-config
+
+      # Restore + build the scaffolded net10 solution against nuget.org so the
+      # pinned $(LlmWrapperVersion) resolves the PUBLISHED ParleyAI. A failure
+      # here (package not yet restorable, version mismatch, net10 break) fails the
+      # release — it is NOT complete until a fresh scaffold builds against the
+      # live package.
+      - name: Restore scaffolded solution (live ParleyAI)
+        working-directory: scaffoldrestore
+        run: dotnet restore src/system.sln
+
+      - name: Build scaffolded solution (net10)
+        working-directory: scaffoldrestore
+        run: dotnet build src/system.sln --configuration Release --no-restore
