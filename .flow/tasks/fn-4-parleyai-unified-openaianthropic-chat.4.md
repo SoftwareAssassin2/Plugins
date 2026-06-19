@@ -28,7 +28,8 @@ Assemble the cross-provider composition (completable + testable standalone, no A
 - [ ] Tests (no AIMD): keyed resolution returns a working bare client; unkeyed throws; resilience present once; **a no-double-retry integration test — one logical call hitting a retryable TRANSIENT response (`5xx`/timeout, NOT 429) yields the resilience handler's expected attempt count (and exactly one when resilience is off), proving SDK-native retry (.2/.3) does not stack with the resilience retry; plus a test that a `429` is NOT retried by resilience (surfaces immediately to mapping/AIMD)**
 
 ## Done summary
-_(filled on completion)_
-
+Implemented the unified AddParleyAi DI composition: a public no-glue API (IConfiguration + ctor-override overloads, NO unkeyed default) that registers each provider's public keyed IAiChatClient via a composition factory wrapping the keyed concrete provider (.2/.3) and applying an OPTIONAL singleton Func<IServiceProvider,string,IAiChatClient,IAiChatClient> decoration hook when present (bare otherwise — no .4/.5 cycle), an IAiChatClientFactory resolving the public keyed client by ProviderKeys, and a custom Microsoft.Extensions.Http.Resilience pipeline (timeout + retry only, NO rate-limiter; retries a whitelist of transient statuses 408/500/502/503/504, never 429) attached EXACTLY ONCE per provider via the .2/.3-exposed IHttpClientBuilder, with a ParleyAiResilienceOptions override surface (enable/disable, retry/timeout knobs, full-pipeline replacement, and OnRetry disposal of discarded responses). 14 new DI tests (keyed resolution + unkeyed-throws, factory, decorator-hook applied/bare, ctor-override precedence through AddParleyAi for both providers, no-double-retry attempt counts, 429/non-transient-5xx not retried, both providers).
 ## Evidence
-_(filled on completion)_
+- Commits: 0573293, ea9d647, da51513, 233090a, e5ecb9d, 17b381a, b3c95a7
+- Tests: dotnet test src/ParleyAI.sln (79 passed), dotnet build src/ParleyAI.sln -c Release (0 warnings), dotnet pack src/ParleyAI/ParleyAI.csproj -c Release (valid .nupkg + .snupkg)
+- PRs:
