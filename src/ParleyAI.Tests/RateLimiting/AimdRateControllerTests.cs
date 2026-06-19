@@ -209,6 +209,31 @@ public sealed class AimdRateControllerTests
     }
 
     [Fact]
+    public async Task RetryAfter_pauses_request_acquisition_until_it_elapses()
+    {
+        // A provider-advised RetryAfter must actually PAUSE acquisition (not merely suppress the AIMD
+        // ramp): even with a high rate + ample tokens, no permit is granted until the RetryAfter wait
+        // elapses.
+        (AimdRateController controller, FakeTimeProvider clock) = Build(o =>
+        {
+            o.RateFloor = 50.0;
+            o.RateCeiling = 50.0;
+        });
+        clock.Advance(TimeSpan.FromSeconds(1)); // fill the bucket (plenty of tokens)
+
+        controller.OnBackoff(ParleyAIErrorCategory.RateLimit, retryAfter: TimeSpan.FromSeconds(30));
+
+        // Despite a full bucket, acquisition is blocked during the 30s RetryAfter.
+        Task blocked = controller.AcquireAsync(CancellationToken.None);
+        clock.Advance(TimeSpan.FromSeconds(10));
+        Assert.False(blocked.IsCompleted);
+
+        // Once the 30s window elapses, acquisition proceeds.
+        clock.Advance(TimeSpan.FromSeconds(21));
+        await blocked;
+    }
+
+    [Fact]
     public async Task A_sub_one_rate_does_not_deadlock_acquire()
     {
         // A configured rate below 1 req/s must still let one request through per (1/rate) seconds —

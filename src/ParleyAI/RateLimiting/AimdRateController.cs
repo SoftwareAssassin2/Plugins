@@ -57,6 +57,11 @@ public sealed class AimdRateController
     // both suppressed until then. Honors the max of the category cooldown and any RetryAfter.
     private long _cooldownUntilTimestamp;
 
+    // The clock instant until which request ACQUISITION itself is paused — set from a provider-advised
+    // RetryAfter so AcquireAsync actually stops sending during the advised wait (not just suppressing
+    // the AIMD ramp). A bare category cooldown (no RetryAfter) does NOT pause traffic, only the ramp.
+    private long _blockUntilTimestamp;
+
     /// <summary>
     /// Creates the controller for one provider.
     /// </summary>
@@ -79,6 +84,7 @@ public sealed class AimdRateController
         long now = timeProvider.GetTimestamp();
         _lastReplenishTimestamp = now;
         _cooldownUntilTimestamp = now;
+        _blockUntilTimestamp = now;
 
         // Seed one whole permit so the very first call proceeds immediately (no cold-start stall).
         _availableTokens = 1.0;
@@ -92,8 +98,9 @@ public sealed class AimdRateController
 
     /// <summary>
     /// Acquires one request permit, asynchronously waiting (via the injected clock, using
-    /// <see cref="Task.Delay(TimeSpan, TimeProvider, CancellationToken)"/>) until the token bucket has
-    /// replenished enough at the current rate. Honors cancellation.
+    /// <see cref="Task.Delay(TimeSpan, TimeProvider, CancellationToken)"/>) until BOTH any active
+    /// provider-advised <c>RetryAfter</c> pause has elapsed AND the token bucket has replenished
+    /// enough at the current rate. Honors cancellation.
     /// </summary>
     public async Task AcquireAsync(CancellationToken cancellationToken)
     {
@@ -102,16 +109,28 @@ public sealed class AimdRateController
             TimeSpan wait;
             lock (_gate)
             {
-                Replenish();
-                if (_availableTokens >= 1.0)
-                {
-                    _availableTokens -= 1.0;
-                    return;
-                }
+                long now = _timeProvider.GetTimestamp();
 
-                // Time until the next whole token replenishes at the current rate.
-                double deficit = 1.0 - _availableTokens;
-                wait = TimeSpan.FromSeconds(deficit / _currentRate);
+                // A provider-advised RetryAfter pauses acquisition outright: do not grant a permit
+                // (even if tokens remain) until the advised wait elapses. This actually honors
+                // RetryAfter as a request pause, not merely an AIMD-ramp suppression.
+                if (now < _blockUntilTimestamp)
+                {
+                    wait = FromTicks(_blockUntilTimestamp - now);
+                }
+                else
+                {
+                    Replenish();
+                    if (_availableTokens >= 1.0)
+                    {
+                        _availableTokens -= 1.0;
+                        return;
+                    }
+
+                    // Time until the next whole token replenishes at the current rate.
+                    double deficit = 1.0 - _availableTokens;
+                    wait = TimeSpan.FromSeconds(deficit / _currentRate);
+                }
             }
 
             // Wait OUTSIDE the lock so concurrent callers and AIMD adjustments are not blocked.
@@ -154,7 +173,10 @@ public sealed class AimdRateController
     /// per active window — concurrent limit-hits collapse to a single back-off.
     /// </summary>
     /// <param name="category">The mapped error category driving the back-off.</param>
-    /// <param name="retryAfter">The provider-advised wait, when present (honored into the cooldown).</param>
+    /// <param name="retryAfter">
+    /// The provider-advised wait, when present. It is honored two ways: it extends the AIMD-ramp
+    /// suppression window AND pauses request acquisition (<see cref="AcquireAsync"/>) until it elapses.
+    /// </param>
     public void OnBackoff(ParleyAIErrorCategory category, TimeSpan? retryAfter)
     {
         BackoffOptions backoff = category switch
@@ -185,6 +207,17 @@ public sealed class AimdRateController
             }
 
             long windowEnd = now + ToTicks(window);
+
+            // A provider-advised RetryAfter ALSO pauses request acquisition (not just the ramp) until
+            // it elapses. A bare category cooldown does not block traffic — only the AIMD ramp.
+            if (retryAfter is { } pause && pause > TimeSpan.Zero)
+            {
+                long blockEnd = now + ToTicks(pause);
+                if (blockEnd > _blockUntilTimestamp)
+                {
+                    _blockUntilTimestamp = blockEnd; // extend, never shorten
+                }
+            }
 
             if (now < _cooldownUntilTimestamp)
             {
@@ -243,4 +276,8 @@ public sealed class AimdRateController
     // Convert a TimeSpan to the TimeProvider's timestamp ticks (its frequency, not DateTime ticks).
     private long ToTicks(TimeSpan span) =>
         (long)(span.TotalSeconds * _timeProvider.TimestampFrequency);
+
+    // Convert a span of TimeProvider timestamp ticks back to a TimeSpan.
+    private TimeSpan FromTicks(long ticks) =>
+        TimeSpan.FromSeconds(ticks / (double)_timeProvider.TimestampFrequency);
 }
