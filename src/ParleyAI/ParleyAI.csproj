@@ -11,6 +11,11 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <!-- The test project exercises internal seams (settings resolution, the internal client ctor). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="ParleyAI.Tests" />
+  </ItemGroup>
+
   <!-- Package identity + metadata (R1). -->
   <PropertyGroup>
     <IsPackable>true</IsPackable>
@@ -46,6 +51,13 @@
   <ItemGroup>
     <PackageReference Include="OpenAI" Version="2.11.0" />
     <PackageReference Include="Anthropic.SDK" Version="5.10.0" />
+    <!-- DI building blocks: keyed registration, IHttpClientFactory (named, singleton-safe
+         client + IHttpClientBuilder exposure), flat IConfiguration mapping, opt-in
+         IHostedService startup validation. Pinned to the net10.0 LTS line. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.3" />
   </ItemGroup>
 
   <!-- Pack LICENSE + NOTICE + README at the nupkg ROOT (PackagePath="") — NOT under
