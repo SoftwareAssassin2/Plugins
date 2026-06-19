@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Polly;
+using Polly.Timeout; // AddTimeout's strategy types live here; the extension itself is in the Polly namespace.
 using ParleyAI.Abstractions;
 using ParleyAI.DependencyInjection;
 using ParleyAI.Providers.Anthropic;
