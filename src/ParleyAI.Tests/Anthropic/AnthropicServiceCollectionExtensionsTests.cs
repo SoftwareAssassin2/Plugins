@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using ParleyAI.Abstractions;
@@ -116,6 +117,36 @@ public sealed class AnthropicServiceCollectionExtensionsTests
 
         Assert.ThrowsAny<Exception>(() =>
             provider.GetRequiredKeyedService<AnthropicChatClient>(ProviderKeys.Anthropic));
+    }
+
+    [Fact]
+    public async Task Di_wired_client_applies_base_url_rewrite_end_to_end()
+    {
+        // The PUBLIC construction path (AddAnthropicChatClient) must wire the origin-rewrite handler
+        // so a configured ANTHROPIC_BASE_URL reaches the wire — never silently ignored. We swap the
+        // named client's PRIMARY handler for an in-process fake and assert the final rewritten URI.
+        var fake = new FakeHttpMessageHandler(_ => FakeHttpMessageHandler.Completion());
+
+        var services = new ServiceCollection();
+        IConfiguration config = Config(
+            ("ANTHROPIC_API_KEY", "sk-ant-flat"),
+            ("ANTHROPIC_BASE_URL", "http://localhost:6060"));
+
+        services.AddAnthropicChatClient(config)
+            .ConfigurePrimaryHttpMessageHandler(() => fake);
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+        var client = provider.GetRequiredKeyedService<AnthropicChatClient>(ProviderKeys.Anthropic);
+
+        await client.CompleteChatAsync(new ChatRequest(
+            "claude-3-5-sonnet",
+            new[] { new ChatMessage(Role.User, "hi") }));
+
+        Uri uri = Assert.Single(fake.RequestUris);
+        Assert.Equal("http", uri.Scheme);
+        Assert.Equal("localhost", uri.Host);
+        Assert.Equal(6060, uri.Port);
+        Assert.Equal("/v1/messages", uri.AbsolutePath);
     }
 
     [Fact]

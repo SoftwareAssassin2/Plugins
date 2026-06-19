@@ -59,8 +59,11 @@ public static class AnthropicServiceCollectionExtensions
 
         // Named, singleton-safe HttpClient: a SocketsHttpHandler with a bounded
         // PooledConnectionLifetime keeps DNS fresh while letting the handler be reused for the
-        // app lifetime (no captive-dependency / stale-handler problems). The origin-rewrite handler
-        // sits in the pipeline; its base URL is resolved lazily (at handler construction, not at
+        // app lifetime (no captive-dependency / stale-handler problems). The origin-rewrite +
+        // error-capture handler is attached HERE, in the transport pipeline, because the SDK emits
+        // absolute URIs that ignore HttpClient.BaseAddress and a handler cannot be grafted onto an
+        // HttpClient post-construction — so DI is the single place that wires it (the public
+        // construction path). Its base URL is resolved lazily (at handler construction, not at
         // registration) so an unused/misconfigured provider does not fail a fresh-scaffold boot.
         IHttpClientBuilder httpClientBuilder = services
             .AddHttpClient(HttpClientName)

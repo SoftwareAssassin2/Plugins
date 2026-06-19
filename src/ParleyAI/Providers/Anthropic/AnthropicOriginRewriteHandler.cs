@@ -112,6 +112,13 @@ internal sealed class AnthropicOriginRewriteHandler : DelegatingHandler
                 nameof(baseUrl));
         }
 
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+        {
+            throw new ArgumentException(
+                $"ANTHROPIC_BASE_URL must use the http or https scheme; got '{uri.Scheme}' in '{baseUrl}'.",
+                nameof(baseUrl));
+        }
+
         bool hasPath = !string.IsNullOrEmpty(uri.AbsolutePath) && uri.AbsolutePath != "/";
         if (hasPath || !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment))
         {

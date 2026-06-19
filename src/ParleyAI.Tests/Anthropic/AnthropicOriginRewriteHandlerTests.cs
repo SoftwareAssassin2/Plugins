@@ -29,6 +29,8 @@ public sealed class AnthropicOriginRewriteHandlerTests
     [InlineData("http://localhost:4010/v1/messages")]
     [InlineData("http://localhost:4010?x=1")] // query
     [InlineData("http://localhost:4010/#frag")] // fragment
+    [InlineData("ftp://example.com/")]          // non-http(s) scheme HttpClient cannot send
+    [InlineData("ws://localhost:4010")]         // non-http(s) scheme
     public void Non_root_base_urls_are_rejected(string baseUrl)
     {
         Assert.Throws<ArgumentException>(() => AnthropicOriginRewriteHandler.ParseRootOnly(baseUrl));

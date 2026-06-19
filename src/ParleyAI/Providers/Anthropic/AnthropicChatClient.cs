@@ -40,17 +40,31 @@ public sealed class AnthropicChatClient : IAiChatClient
 
     /// <summary>
     /// Constructs the client from resolved settings + the keyed transport <see cref="HttpClient"/>
-    /// (whose pipeline carries the origin-rewrite handler).
+    /// whose pipeline ALREADY carries the origin-rewrite + error-capture
+    /// <see cref="AnthropicOriginRewriteHandler"/> (attached by <c>AddAnthropicChatClient</c>).
     /// </summary>
+    /// <remarks>
+    /// This ctor is <b>internal</b> on purpose. The Anthropic base-URL override only works when the
+    /// rewrite handler sits in the transport pipeline (the SDK emits absolute URIs that ignore
+    /// <c>HttpClient.BaseAddress</c>), and an <see cref="HttpClient"/> cannot have a handler grafted
+    /// on after construction. Exposing a public "bare <see cref="HttpClient"/>" ctor would let a
+    /// caller pass a <see cref="AnthropicChatClientSettings.BaseUrl"/> that is then silently ignored.
+    /// The supported public construction path is therefore <c>AddAnthropicChatClient</c> (the DI
+    /// building block), which wires the handler; this ctor + the SDK-client seam below serve DI and
+    /// the in-process tests, which build the same pipeline explicitly.
+    /// </remarks>
     /// <param name="settings">
     /// The resolved connection settings (required API key + optional root-only base URL), already
     /// having applied the ctor &gt; flat-key precedence in the DI layer.
     /// </param>
-    /// <param name="httpClient">The keyed, singleton-safe transport <see cref="HttpClient"/>.</param>
+    /// <param name="httpClient">
+    /// The keyed, singleton-safe transport <see cref="HttpClient"/> whose pipeline carries the
+    /// rewrite handler (for the configured <see cref="AnthropicChatClientSettings.BaseUrl"/>).
+    /// </param>
     /// <exception cref="ArgumentException">
-    /// The API key is missing/blank, or the base URL is present but not a root-only absolute URI.
+    /// The API key is missing/blank, or the base URL is present but not an http(s) root-only URI.
     /// </exception>
-    public AnthropicChatClient(AnthropicChatClientSettings settings, HttpClient httpClient)
+    internal AnthropicChatClient(AnthropicChatClientSettings settings, HttpClient httpClient)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(httpClient);
@@ -62,9 +76,9 @@ public sealed class AnthropicChatClient : IAiChatClient
                 nameof(settings));
         }
 
-        // Validate the base URL eagerly at construction (root-only). The actual origin rewrite is
-        // performed by the handler already attached to the keyed HttpClient pipeline (DI layer); we
-        // re-validate here so the contract holds for the direct-ctor (test/advanced) path too.
+        // Re-validate the base URL eagerly at construction (root-only, http(s)) so a misconfigured
+        // value fails fast even if the handler was wired by a path that did not validate. The actual
+        // origin rewrite is performed by the handler already attached to the supplied client.
         if (!string.IsNullOrWhiteSpace(settings.BaseUrl))
         {
             _ = AnthropicOriginRewriteHandler.ParseRootOnly(settings.BaseUrl);
