@@ -30,7 +30,8 @@ Implement the **adaptive AIMD rate optimizer** as an `IAiChatClient` decorator a
 - [ ] Tests: RateLimit vs TokenLimit differ; RetryAfter honored; success → ramp; off → no decorator; isolation; concurrent single-decrease; swap thread-safety
 
 ## Done summary
-_(filled on completion)_
-
+Implemented the adaptive AIMD rate optimizer as an IAiChatClient decorator wired ON by default through the AddParleyAi DI path (no-glue API), with a per-provider off switch. A custom manual-replenish, TimeProvider-driven AimdRateController paces logical calls: additive ramp on success, distinct multiplicative back-off per RateLimit/TokenLimit category, RetryAfter honored both as ramp suppression AND request-acquisition pause, one decrease per cooldown window, floor/ceiling clamping, and thread-safe rate swaps. System.Threading.RateLimiting 10.0.0 pinned explicitly (not framework-provided for a plain library). 29 new deterministic tests (fake clock + zero jitter); full suite 108 green; codex impl-review SHIP (R12 met).
 ## Evidence
-_(filled on completion)_
+- Commits: f04d0ad, c816518, 7dae40e, 39abe6f, 5871023
+- Tests: dotnet build src/ParleyAI.sln -c Debug, dotnet test src/ParleyAI.sln -c Debug (108 passed, 0 failed), dotnet pack src/ParleyAI/ParleyAI.csproj -c Release (nupkg + snupkg)
+- PRs:
