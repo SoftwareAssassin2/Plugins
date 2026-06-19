@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-15T11:09:36.762177Z",
+  "depends_on": [
+    "fn-5-speak-plugin-spoken-voice-output-for.2"
+  ],
+  "id": "fn-5-speak-plugin-spoken-voice-output-for.3",
+  "priority": null,
+  "spec": "fn-5-speak-plugin-spoken-voice-output-for",
+  "spec_path": ".flow/tasks/fn-5-speak-plugin-spoken-voice-output-for.3.md",
+  "status": "todo",
+  "title": "speak --serve host listener: FIFO queue, live status, resilience (PROOF POINT)",
+  "updated_at": "2026-06-15T11:12:11.236104Z"
+}

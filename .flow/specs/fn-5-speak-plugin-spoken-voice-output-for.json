@@ -1,6 +1,11 @@
 {
   "branch_name": "fn-5-speak-plugin-spoken-voice-output-for",
+  "completion_review_status": "unknown",
+  "completion_reviewed_at": null,
   "created_at": "2026-06-15T09:00:42.088869Z",
+  "default_impl": null,
+  "default_review": null,
+  "default_sync": null,
   "depends_on_epics": [],
   "id": "fn-5-speak-plugin-spoken-voice-output-for",
   "next_task": 1,
@@ -19,5 +24,5 @@
     "mergeBaseTracker": null,
     "url": null
   },
-  "updated_at": "2026-06-15T09:37:12.940530Z"
+  "updated_at": "2026-06-15T11:09:21.726826Z"
 }

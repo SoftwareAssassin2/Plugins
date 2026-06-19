@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-15T11:09:36.608417Z",
+  "depends_on": [
+    "fn-5-speak-plugin-spoken-voice-output-for.1"
+  ],
+  "id": "fn-5-speak-plugin-spoken-voice-output-for.2",
+  "priority": null,
+  "spec": "fn-5-speak-plugin-spoken-voice-output-for",
+  "spec_path": ".flow/tasks/fn-5-speak-plugin-spoken-voice-output-for.2.md",
+  "status": "todo",
+  "title": "Forward client: base64-over-nc transport + reachability probe (container side)",
+  "updated_at": "2026-06-15T11:12:11.077340Z"
+}
