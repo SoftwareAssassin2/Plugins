@@ -169,6 +169,9 @@ public sealed class AnthropicChatClientTests
             () => client.CompleteChatAsync(SimpleRequest()));
 
         Assert.Equal(ParleyAIErrorCategory.Transient, ex.Category);
+        // The non-standard 529 (overloaded) status is preserved verbatim — not nulled — even though
+        // it is not a defined HttpStatusCode member.
+        Assert.Equal(529, (int)ex.StatusCode!.Value);
         // SINGLE attempt: Anthropic.SDK adds no retry layer and there is no resilience handler at
         // this task (fn-4.3). The resilience-on-vs-off test lives in fn-4.4.
         Assert.Equal(1, fake.AttemptCount);

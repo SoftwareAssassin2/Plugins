@@ -65,15 +65,14 @@ internal static class AnthropicErrorMapper
         ParleyAIErrorCategory category = Classify(status, tokensRemaining, context.Body);
         TimeSpan? retryAfter = ParseRetryAfter(context.Headers);
 
-        HttpStatusCode? statusCode = Enum.IsDefined(typeof(HttpStatusCode), status)
-            ? context.StatusCode
-            : null;
-
+        // Preserve the actual status verbatim — including Anthropic's non-standard 529 (overloaded),
+        // which is NOT a defined HttpStatusCode member but is carried fine by a cast. Nulling it
+        // would drop useful response metadata from the surfaced exception.
         return new ParleyAIException(
             ex.Message,
             category,
             ProviderKeys.Anthropic,
-            statusCode,
+            context.StatusCode,
             retryAfter,
             ex);
     }
