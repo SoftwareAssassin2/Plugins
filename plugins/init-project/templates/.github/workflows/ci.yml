@@ -31,12 +31,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4.2.2
 
-      # Pin the SDK to 9.x: net9.0 builds natively without relying on an SDK-10
-      # roll-forward. (The dev container targets dotnet 9; CI mirrors that.)
-      - name: Set up .NET SDK 9
+      # Pin the SDK to 10.x: net10.0 builds natively on the matching SDK major.
+      # (The dev container targets dotnet 10; CI mirrors that.)
+      - name: Set up .NET SDK 10
         uses: actions/setup-dotnet@v4.1.0
         with:
-          dotnet-version: "9.0.x"
+          dotnet-version: "10.0.x"
 
       - name: Restore
         run: dotnet restore src/system.sln

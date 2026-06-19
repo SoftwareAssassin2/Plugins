@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Api</RootNamespace>
@@ -10,11 +10,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Keycloak JWT bearer validation (OIDC). Major == TFM major (.NET 9). -->
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
-    <!-- EF Core DI registration for the runtime `api`-role DbContext. Version
-         matches the EF Core the Npgsql provider (9.0.4) pulls in transitively. -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.4" />
+    <!-- Keycloak JWT bearer validation (OIDC). Major == TFM major (.NET 10). -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.4" />
+    <!-- EF Core DI registration for the runtime `api`-role DbContext. Shares the
+         platform major.minor (10.0) with the rest of the Microsoft-owned stack. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.4" />
   </ItemGroup>
 
   <ItemGroup>
