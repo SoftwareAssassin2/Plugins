@@ -219,6 +219,23 @@ public sealed class ParleyAiServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public void Ctor_override_overload_supplies_both_providers_with_no_flat_config()
+    {
+        // The (configureOpenAi, configureAnthropic) overload uses an internal empty IConfiguration —
+        // the ctor delegates fully supply base URL + key, so both providers resolve with NO flat config.
+        var services = new ServiceCollection();
+        services.AddParleyAi(
+            configureOpenAi: s => { s.ApiKey = "sk-openai-ctor"; s.BaseUrl = "http://ctor-openai:2/v1"; },
+            configureAnthropic: s => { s.ApiKey = "sk-ant-ctor"; s.BaseUrl = "http://ctor-anthropic:2"; });
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        Assert.NotNull(provider.GetRequiredKeyedService<IAiChatClient>(ProviderKeys.OpenAi));
+        Assert.NotNull(provider.GetRequiredKeyedService<IAiChatClient>(ProviderKeys.Anthropic));
+        Assert.NotNull(provider.GetRequiredService<IAiChatClientFactory>().Create(ProviderKeys.OpenAi));
+    }
+
+    [Fact]
     public async Task Resilience_is_attached_once_and_retries_a_transient_5xx()
     {
         // One logical call hitting a retryable TRANSIENT 5xx must produce 1 + MaxRetryAttempts HTTP

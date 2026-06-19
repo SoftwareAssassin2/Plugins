@@ -98,8 +98,10 @@ public static class ParleyAiServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configureAnthropic);
 
         // An empty configuration: the ctor-override delegates fully supply base URL + key, so the
-        // flat IConfiguration[KEY] reads return null and the override wins (ctor > flat).
-        IConfiguration empty = new ConfigurationBuilder().Build();
+        // flat IConfiguration[KEY] reads return null and the override wins (ctor > flat). Use a tiny
+        // local IConfiguration (NOT ConfigurationBuilder, which lives in the concrete
+        // Microsoft.Extensions.Configuration package — only its Abstractions are a direct ref here).
+        IConfiguration empty = EmptyConfiguration.Instance;
 
         return services.AddParleyAi(empty, opts =>
         {
@@ -155,5 +157,45 @@ public static class ParleyAiServiceCollectionExtensions
                 resilience.ApplyDefaultPipeline(pipelineBuilder);
             }
         });
+    }
+
+    /// <summary>
+    /// A minimal empty <see cref="IConfiguration"/> for the ctor-override overload — every key reads
+    /// as <see langword="null"/> so the override delegates fully supply base URL + key.
+    /// </summary>
+    /// <remarks>
+    /// Hand-rolled (not <c>ConfigurationBuilder</c>) so production code depends ONLY on
+    /// <c>Microsoft.Extensions.Configuration.Abstractions</c> — the concrete
+    /// <c>Microsoft.Extensions.Configuration</c> package is not a direct reference and must not be
+    /// relied on transitively.
+    /// </remarks>
+    private sealed class EmptyConfiguration : IConfiguration, IConfigurationSection
+    {
+        public static readonly EmptyConfiguration Instance = new();
+
+        public string? this[string key]
+        {
+            get => null;
+            set { /* no-op: empty configuration is read-only and always empty */ }
+        }
+
+        // IConfigurationSection members (a section of the empty config is itself empty).
+        public string Key => string.Empty;
+
+        public string Path => string.Empty;
+
+        public string? Value
+        {
+            get => null;
+            set { /* no-op */ }
+        }
+
+        public IConfigurationSection GetSection(string key) => Instance;
+
+        public System.Collections.Generic.IEnumerable<IConfigurationSection> GetChildren() =>
+            System.Array.Empty<IConfigurationSection>();
+
+        public Microsoft.Extensions.Primitives.IChangeToken GetReloadToken() =>
+            new Microsoft.Extensions.Primitives.CancellationChangeToken(System.Threading.CancellationToken.None);
     }
 }
