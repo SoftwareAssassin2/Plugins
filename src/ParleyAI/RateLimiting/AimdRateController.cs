@@ -106,6 +106,10 @@ public sealed class AimdRateController
     {
         while (true)
         {
+            // Honor cancellation BEFORE granting a permit so a pre-canceled (or mid-wait canceled)
+            // token never charges the bucket for a request that must not acquire.
+            cancellationToken.ThrowIfCancellationRequested();
+
             TimeSpan wait;
             lock (_gate)
             {

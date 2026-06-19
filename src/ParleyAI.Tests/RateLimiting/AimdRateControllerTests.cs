@@ -298,4 +298,25 @@ public sealed class AimdRateControllerTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
     }
+
+    [Fact]
+    public async Task A_pre_canceled_token_throws_without_charging_the_seeded_permit()
+    {
+        // A token that is ALREADY canceled must throw before granting the seeded permit — otherwise a
+        // request that should never acquire still charges the bucket. The bucket stays full afterward.
+        (AimdRateController controller, _) = Build(o =>
+        {
+            o.RateFloor = 1.0;
+            o.RateCeiling = 1.0;
+            o.AdditiveIncreaseStep = 0.0;
+        });
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => controller.AcquireAsync(cts.Token));
+
+        // The seeded permit was NOT consumed — a fresh (uncanceled) acquire still proceeds immediately.
+        await controller.AcquireAsync(CancellationToken.None);
+    }
 }
