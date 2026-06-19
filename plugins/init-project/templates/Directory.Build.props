@@ -1,0 +1,20 @@
+<Project>
+
+  <!-- Scaffold-wide version pin for the published ParleyAI NuGet package.
+       This is the SINGLE SOURCE OF TRUTH for which ParleyAI version a generated
+       project references (fn-4.9 consumes it as <PackageReference Version="$(LlmWrapperVersion)" />).
+
+       NOT Central Package Management — a single scoped MSBuild property, by design.
+
+       Release procedure (see the repo-root README.md):
+         1. Bump <LlmWrapperVersion> below to the version you are about to publish.
+         2. Commit.
+         3. Tag `nuget-v<that-version>` and push the tag.
+       The publish workflow (.github/workflows/nuget.yml) ASSERTS this value equals
+       `${GITHUB_REF_NAME#nuget-v}` before it packs/publishes — a mismatch fails the
+       release, so this property and the release tag can never drift apart. -->
+  <PropertyGroup>
+    <LlmWrapperVersion>0.1.0</LlmWrapperVersion>
+  </PropertyGroup>
+
+</Project>
