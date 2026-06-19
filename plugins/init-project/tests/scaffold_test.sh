@@ -394,7 +394,7 @@ check "devcontainer installs postgresql-client (psql) via feature" "sed -E 's@//
 check "devcontainer wires onCreate setup.sh" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.onCreateCommand | test(\"setup.sh\")' >/dev/null"
 check "devcontainer name token-substituted" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.name==\"demo-app\"' >/dev/null"
 check "devcontainer declares vscode extensions" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '(.customizations.vscode.extensions|length)>0' >/dev/null"
-# setup.sh installs the script-only tools (Angular CLI, DuckDB, acli, Claude Code, Codex CLI)
+# setup.sh installs the script-only tools (Angular CLI, DuckDB, acli, glab, Claude Code, Codex CLI)
 # and best-effort enables the marketplace by its REMOTE git URL (never local ./src).
 SUP="$WORK/demo-app/.devcontainer/setup.sh"
 check "setup.sh installs Angular CLI"      "grep -q '@angular/cli' \"$SUP\""
@@ -403,6 +403,8 @@ check "setup.sh restores dotnet-ef via tool manifest" "grep -q 'dotnet tool rest
 check "setup.sh installs DuckDB"           "grep -qi 'duckdb' \"$SUP\""
 check "setup.sh pins DuckDB version"       "grep -q 'DUCKDB_VERSION=' \"$SUP\" && grep -q 'DUCKDB_INSTALL_VERSION' \"$SUP\""
 check "setup.sh installs Atlassian acli"   "grep -q 'acli' \"$SUP\""
+check "setup.sh installs GitLab CLI (glab)" "grep -q 'install_glab' \"$SUP\" && grep -q 'gitlab-org/cli' \"$SUP\""
+check "setup.sh pins glab version"         "grep -q 'GLAB_VERSION=' \"$SUP\""
 check "setup.sh installs Claude Code (install.sh)" "grep -q 'claude.ai/install.sh' \"$SUP\""
 check "setup.sh installs Codex CLI"        "grep -qi 'codex' \"$SUP\""
 check "setup.sh pins Codex CLI version"    "grep -q 'CODEX_VERSION=' \"$SUP\" && grep -q '@openai/codex@' \"$SUP\""

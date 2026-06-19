@@ -13,7 +13,7 @@ Anything the repo depends on to operate easily and efficiently belongs in
 `.devcontainer/` — no exceptions. This includes:
 
 - **System packages** (e.g. `jq`, `shellcheck`, `shfmt`)
-- **CLI tools** (e.g. `gh`, the cloud CLIs, `claude`)
+- **CLI tools** (e.g. `gh`, `glab`, the cloud CLIs, `claude`)
 - **Language runtimes** (e.g. the .NET SDK, Node)
 - **Claude Code marketplaces and plugins** — marketplaces declared in
   `.claude/settings.json`, plugins provisioned via `.devcontainer/setup.sh`

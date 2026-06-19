@@ -39,6 +39,7 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # one exception — it is pinned by READING the root package.json (single source).
 DUCKDB_VERSION="v1.4.2"      # DuckDB CLI (https://github.com/duckdb/duckdb/releases)
 CODEX_VERSION="0.5.0"        # OpenAI Codex CLI (npm @openai/codex)
+GLAB_VERSION="1.95.0"        # GitLab CLI / glab (https://gitlab.com/gitlab-org/cli/-/releases)
 
 # Pin the Angular CLI to the SAME exact version the root package.json declares —
 # the single source of truth (owned by the SPA task). Never hard-code a second
@@ -119,6 +120,35 @@ install_acli() {
   fi
 }
 
+install_glab() {
+  log "GitLab CLI (glab)"
+  if have glab; then
+    ok "glab already present ($(glab --version 2>/dev/null | head -1 || echo present))"
+    return 0
+  fi
+  # GitLab's official release binary. GitLab CLI ships NO maintained first-party
+  # devcontainer feature (gh does — that's why it lives in devcontainer.json),
+  # so glab installs here, mirroring acli. PINNED via GLAB_VERSION so a fresh
+  # build is reproducible. Resolve arch; the tarball holds bin/glab.
+  local arch dl tmp
+  case "$(uname -m)" in
+    x86_64|amd64) arch="amd64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *) warn "unsupported arch $(uname -m) for glab — skipping"; return 0 ;;
+  esac
+  dl="https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_${arch}.tar.gz"
+  tmp="$(mktemp -d)"
+  if curl -fsSL "$dl" -o "$tmp/glab.tar.gz" \
+     && tar -xzf "$tmp/glab.tar.gz" -C "$tmp" bin/glab \
+     && sudo install -m 0755 "$tmp/bin/glab" /usr/local/bin/glab; then
+    rm -rf "$tmp"
+    ok "glab $GLAB_VERSION installed (${arch})"
+  else
+    rm -rf "$tmp"
+    warn "glab download failed — install manually from https://gitlab.com/gitlab-org/cli/-/releases"
+  fi
+}
+
 install_claude_code() {
   log "Claude Code CLI"
   if have claude; then
@@ -184,6 +214,7 @@ main() {
   install_dotnet_tools
   install_duckdb
   install_acli
+  install_glab
   install_claude_code
   install_codex_cli
 
@@ -192,7 +223,7 @@ main() {
 
   log "Dev container provisioning complete"
   printf '\n  MCP servers (context7, github-mcp-server) are declared in .mcp.json.\n'
-  printf '  Per-user auth (gh, the cloud CLIs, acli, GitHub MCP token) is a follow-up\n'
+  printf '  Per-user auth (gh, glab, the cloud CLIs, acli, GitHub MCP token) is a follow-up\n'
   printf '  documented in docs/dev-container.md.\n\n'
 }
 
