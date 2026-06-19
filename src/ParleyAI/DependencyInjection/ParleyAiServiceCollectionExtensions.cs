@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Concurrent;
 using System.Net.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using ParleyAI.Abstractions;
+using ParleyAI.Abstractions.Options;
 using ParleyAI.Providers.Anthropic;
 using ParleyAI.Providers.OpenAi;
+using ParleyAI.RateLimiting;
 
 namespace ParleyAI.DependencyInjection;
 
@@ -76,7 +79,64 @@ public static class ParleyAiServiceCollectionExtensions
         // Runtime selection over the PUBLIC composed keyed clients. NO unkeyed default registered.
         services.AddSingleton<IAiChatClientFactory, AiChatClientFactory>();
 
+        // Wire the adaptive AIMD rate optimizer as the composition decoration hook — ON by default
+        // (no extra opt-in call; AddParleyAi ALONE yields AIMD-decorated clients). The per-provider
+        // off switch (AimdOptions.Enabled == false) makes the hook return the bare inner for that
+        // provider while keeping the other decorated.
+        RegisterAimdHook(services, options);
+
         return services;
+    }
+
+    /// <summary>
+    /// Registers the single composition decoration hook (the EXACT spec-defined delegate
+    /// <c>Func&lt;IServiceProvider, string, IAiChatClient, IAiChatClient&gt;</c>) that wraps each keyed
+    /// provider client with the <see cref="AimdChatClientDecorator"/> — on by default, per-provider off
+    /// switch honored. One <see cref="AimdRateController"/> per provider key (cached for the provider's
+    /// lifetime) gives per-provider isolation; the controller takes an injected <see cref="TimeProvider"/>
+    /// (DI-registered or <see cref="TimeProvider.System"/>) and <see cref="IJitterSource"/> (DI-registered
+    /// or <see cref="DefaultJitterSource.Instance"/>) so it is deterministically testable.
+    /// </summary>
+    private static void RegisterAimdHook(IServiceCollection services, ParleyAiOptions options)
+    {
+        // Per-provider AIMD tuning, resolved ONCE here (immutable thereafter — the controller never
+        // mutates these). A disabled provider gets no decorator.
+        AimdOptions openAiAimd = BuildAimd(options.ConfigureOpenAiAimd);
+        AimdOptions anthropicAimd = BuildAimd(options.ConfigureAnthropicAimd);
+
+        // One controller per provider key, lazily created on first decoration and cached for the
+        // ServiceProvider's lifetime (the hook is a singleton). ConcurrentDictionary keeps the
+        // get-or-add atomic under concurrent first-resolution.
+        var controllers = new ConcurrentDictionary<string, AimdRateController>(StringComparer.Ordinal);
+
+        services.AddSingleton<Func<IServiceProvider, string, IAiChatClient, IAiChatClient>>(
+            _ => (sp, providerKey, inner) =>
+            {
+                AimdOptions aimd = providerKey == ProviderKeys.Anthropic ? anthropicAimd : openAiAimd;
+
+                // Per-provider hard off switch → bare client (no decorator) for THIS provider only.
+                if (!aimd.Enabled)
+                {
+                    return inner;
+                }
+
+                AimdRateController controller = controllers.GetOrAdd(
+                    providerKey,
+                    _ => new AimdRateController(
+                        aimd,
+                        sp.GetService<TimeProvider>() ?? TimeProvider.System,
+                        sp.GetService<IJitterSource>() ?? DefaultJitterSource.Instance));
+
+                return new AimdChatClientDecorator(inner, controller);
+            });
+    }
+
+    /// <summary>Builds an <see cref="AimdOptions"/> from the optional per-provider tuning delegate.</summary>
+    private static AimdOptions BuildAimd(Action<AimdOptions>? configure)
+    {
+        var aimd = new AimdOptions();
+        configure?.Invoke(aimd);
+        return aimd;
     }
 
     /// <summary>

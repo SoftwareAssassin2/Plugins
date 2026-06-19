@@ -66,6 +66,12 @@
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.3" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.3" />
+    <!-- Adaptive AIMD rate optimizer (fn-4.5). System.Threading.RateLimiting is NOT in the base
+         Microsoft.NETCore.App shared framework (it ships in the ASP.NET Core shared framework, which a
+         plain Microsoft.NET.Sdk library does not reference) and otherwise arrives only TRANSITIVELY via
+         Polly.RateLimiting — so it is PINNED explicitly here per the dependency-hygiene rule (never
+         relied on transitively). Pinned to the net10.0 GA line. -->
+    <PackageReference Include="System.Threading.RateLimiting" Version="10.0.0" />
   </ItemGroup>
 
   <!-- Pack LICENSE + NOTICE + README at the nupkg ROOT (PackagePath="") — NOT under

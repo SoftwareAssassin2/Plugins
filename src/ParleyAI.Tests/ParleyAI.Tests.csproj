@@ -22,6 +22,9 @@
     <!-- DI container + in-memory configuration for the provider DI tests. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.3" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.3" />
+    <!-- FakeTimeProvider for the deterministic AIMD optimizer tests (fn-4.5): cooldown / RetryAfter /
+         ramp / limiter behavior asserted off a fake clock with NO real sleeps. -->
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.10.0" />
   </ItemGroup>
 
   <ItemGroup>

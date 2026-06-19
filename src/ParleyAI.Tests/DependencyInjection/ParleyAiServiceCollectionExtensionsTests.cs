@@ -124,14 +124,15 @@ public sealed class ParleyAiServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void With_no_decorator_registered_the_public_client_is_the_bare_provider()
+    public void With_aimd_disabled_per_provider_the_public_client_is_the_bare_provider()
     {
         var services = new ServiceCollection();
-        services.AddParleyAi(BothProvidersConfigured());
+        // fn-4.5 wires the AIMD decorator ON by default; the per-provider off switch
+        // (AimdOptions.Enabled == false) makes the public keyed client the bare concrete provider.
+        services.AddParleyAi(BothProvidersConfigured(), opts =>
+            opts.ConfigureOpenAiAimd = a => a.Enabled = false);
         using ServiceProvider provider = services.BuildServiceProvider();
 
-        // fn-4.4 registers NO AiChatClientDecorator → the public keyed client IS the bare concrete
-        // provider (no AIMD wrapping at this task).
         var bare = provider.GetRequiredKeyedService<OpenAiChatClient>(ProviderKeys.OpenAi);
         var publicClient = provider.GetRequiredKeyedService<IAiChatClient>(ProviderKeys.OpenAi);
         Assert.Same(bare, publicClient);

@@ -1,4 +1,5 @@
 using System;
+using ParleyAI.Abstractions.Options;
 using ParleyAI.Providers.Anthropic;
 using ParleyAI.Providers.OpenAi;
 
@@ -38,4 +39,20 @@ public sealed class ParleyAiOptions
     /// a full pipeline replacement). Applied to the default before the pipeline is built.
     /// </summary>
     public Action<ParleyAiResilienceOptions>? ConfigureAnthropicResilience { get; set; }
+
+    /// <summary>
+    /// Optional tuning of the OpenAI adaptive AIMD rate optimizer (step / factor / floor / ceiling /
+    /// per-category back-off, plus the hard <see cref="AimdOptions.Enabled"/> off switch). The
+    /// optimizer is ON by default; set <see cref="AimdOptions.Enabled"/> to <c>false</c> here to get a
+    /// bare OpenAI client (per-provider off switch). Applied to a fresh <see cref="AimdOptions"/> before
+    /// the controller is built.
+    /// </summary>
+    public Action<AimdOptions>? ConfigureOpenAiAimd { get; set; }
+
+    /// <summary>
+    /// Optional tuning of the Anthropic adaptive AIMD rate optimizer. Same semantics as
+    /// <see cref="ConfigureOpenAiAimd"/>, scoped to the Anthropic provider (independent per-provider
+    /// isolation — disabling one leaves the other decorated; a global-off is just both disabled).
+    /// </summary>
+    public Action<AimdOptions>? ConfigureAnthropicAimd { get; set; }
 }
