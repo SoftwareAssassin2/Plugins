@@ -28,7 +28,8 @@ Implement the **OpenAI** provider as a CONCRETE `IAiChatClient` over the officia
 - [ ] Tests cover both base-URL paths + validation + the mapping contract via named fixtures + a single-HTTP-attempt assertion + **a ctor-override precedence test (a ctor-supplied base URL/key beats a populated flat `OPENAI_*` config) via `AddOpenAiChatClient` / the concrete client** (the `AddParleyAi`-path precedence test lives in fn-4.4), in-process fakes only
 
 ## Done summary
-_(filled on completion)_
-
+Implemented the OpenAI provider for ParleyAI: OpenAiChatClient : IAiChatClient over the official OpenAI SDK (2.11.0) with a keyed singleton-safe HttpClient injected as the SDK pipeline Transport, OPENAI_BASE_URL via Endpoint (verbatim /v1, absolute-validated at construction) with SDK-default fallback, SDK-native retry disabled via ClientRetryPolicy(maxRetries: 0), a full error->ParleyAIErrorCategory mapping contract (+ RetryAfter), role mapping with the single-leading-System rule, transport-timeout-vs-cancellation disambiguation, and the AddOpenAiChatClient DI building block (keyed concrete client, explicit flat-config mapping with ctor-override precedence, lazy validation, exposed keyed IHttpClientBuilder for fn-4.4). 27 in-process-fake tests pass.
 ## Evidence
-_(filled on completion)_
+- Commits: 3eebaef, 128d905, 604b7623e10ec5f5973d255471384b8604e4642c
+- Tests: dotnet test src/ParleyAI.sln, dotnet pack src/ParleyAI/ParleyAI.csproj -c Release -o ./artifacts
+- PRs:
