@@ -356,6 +356,38 @@ check "config-drift gate passes on scaffolded config pair" "( cd \"$WORK/demo-ap
 DTMP="$(mktemp -d)"; jq '.systems[0].extra={}' "$WORK/demo-app/config.deploy.json" > "$DTMP/d.json"
 check "config-drift catches an extra empty {} node" "! ( cd \"$WORK/demo-app\" && bash .github/scripts/config-drift.sh config.json \"$DTMP/d.json\" >/dev/null 2>&1 )"
 rm -rf "$DTMP"
+
+# CI-based AI code review (fn-2 task .14, R31): BOTH host files ship with no
+# scaffold-time platform detection — GitHub Actions ai-review.yml (Codex/GPT PR
+# review) + a .gitlab-ci.yml ai-review job (GitLab Duo MR review). Both advisory /
+# non-fatal, secrets referenced via the host's store (never committed), and scoped
+# to PRs/MRs only. GitHub Actions / GitLab CI do not run here — these are
+# structural/validity assertions on the scaffolded output.
+AIR="$GHA/workflows/ai-review.yml"
+GLC="$WORK/demo-app/.gitlab-ci.yml"
+check "ai-review.yml present"                  "[[ -f \"$AIR\" ]]"
+check ".gitlab-ci.yml present"                 "[[ -f \"$GLC\" ]]"
+check "ai-review.yml valid YAML"               "python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' \"$AIR\""
+check ".gitlab-ci.yml valid YAML"              "python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' \"$GLC\""
+check "ai-review output token-free"            "! grep -rqE \"__SCAFFOLD_[A-Z0-9_]+__\" \"$AIR\" \"$GLC\""
+# GitHub: triggers on pull_request (PR-only, not push), runs a Codex/GPT review,
+# references a secret, posts feedback, and is non-fatal when the secret is absent.
+check "ai-review.yml triggers on pull_request only (no push:)" "grep -qE '^[[:space:]]*pull_request:' \"$AIR\" && ! grep -qE '^[[:space:]]*push:' \"$AIR\""
+check "ai-review.yml runs Codex/GPT reviewer"  "grep -q 'codex exec' \"$AIR\" && grep -q '@openai/codex@' \"$AIR\""
+check "ai-review.yml references OPENAI_API_KEY secret" "grep -qE 'secrets\\.OPENAI_API_KEY' \"$AIR\""
+check "ai-review.yml posts PR feedback"        "grep -q 'gh pr comment' \"$AIR\""
+check "ai-review.yml non-fatal on missing secret (warn + exit 0)" "grep -q 'is not configured' \"$AIR\" && grep -q 'have_secret' \"$AIR\""
+check "ai-review.yml pins action versions (no floating @vN-only refs)" "! grep -qE 'uses: .*@v[0-9]+\$' \"$AIR\""
+check "ai-review.yml least-privilege permissions" "grep -qE 'permissions:' \"$AIR\" && grep -qE 'contents: read' \"$AIR\""
+# GitLab: scoped to merge-request pipelines, runs GitLab Duo, non-fatal (allow_failure
+# + warn/exit-0), auth via CI variables (no committed secret).
+check ".gitlab-ci.yml scoped to merge-request pipelines" "grep -q 'CI_PIPELINE_SOURCE == \"merge_request_event\"' \"$GLC\""
+check ".gitlab-ci.yml runs GitLab Duo review"  "grep -q 'glab duo review' \"$GLC\""
+check ".gitlab-ci.yml non-fatal (allow_failure + warn/exit 0)" "grep -q 'allow_failure: true' \"$GLC\" && grep -q 'non-fatal' \"$GLC\""
+check ".gitlab-ci.yml pins image (no floating :latest)" "grep -qE 'image: .+:[^[:space:]]+' \"$GLC\" && ! grep -qE 'image: .+:latest' \"$GLC\""
+# Neither AI-review file may commit a raw secret value — auth is referenced only.
+check "ai-review files commit NO raw secret values" "! grep -rqE '(OPENAI_API_KEY|TOKEN|SECRET)[[:space:]]*[:=][[:space:]]*[A-Za-z0-9_-]{16,}' \"$AIR\" \"$GLC\""
+
 # The kcov-gate parses a kcov summary and fails below 100% line (schema-shaped test).
 GTMP="$(mktemp -d)"; mkdir -p "$GTMP/kcov-merged"
 printf '{"percent_covered":"100","covered_lines":10,"total_lines":10}' > "$GTMP/kcov-merged/coverage.json"

@@ -102,3 +102,19 @@ removal** — are in [`docs/local-llm.md`](docs/local-llm.md).
 ## Testing
 
 The project targets **100% line and branch coverage** (see [`docs/tdd.md`](docs/tdd.md)). CI runs the full .NET + Angular test suites with the coverage gate on every change.
+
+## CI-based AI code review
+
+The repo ships AI code review on pull/merge requests, **on by default**, for both hosts (no scaffold-time platform detection — the file for the other host is simply inert):
+
+| Host | File | Reviewer | Runs on |
+|---|---|---|---|
+| GitHub | [`.github/workflows/ai-review.yml`](.github/workflows/ai-review.yml) | Codex / GPT (pinned Codex CLI) | `pull_request` |
+| GitLab | [`.gitlab-ci.yml`](.gitlab-ci.yml) (`ai-review` job) | GitLab Duo | merge-request pipelines |
+
+Both reviewers are **advisory and non-fatal** — they post feedback but never block a merge. A fork PR or a project that hasn't configured the reviewer simply gets a warning and a green job.
+
+Auth is referenced via the host's secret store — **never committed**:
+
+- **GitHub:** set the repo secret **`OPENAI_API_KEY`** (the Codex/OpenAI token) under *Settings → Secrets and variables → Actions*. With no secret, the review is skipped (non-fatal). `GITHUB_TOKEN` (auto-provided) is used to post the PR comment.
+- **GitLab:** enable **GitLab Duo** for the project/group under *Settings → GitLab Duo*. If the review job needs an explicit token, add a masked CI/CD variable (e.g. **`GITLAB_DUO_REVIEW_ENABLED`**) under *Settings → CI/CD → Variables*. With Duo disabled, the job warns and passes (non-fatal).
