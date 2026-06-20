@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-19T16:18:37.672173Z",
+  "depends_on": [
+    "fn-6-init-project-in-place-gap-filling.2"
+  ],
+  "id": "fn-6-init-project-in-place-gap-filling.4",
+  "priority": null,
+  "spec": "fn-6-init-project-in-place-gap-filling",
+  "spec_path": ".flow/tasks/fn-6-init-project-in-place-gap-filling.4.md",
+  "status": "todo",
+  "title": "SKILL.md: in-place orchestration + interactive conflict loop + git phase",
+  "updated_at": "2026-06-19T16:25:29.944796Z"
+}
