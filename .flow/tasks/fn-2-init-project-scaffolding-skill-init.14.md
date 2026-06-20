@@ -37,7 +37,8 @@ Scaffold **CI-based AI code review on pull/merge requests**, on by default. Ship
 - [ ] `scaffold_test.sh` asserts both files land with the expected triggers + non-fatal posture; `shellcheck` clean where applicable
 
 ## Done summary
-_(filled on completion)_
-
+Scaffolded on-by-default CI-based AI code review for init-project's generated projects: a GitHub Actions `ai-review.yml` running a pinned Codex/GPT reviewer over each PR diff (authed via OPENAI_API_KEY secret, posts a PR comment, non-fatal when the secret is absent) and a `.gitlab-ci.yml` `ai-review` job running GitLab Duo on merge-request pipelines (allow_failure, auth via CI variables). Both files ship unconditionally with no scaffold-time platform detection, secret/CI-variable names documented in README.md, and 17 new scaffold_test.sh assertions covering triggers, reviewers, non-fatal posture, pinning, and no-committed-secrets.
 ## Evidence
-_(filled on completion)_
+- Commits: 40a7a9f4d6c42728d1ce3a88a91c6b3943144429
+- Tests: bash plugins/init-project/tests/scaffold_test.sh (353 passed, 0 failed), python3 yaml.safe_load on both new files, bash -n + shellcheck -S warning on scaffold_test.sh (clean in new block)
+- PRs:
