@@ -1,0 +1,17 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-15T08:11:53.503359Z",
+  "depends_on": [],
+  "id": "fn-4-parleyai-unified-openaianthropic-chat.7",
+  "impl": null,
+  "priority": null,
+  "review": null,
+  "spec": "fn-4-parleyai-unified-openaianthropic-chat",
+  "spec_path": ".flow/tasks/fn-4-parleyai-unified-openaianthropic-chat.7.md",
+  "status": "todo",
+  "sync": null,
+  "title": "net10.0 scaffold re-target (TFM + toolchain)",
+  "updated_at": "2026-06-15T11:47:17.462633Z"
+}

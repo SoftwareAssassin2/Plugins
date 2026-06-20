@@ -1,0 +1,17 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-15T11:07:51.621194Z",
+  "depends_on": [
+    "fn-4-parleyai-unified-openaianthropic-chat.5",
+    "fn-4-parleyai-unified-openaianthropic-chat.6"
+  ],
+  "id": "fn-4-parleyai-unified-openaianthropic-chat.8",
+  "priority": null,
+  "spec": "fn-4-parleyai-unified-openaianthropic-chat",
+  "spec_path": ".flow/tasks/fn-4-parleyai-unified-openaianthropic-chat.8.md",
+  "status": "todo",
+  "title": "NuGet publish CI + version-pin source + repo README",
+  "updated_at": "2026-06-15T11:59:34.066846Z"
+}
