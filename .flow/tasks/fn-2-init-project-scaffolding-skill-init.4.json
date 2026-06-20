@@ -11,7 +11,7 @@
   "priority": null,
   "spec": "fn-2-init-project-scaffolding-skill-init",
   "spec_path": ".flow/tasks/fn-2-init-project-scaffolding-skill-init.4.md",
-  "status": "todo",
+  "status": "done",
   "title": "Dev container template (devcontainer.json + setup.sh toolset + plugins)",
   "updated_at": "2026-06-14T01:31:52.802373Z"
 }

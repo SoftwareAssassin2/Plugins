@@ -13,7 +13,7 @@
   "priority": null,
   "spec": "fn-2-init-project-scaffolding-skill-init",
   "spec_path": ".flow/tasks/fn-2-init-project-scaffolding-skill-init.11.md",
-  "status": "todo",
+  "status": "done",
   "title": "EF Core migrations + RLS baseline + Keycloak-gated DB auth",
   "updated_at": "2026-06-14T00:35:43.256591Z"
 }
