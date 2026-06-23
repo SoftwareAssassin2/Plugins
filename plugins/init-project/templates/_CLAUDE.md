@@ -77,6 +77,15 @@ Strategic context — what we're building and why — is owned and maintained by
 
 Follow a **test-driven development** pattern (see `docs/tdd.md`). Design deep modules with narrow interfaces — *design the interface, then delegate the implementation* — and keep feedback loops short.
 
+Follow **YAGNI** ("You Aren't Gonna Need It"): build only what the task in front of you requires, and solve it with the least new code possible. Reuse beats writing — so before adding code, work down this ladder and stop at the first rung that applies:
+
+1. **Does it need to exist at all?** → If not, don't build it.
+2. **Does the standard library do it?** → Use it.
+3. **Is it a native platform feature?** → Use it.
+4. **Does an already-installed dependency do it?** → Use it.
+5. **Is it a one-liner?** → Write the one line.
+6. **None of the above?** → Write the minimum that works, and nothing more.
+
 ### Simplicity over complexity
 
 Complexity is the enemy. It accumulates incrementally — a special case here, a shortcut there — until the system is hard to change (software entropy). Actively fight it: prefer the simpler design even when it costs more up front, because complexity compounds (Ousterhout, *A Philosophy of Software Design*). When two designs both work, choose the one that hides the most complexity behind the cleanest interface.
