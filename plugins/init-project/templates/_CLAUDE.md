@@ -4,6 +4,10 @@ __SCAFFOLD_PROJECT_DESCRIPTION__
 
 This is a **mono-repo containing every component of the software system** — infrastructure, pipelines, applications, CLIs, services, and scripts all live here together.
 
+## Communication style
+
+- End every response with the current time on a 12-hour clock in **U.S. Eastern Time** (`America/New_York` — EST or EDT, whichever daylight saving is in effect), e.g. `4:13 PM ET`.
+
 ## The component ↔ folder ↔ config invariant
 
 Every component of the system obeys a 1:1 correspondence:
@@ -60,6 +64,7 @@ When adding a new standard:
 | `docs/local-llm.md` | Working with the opt-in local LLM mock stack — switching between the `ai` (real inference) and `ai-mock` (deterministic mock) profiles, choosing a model, editing the canned mock response, GPU/offline workflows, or removing the stack. |
 | `docs/front-end.md` | Building or changing an Angular SPA — routing, build profile, styling, testing. |
 | `docs/keycloak.md` | Touching authentication, the Keycloak realm, identity, or database session-context / row-level security. |
+| `docs/flownext.md` | **Every time** the `/flownext` plugin is used — especially `/flownext:work`. Defines how to operate autonomously while the user is away (gather all blockers up front, then drive the work to completion). |
 
 ## Business direction
 
