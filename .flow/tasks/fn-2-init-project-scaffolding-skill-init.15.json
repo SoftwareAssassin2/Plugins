@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-24T20:29:45.714770Z",
+  "depends_on": [
+    "fn-2-init-project-scaffolding-skill-init.13"
+  ],
+  "id": "fn-2-init-project-scaffolding-skill-init.15",
+  "priority": null,
+  "spec": "fn-2-init-project-scaffolding-skill-init",
+  "spec_path": ".flow/tasks/fn-2-init-project-scaffolding-skill-init.15.md",
+  "status": "todo",
+  "title": "Git phase: protect main on GitHub repo creation (no force-push/deletion)",
+  "updated_at": "2026-06-24T20:30:04.080106Z"
+}
