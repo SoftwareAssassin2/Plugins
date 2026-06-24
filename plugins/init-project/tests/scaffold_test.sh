@@ -701,12 +701,14 @@ check "settings.json statusLine preserved (coexist)" 'jq -e ".statusLine.command
 check "_CLAUDE.md links docs/collaboration.md"      'grep -q "docs/collaboration.md" "$APP/CLAUDE.md"'
 check "_CLAUDE.md links docs/team.md"               'grep -q "docs/team.md" "$APP/CLAUDE.md"'
 # The README caveat must actually warn private-repo-only AND no-secrets/PII, in a
-# collaboration context — not just any stray "private" elsewhere in the file. Require
-# all three signals: a collaboration mention, a keep-private signal, and a
-# secrets/PII/permanent-history warning.
-check "README carries the private-repo/PII caveat"  'grep -qi "collaborat" "$APP/README.md" && grep -qiE "private|keep this repo private" "$APP/README.md" && grep -qiE "secret|PII|sensitive|history permanently" "$APP/README.md"'
-check "todo.md cross-references collaboration/"      'grep -q "docs/collaboration" "$APP/docs/todo.md"'
-check "priorities.md cross-references collaboration/" 'grep -q "docs/collaboration" "$APP/docs/priorities.md"'
+# collaboration CONTEXT — not three signals scattered anywhere in the file. Pull the
+# collaboration-mentioning line(s) and assert THAT line carries both the keep-private
+# signal and the secrets/PII/permanent-history warning.
+check "README carries the private-repo/PII caveat (one collaboration line)" 'CAVEAT="$(grep -i "collaborat" "$APP/README.md")"; grep -qiE "private|keep this repo private" <<<"$CAVEAT" && grep -qiE "secret|PII|sensitive|history permanently" <<<"$CAVEAT"'
+# Three-surface cross-refs (R12) must point at the inbox DIRECTORY surface
+# `docs/collaboration/` (the teammate-handoff surface), not merely the protocol doc.
+check "todo.md cross-references the collaboration/ surface"      'grep -qF "docs/collaboration/" "$APP/docs/todo.md"'
+check "priorities.md cross-references the collaboration/ surface" 'grep -qF "docs/collaboration/" "$APP/docs/priorities.md"'
 
 # --- git-tracked verification (R15) — the scaffolded .gitignore applies in THIS plugin
 # repo too, so a new template can be silently dropped by `git add -A`. Assert each new
