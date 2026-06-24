@@ -48,7 +48,7 @@ Run these as **assistant-workflow steps from the scaffold parent directory** (th
 
 Ask up front (batch the prompts):
 - **Create a GitHub repo?** (default: no) — if yes, ask for the **repo name** (default: the project name).
-- **Auto-commit after setup?** (default: no) — when accepted, make the repo's user-opted initial commit. (A commit is not a no-op, so the safe default is to leave the scaffold uncommitted.)
+- **Auto-commit after setup?** (default: no) — when accepted, make the repo's user-opted initial commit. (A commit is not a no-op, so the safe default is to leave the scaffold uncommitted.) **Note:** creating a GitHub repo (above) *implies* this bootstrap commit **and** a push regardless of this answer — a repo needs a pushed `main` to exist and be protected (step 6); this prompt governs only the *no-repo* case (commit the scaffold locally with no remote).
 - **Run `/init` after setup?** (default: no).
 
 Then, in order:
@@ -57,12 +57,26 @@ Then, in order:
 2. **Status line** — the script + its `statusLine` entry already ship in the scaffolded `.claude/` (`templates/.claude/statusline.sh` + `.claude/settings.json`). It is active by virtue of being copied in; this phase only confirms it (`branch | model | % context`) and **must not rewrite `.claude/settings.json`** — the Stop hook (`hooks.Stop`) lives in the same file and must be left intact.
 3. **GitHub repo (optional, only if accepted):** `gh repo create <repo-name> --private --source ./<name>` (best-effort). If `gh` is **not installed / not authenticated**, print a clear non-fatal note ("`gh` unavailable — skipping repo creation; create it later with `gh repo create`") and continue. A declined repo is simply skipped.
 4. **`/init` (optional, only if accepted):** run `/init` **only when the host can guarantee it will not clobber the scaffolded `CLAUDE.md` / `.claude/`** without explicit confirmation. The scaffold already authored a complete `CLAUDE.md`, so if there's any risk `/init` overwrites it, **do not run it — print the exact command** (`/init`) for the user to run themselves and move on. Never silently clobber scaffolded files.
-5. **Initial commit (optional, only if "auto-commit" accepted):** stage everything and commit on `main`:
+5. **Initial commit + push (when auto-commit was accepted OR a repo was created):** a protected remote `main` requires at least one pushed commit, so **creating a repo implies this bootstrap commit + push regardless of the auto-commit answer** (the auto-commit prompt governs only the no-repo case). Stage everything and commit on `main`:
    ```bash
    git -C ./<name> add -A
    git -C ./<name> commit -m "chore: initial project scaffold"
    ```
-   This is the **deliberate bootstrap exception** to the scaffolded project's own git policy (its `CLAUDE.md` "Git and commits" forbids committing to `main` without explicit user instruction): the repo's *very first* commit is the user-opted bootstrap, made before any other branch exists. If a GitHub repo was created, `git -C ./<name> push -u origin main`.
+   This is the **deliberate bootstrap exception** to the scaffolded project's own git policy (its `CLAUDE.md` "Git and commits" forbids committing to `main` without explicit user instruction): the repo's *very first* commit is the user-opted bootstrap, made before any other branch exists. **If a GitHub repo was created, always** `git -C ./<name> push -u origin main` — this creates the remote `main` that step 6 protects.
+6. **Protect `main` (only if a repo was created AND `main` was pushed in step 5):** apply branch protection so `main` can't be force-pushed or deleted — matching the protections used on the marketplace repo. **Skip entirely** if no repo was created or `main` was never pushed (with no remote branch the API 404s). Best-effort:
+   ```bash
+   gh api --method PUT repos/{owner}/{repo}/branches/main/protection --input - <<'JSON'
+   {
+     "required_status_checks": null,
+     "enforce_admins": true,
+     "required_pull_request_reviews": null,
+     "restrictions": null,
+     "allow_force_pushes": false,
+     "allow_deletions": false
+   }
+   JSON
+   ```
+   This blocks **force-push** and **deletion** of `main` (and `enforce_admins: true` applies the rule to admins too), while leaving `required_pull_request_reviews`/`required_status_checks` **null** so ordinary direct commits/pushes to `main` — including the bootstrap commit above and the scaffolded project's documented commit-on-`main` policy — keep working. **Degrade gracefully (non-fatal):** a `403` is the expected outcome for a `--private` repo on a free GitHub plan (classic branch protection there needs Pro/Team/Enterprise) — print a clear note ("couldn't protect `main` — branch protection on a private repo needs a paid plan, or make the repo public; re-run the `gh api … /branches/main/protection` call later") and continue; the overall scaffold still reports success.
 
 This commit captures the scaffold (and any `/init` output) and **runs before** the terminal `/dick` hand-off, because `/dick` is persona-locked and may not return control. Committing `/dick`'s later doc edits is a **printed follow-up command**, never relied-on auto-continuation.
 
@@ -82,5 +96,5 @@ After the git phase + optional commit, offer to boot **`/dick`** (the business-a
 ## Notes
 - Deterministic stamping lives in `scaffold.sh` (tested, 100% coverage) — not in this prose.
 - The scaffolded project is a mono-repo: every component is `src/<component>/` with a matching `config.json` `systems[]` entry (tooling like `src/system-cli/` and `tests/` are documented exceptions).
-- **Ordering is single and unambiguous:** optional local-LLM opt-in prompt → scaffold → `git init` + status line → optional `/init` → optional **initial commit** → **terminal `/dick` hand-off LAST**.
+- **Ordering is single and unambiguous:** optional local-LLM opt-in prompt → scaffold → `git init` + status line → optional `/init` → **initial commit + push** (always when a repo was created; else only if auto-commit accepted) → **protect `main`** (whenever a repo was created) → **terminal `/dick` hand-off LAST**.
 - The local LLM mock stack lives under `etc/local-llm/` (internal dev tooling, like the observability stack) — it is opt-in, profile-gated, and removable; it is **not** a `systems[]` component.
