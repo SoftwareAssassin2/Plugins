@@ -4,7 +4,7 @@
 # Installs the script-only tools that don't ship as devcontainer features (the
 # features themselves — node, the cloud CLIs, gh, jq, docker-in-docker — are in
 # devcontainer.json). Then it best-effort enables the Claude Code marketplace +
-# the seven curated plugins. MCP servers are NOT installed here: they are declared
+# the nine curated plugins. MCP servers are NOT installed here: they are declared
 # build-time-complete in the committed .mcp.json (see docs/dev-container.md).
 #
 # Contract (docs/dev-container.md §2): this script is IDEMPOTENT and re-runnable.
@@ -180,14 +180,16 @@ install_codex_cli() {
 # a scaffolded project does not contain. All steps are non-fatal.
 
 MARKETPLACE_REMOTE="SoftwareAssassin2/Plugins"
-# The seven curated marketplace plugins (NOT init-project itself, NOT the two MCP
+# The nine curated marketplace plugins (NOT init-project itself, NOT the two MCP
 # servers — those are declared in .mcp.json). Names match .claude-plugin/marketplace.json.
 PLUGINS=(
   dick
-  grill-me
   handoff
   tdd
   ubiquitous-language
+  domain-modeling
+  grilling
+  grill-with-docs
   preferred-browser-automation-plugin
   preferred-ralph-loops-plugin
 )

@@ -31,12 +31,6 @@
       "source": "./plugins/ubiquitous-language"
     },
     {
-      "name": "grill-me",
-      "displayName": "Grill Me",
-      "description": "Fork of Matt Pocock's grill-me skill. Asks the user a series of questions to clarify their request and ensure the assistant's response is on target.",
-      "source": "./plugins/grill-me"
-    },
-    {
       "name": "handoff",
       "displayName": "Handoff",
       "description": "Fork of Matt Pocock's handoff skill. Facilitates handoffs between different assistants or tools, ensuring context is preserved and the user's request is fulfilled seamlessly.",
@@ -47,6 +41,24 @@
       "displayName": "Test-Driven Development (TDD)",
       "description": "Fork of Matt Pocock's tdd skill. Test-driven development with red-green-refactor loop.",
       "source": "./plugins/tdd"
+    },
+    {
+      "name": "domain-modeling",
+      "displayName": "Domain Modeling",
+      "description": "Fork of Matt Pocock's domain-modeling skill. Actively build and sharpen a project's domain model — challenge terms, pin down the ubiquitous language, and record architectural decisions (ADRs) as they crystallize.",
+      "source": "./plugins/domain-modeling"
+    },
+    {
+      "name": "grilling",
+      "displayName": "Grilling",
+      "description": "Fork of Matt Pocock's grilling skill. Interview the user relentlessly about a plan or design, one question at a time, to stress-test it before building.",
+      "source": "./plugins/grilling"
+    },
+    {
+      "name": "grill-with-docs",
+      "displayName": "Grill With Docs",
+      "description": "Fork of Matt Pocock's grill-with-docs skill. A relentless interview to sharpen a plan or design that also writes docs (ADRs + glossary) as it goes — composes /grilling with /domain-modeling.",
+      "source": "./plugins/grill-with-docs"
     },
     {
       "name": "dick",
