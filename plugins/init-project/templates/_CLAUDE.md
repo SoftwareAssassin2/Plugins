@@ -66,6 +66,8 @@ When adding a new standard:
 | `docs/keycloak.md` | Touching authentication, the Keycloak realm, identity, or database session-context / row-level security. |
 | `docs/flownext.md` | **Every time** the `/flownext` plugin is used — especially `/flownext:work`. Defines how to operate autonomously while the user is away (gather all blockers up front, then drive the work to completion). |
 | `docs/todo.md` | Recording or picking up engineering follow-ups — deferred fixes, open questions, things to investigate, tech debt. Check it when starting work; add to it whenever something is deferred. |
+| `docs/collaboration.md` | Handing off async work to a teammate, capturing "we need X's input" into their inbox, reading/writing a thread, or acting on the SessionStart collaboration surfacing — the git-mediated async collaboration protocol. |
+| `docs/team.md` | Identifying yourself, registering a teammate, or looking up who's who / the org chart (handle, git-email, reports-to) the collaboration protocol routes by. |
 
 ## Business direction
 
@@ -121,6 +123,11 @@ These are inline directives — they apply to every session, not just when a doc
 - **Check `docs/todo.md` when you start work**, and tick off or remove items as you finish them.
 - This is *technical* follow-up tracking — keep it distinct from `docs/priorities.md` (business scope/roadmap, owned by `/dick`).
 
+### Async collaboration
+- When the user wants another teammate's input ("we need X's input", "get X's take on this", "ask X about…"), recognize the intent: capture the question — **with liberal context** so the assignee can dig in — into that teammate's inbox per the protocol, rather than letting it stay in chat.
+- **Check your own inbox at session start** and act on anything where it's your turn (the SessionStart hook surfaces these).
+- Follow the full protocol — identity, threads, turns, status, the round-trip, and the private-repo/PII caveat — in [`docs/collaboration.md`](docs/collaboration.md). Don't restate it here.
+
 ## Business-consult sub-agent (before non-trivial work)
 
 Before starting any non-trivial piece of work, **consult the business direction** so the work is aligned with what the project is actually trying to achieve:
@@ -141,6 +148,7 @@ Before starting any non-trivial piece of work, **consult the business direction*
 
 - **`CLAUDE.md` (this file)** — a thin, always-on index: root layout, the Standards index, and the inline working agreements above. Depth lives in `docs/` and is pulled in on demand. Kept current via the auto-update reminder (below).
 - **`README.md`** — human-facing onboarding (what the project is, dev-container quickstart, how to run things). Distinct from this agent-facing file.
+- **`docs/collaboration.md` + `docs/team.md`** — the git-mediated async collaboration protocol and the team registry / org chart; per-teammate thread inboxes live under `docs/collaboration/`. One of three non-overlapping note-surfaces (teammate handoffs here, my engineering loose ends in `docs/todo.md`, business roadmap in `docs/priorities.md`).
 - **Sub-agent convention** — delegate read-heavy exploration, research, and independently-parallelizable work to sub-agents. Use them to keep the main thread's context focused on the task, not on raw file-reading.
 
 ## Keeping the docs current (auto-update reminder)

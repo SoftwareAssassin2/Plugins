@@ -40,7 +40,8 @@ Author the **protocol standard** that is the contract for the whole feature: `do
 - [ ] Authored in the existing standards-doc style; H&G-free; no `__SCAFFOLD_` literal; all three files git-tracked in the plugin repo
 
 ## Done summary
-_(filled on completion)_
-
+Authored the async-collaboration protocol standard for /init-project: docs/collaboration.md (full git-mediated model — user.email identity + confirm-before-attribute, team.md schema, append-only thread/turn model with per-thread monotonic counter, only-asker-resolves status machine with multi-round push-back, the "get X's input" trigger + round-trip, three-surface boundary, private-repo/PII caveat), a build-time-complete docs/team.md registry stub (fixed hook-parseable table + placeholder row), and docs/collaboration/.gitkeep seeding the inbox dir. All three files git-tracked, no __SCAFFOLD_ literal; codex review SHIP after fixing a slug-collision example that contradicted the documented whole-email slug algorithm.
 ## Evidence
-_(filled on completion)_
+- Commits: 82d3e813f1549fd9cae8614e2506cd3da9856b5a, 7445b778329f9a9a4f829ff4c95108712ffb6baf
+- Tests: grep -r __SCAFFOLD_ (clean), git ls-files --error-unmatch (all 3 tracked), team.md table: 1 data row x 5 cols, codex impl-review: SHIP
+- PRs:
