@@ -665,7 +665,11 @@ rm -rf "$JD2" "$JQLESS"
 # against fixtures with an isolated git identity to prove R8/R10 routing + JSON output.
 # =====================================================================================
 echo "== async collaboration (fn-7) =="
-APP="$WORK/demo-app"
+# Structural assertions must prove the feature lands in a FRESH scaffold (R14). The
+# shared "$WORK/demo-app" has already been through --update / --replace-config passes
+# above, so scaffold a dedicated pristine project here and assert against THAT.
+run collab-app "A collaboration demo" >/dev/null
+APP="$WORK/collab-app"
 
 # --- Structural: new template files land in a fresh scaffold (R14/R15) ---------------
 check "docs/collaboration.md present"             '[[ -f "$APP/docs/collaboration.md" ]]'
@@ -696,7 +700,11 @@ check "settings.json statusLine preserved (coexist)" 'jq -e ".statusLine.command
 # --- Structural: thin wiring + three-surface cross-refs (R11/R12/R13) ----------------
 check "_CLAUDE.md links docs/collaboration.md"      'grep -q "docs/collaboration.md" "$APP/CLAUDE.md"'
 check "_CLAUDE.md links docs/team.md"               'grep -q "docs/team.md" "$APP/CLAUDE.md"'
-check "README carries the private-repo/PII caveat"  'grep -qiE "private|PII|history permanently|never put secrets" "$APP/README.md" && grep -qi "collaborat" "$APP/README.md"'
+# The README caveat must actually warn private-repo-only AND no-secrets/PII, in a
+# collaboration context — not just any stray "private" elsewhere in the file. Require
+# all three signals: a collaboration mention, a keep-private signal, and a
+# secrets/PII/permanent-history warning.
+check "README carries the private-repo/PII caveat"  'grep -qi "collaborat" "$APP/README.md" && grep -qiE "private|keep this repo private" "$APP/README.md" && grep -qiE "secret|PII|sensitive|history permanently" "$APP/README.md"'
 check "todo.md cross-references collaboration/"      'grep -q "docs/collaboration" "$APP/docs/todo.md"'
 check "priorities.md cross-references collaboration/" 'grep -q "docs/collaboration" "$APP/docs/priorities.md"'
 
@@ -855,6 +863,11 @@ check "no-collab-dir: exit 0"                        '[[ $rc_d -eq 0 ]]'
 git -C "$CB" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; up_rc=$?
 check "no-upstream fixture really has no @{u}"       '[[ $up_rc -ne 0 ]]'
 check "no-upstream: hook still emits valid JSON (no @{u} error)" 'jq -e ".hookSpecificOutput.hookEventName==\"SessionStart\"" <<<"$OUT_C" >/dev/null'
+# stdout JSON alone can't catch an UNGUARDED @{u} probe: git prints
+# `fatal: no upstream ... '@{u}'` to STDERR while the hook still emits JSON. Re-run
+# the no-upstream fixture capturing stderr and assert it carries no @{u}/fatal noise.
+UP_ERR="$(bash "$CB/.claude/hooks/collaboration-inbox.sh" </dev/null 2>&1 >/dev/null)"
+check "no-upstream: hook stderr is clean (guarded @{u})" '! grep -qiE "@\{u\}|fatal:|no upstream|unknown revision" <<<"$UP_ERR"'
 
 rm -rf "$COLLAB_HOME" "$CB" "$CU" "$CN" "$CE" "$CD"
 
