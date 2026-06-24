@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-24T14:04:43.644126Z",
+  "depends_on": [
+    "fn-7-async-team-collaboration-for-init.1"
+  ],
+  "id": "fn-7-async-team-collaboration-for-init.2",
+  "priority": null,
+  "spec": "fn-7-async-team-collaboration-for-init",
+  "spec_path": ".flow/tasks/fn-7-async-team-collaboration-for-init.2.md",
+  "status": "todo",
+  "title": "SessionStart hook: git-identity resolution + read-only inbox surfacing + settings.json wiring",
+  "updated_at": "2026-06-24T14:05:34.843233Z"
+}
