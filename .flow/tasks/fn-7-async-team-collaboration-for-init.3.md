@@ -37,7 +37,8 @@ Wire the feature into the always-on docs with **thin pointers only** (the protoc
 - [ ] No protocol detail duplicated into `_CLAUDE.md`; no `__SCAFFOLD_` literal
 
 ## Done summary
-_(filled on completion)_
-
+Thin-wired the async collaboration feature into the always-on init-project templates (R7/R11/R12/R13): _CLAUDE.md Standards-index rows for docs/collaboration.md + docs/team.md, a pointer-only `### Async collaboration` working agreement, and the doc-inventory line; README.md mention with the private-repo/PII caveat; docs/dev-container.md SessionStart-hook-location + per-user git-identity note; and one-line three-surface boundary cross-refs in docs/todo.md and docs/priorities.md. No protocol detail duplicated into _CLAUDE.md; no __SCAFFOLD_ literal introduced.
 ## Evidence
-_(filled on completion)_
+- Commits: 9ea896222c9b2079112ae6ad15142b3ba8400270
+- Tests: codex impl-review (SHIP, 0 findings), grep structural verification of all 5 target files
+- PRs:
