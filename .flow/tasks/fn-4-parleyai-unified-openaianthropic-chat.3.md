@@ -28,7 +28,8 @@ Implement the **Anthropic** provider as a CONCRETE `IAiChatClient` over `Anthrop
 - [ ] Tests cover both base-URL paths + path-rejection + validation + the mapping contract via named fixtures + the single-HTTP-attempt assertion + **a ctor-override precedence test (a ctor-supplied base URL/key beats a populated flat `ANTHROPIC_*` config) via `AddAnthropicChatClient` / the concrete client** (the `AddParleyAi`-path precedence test lives in fn-4.4), in-process fakes only
 
 ## Done summary
-_(filled on completion)_
-
+Implemented the Anthropic provider for ParleyAI: AnthropicChatClient : IAiChatClient over Anthropic.SDK 5.10.0 with an origin-rewrite DelegatingHandler (ANTHROPIC_BASE_URL root-only override; SDK default when absent), the keyed singleton-safe HttpClient + AddAnthropicChatClient DI building block (explicit flat-key mapping, ctor-override precedence, lazy validation, exposed keyed IHttpClientBuilder for fn-4.4), System->top-level-system role mapping with the single-leading-System rule, the full error->ParleyAIErrorCategory mapping contract (429 token vs request, 401, 400, 529/5xx, RetryAfter, non-standard 529 preserved) sourced from handler-captured response detail, multi-text-block response aggregation, transport-timeout-vs-cancellation disambiguation, and proof that Anthropic.SDK ships no native retry layer (single-attempt). 38 new Anthropic tests (65 total green). Codex review reached SHIP.
 ## Evidence
-_(filled on completion)_
+- Commits: 15f6da3, bed6fe3, 7de8d41, 32c5f8e, 9f0e38a, 9d5f407
+- Tests: dotnet test src/ParleyAI.sln, dotnet pack src/ParleyAI/ParleyAI.csproj -c Release -o ./artifacts
+- PRs:

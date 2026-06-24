@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Api</RootNamespace>
@@ -10,11 +10,27 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Keycloak JWT bearer validation (OIDC). Major == TFM major (.NET 9). -->
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
-    <!-- EF Core DI registration for the runtime `api`-role DbContext. Version
-         matches the EF Core the Npgsql provider (9.0.4) pulls in transitively. -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.4" />
+    <!-- Keycloak JWT bearer validation (OIDC). Major == TFM major (.NET 10). -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.4" />
+    <!-- EF Core DI registration for the runtime `api`-role DbContext. Shares the
+         platform major.minor (10.0) with the rest of the Microsoft-owned stack. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ParleyAI: the unified OpenAI/Anthropic chat client. The version is pinned
+         ONCE for the whole scaffold in Directory.Build.props ($(LlmWrapperVersion)) —
+         NOT here and NOT via Central Package Management — so a release tag and the
+         referenced version can never drift. AddParleyAi reads the four flat LLM env
+         vars (OPENAI_*/ANTHROPIC_*) that `system.sh build-config` already emits into
+         src/Api/.env, so there is no caller glue. -->
+    <PackageReference Include="ParleyAI" Version="$(LlmWrapperVersion)" />
+    <!-- OpenTelemetry: register ParleyAI's ActivitySource + Meter and export them.
+         ParleyAI itself takes NO OTLP-exporter dependency — wiring the exporter is the
+         consuming application's job (here). Pinned inline (not on the 10.0 platform
+         major.minor — these track the OpenTelemetry SDK release line, 1.x). -->
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
   </ItemGroup>
 
   <ItemGroup>

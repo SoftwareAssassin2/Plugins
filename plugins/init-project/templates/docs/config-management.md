@@ -231,6 +231,20 @@ LLM mock) values:** `claude-api.base_url=http://127.0.0.1:4000`,
 `openai-api.base_url=http://127.0.0.1:4000/v1`, keys `sk-local-mock` — repointed by the
 scaffold opt-in engine (the four env-var names are unchanged so app code never moves).
 
+**LLM-env consumer — `ParleyAI`.** The four flat env vars above are consumed in the
+`Api` by **[`ParleyAI`](https://www.nuget.org/packages/ParleyAI)**, the unified
+OpenAI/Anthropic chat client the scaffold references (`<PackageReference Include="ParleyAI"
+Version="$(LlmWrapperVersion)" />`, pinned in `Directory.Build.props`). `Program.cs`
+calls `AddParleyAi(builder.Configuration)`, which reads `OPENAI_*` / `ANTHROPIC_*`
+straight off `IConfiguration` (no section binding, no caller glue) and registers each
+provider as a **keyed** `IAiChatClient` (`"openai"` / `"anthropic"`) — there is **no
+unkeyed default**, so app code names the provider explicitly (and may use both at once).
+Because ParleyAI reads the *same* env-var names regardless of where they point, the
+local-LLM-mock repoint above moves the app onto the gateway with **zero** code change.
+`ParleyAI` is the consumer of these env vars — it is **not** a `services{}` entry or a
+`systems[]` component (it is a NuGet dependency of the `Api`, not an external service the
+system connects to or a component under `src/`), so it adds no row to the config schema.
+
 **`base_url` validation.** Each `base_url` is validated against an
 **injection-resistant** grammar — a restrictive host character class
 (`[A-Za-z0-9.-]+`, which rejects `?#@[]:` and other non-host characters in the host

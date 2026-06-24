@@ -23,6 +23,8 @@ You can develop without the dev container, but you'll need to install the toolch
 - `systems[]` — one entry per component under `src/`, including the `postgres` database and `keycloak` identity provider.
 - `services{}` — external dependencies the system connects to (their credentials start as `REPLACE_ME` — fill them in locally). Two are always present: `claude-api` (Anthropic-compatible) and `openai-api` (OpenAI-compatible). When scaffolded with `--local-llm`, the opt-in local LLM mock stack (see below) backs these in local dev.
 
+The `Api` ships a pre-wired **[`ParleyAI`](https://www.nuget.org/packages/ParleyAI)** client (a unified OpenAI/Anthropic chat client, net10) that consumes those `claude-api`/`openai-api` env vars with no caller glue — both providers register as keyed clients (`"openai"` / `"anthropic"`, no default) and emit OpenTelemetry GenAI traces/metrics to the local OTel Collector. See [`docs/config-management.md`](docs/config-management.md) §4.
+
 Generated local-dev secrets (Postgres role passwords, Keycloak admin) are created at scaffold time and committed for single-operator local dev — they are **not** production secrets. Real secrets enter only via `config.deploy.json` (`{{VAR-NAME}}` placeholders the CI/CD pipeline renders at deploy). See [`docs/config-management.md`](docs/config-management.md).
 
 To distribute config into per-component `.env` files (and stamp the runtime Keycloak realm file):

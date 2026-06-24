@@ -123,6 +123,58 @@ check ".config/dotnet-tools.json pins dotnet-ef" 'jq -e ".tools.\"dotnet-ef\".ve
 check "SampleApp marked removable"          'grep -qi "REMOVABLE" "$WORK/demo-app/src/SampleApp/SampleApp.csproj"'
 check ".NET output token-free"              '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$WORK/demo-app/src" "$WORK/demo-app/tests" "$WORK/demo-app/.config"'
 
+# TFM + version-hygiene (fn-4 net10 re-target, R13): every generated .csproj must
+# target net10.0; no PackageReference may use a floating/range version (wildcards,
+# ranges, or open intervals); and every pinned platform package must share the
+# 10.0 major.minor so the toolchain stays one consistent version set.
+for c in \
+  src/Framework/Framework.csproj src/DataAccess/DataAccess.csproj \
+  src/BusinessLogic/BusinessLogic.csproj src/Api/Api.csproj src/SampleApp/SampleApp.csproj \
+  tests/Framework.Tests/Framework.Tests.csproj tests/DataAccess.Tests/DataAccess.Tests.csproj \
+  tests/BusinessLogic.Tests/BusinessLogic.Tests.csproj tests/Api.Tests/Api.Tests.csproj ; do
+  check "$c targets net10.0"               "grep -q '<TargetFramework>net10.0</TargetFramework>' \"\$WORK/demo-app/$c\""
+  check "$c has no net9 TFM"               "! grep -q 'net9.0' \"\$WORK/demo-app/$c\""
+  # No floating/range versions: reject wildcards (*), ranges/intervals ([ ] ( )),
+  # and comma-separated bounds anywhere in a Version= attribute. An MSBuild property
+  # reference (Version="$(LlmWrapperVersion)") is a single concrete pin (resolved from
+  # Directory.Build.props, asserted == the release tag by the publish workflow), NOT a
+  # floating version — exclude that exact form before applying the floating-syntax gate.
+  check "$c uses exact (non-floating) PackageReference versions" "! grep -E 'Version=\"[^\"]*[][()*,]' \"\$WORK/demo-app/$c\" | grep -qv 'Version=\"[\$][(][A-Za-z]*[)]\"'"
+done
+# Consistent platform major.minor: every Microsoft.* / Npgsql EF PackageReference
+# version starts with 10.0; the Microsoft-owned stack shares one exact patch.
+check "platform packages share 10.0 major.minor" '( for c in src/Api/Api.csproj src/DataAccess/DataAccess.csproj; do vers="$(grep -oE "Include=\"(Microsoft\.(AspNetCore|EntityFrameworkCore)[^\"]*|Npgsql[^\"]*)\" Version=\"[^\"]+\"" "$WORK/demo-app/$c" | grep -oE "Version=\"[^\"]+\"")"; [[ -z "$vers" ]] && exit 1; printf "%s\n" "$vers" | grep -qvE "Version=\"10\.0\." && exit 1; done; exit 0 )'
+check "Microsoft-owned stack shares one exact 10.0.x patch" '[[ "$(grep -hoE "Include=\"Microsoft\.(AspNetCore\.Authentication\.JwtBearer|EntityFrameworkCore(\.Design)?)\" Version=\"[^\"]+\"" "$WORK/demo-app/src/Api/Api.csproj" "$WORK/demo-app/src/DataAccess/DataAccess.csproj" | grep -oE "10\.0\.[0-9]+" | sort -u | wc -l | tr -d " ")" == "1" ]]'
+check ".config/dotnet-tools.json dotnet-ef pinned to 10.0" 'jq -e ".tools.\"dotnet-ef\".version | startswith(\"10.0\")" "$WORK/demo-app/.config/dotnet-tools.json" >/dev/null'
+check "no stale net9 / .NET 9 strings in .NET output" '! grep -rqE "net9\.0|\.NET 9" "$WORK/demo-app/src" "$WORK/demo-app/tests" "$WORK/demo-app/.config" "$WORK/demo-app/.devcontainer/devcontainer.json"'
+
+# ParleyAI integration (fn-4 task .9, R6/R8): the scaffolded Api references the
+# published ParleyAI package via the scoped $(LlmWrapperVersion) property (pinned ONCE
+# in Directory.Build.props — NOT CPM), pulls the OpenTelemetry package refs, registers
+# the no-glue keyed DI (AddParleyAi — NO unkeyed default), and registers the ParleyAI
+# ActivitySource on tracing + Meter on metrics with an OTLP exporter on BOTH signals
+# (via the public ParleyAiTelemetry constants, never hardcoded literals). STATIC
+# assertions only — the LIVE published restore+build is fn-4.10's CI job (needs the
+# real package on nuget.org); these never restore.
+APICSPROJ="$WORK/demo-app/src/Api/Api.csproj"
+APIPROG="$WORK/demo-app/src/Api/Program.cs"
+check "Directory.Build.props pins \$(LlmWrapperVersion)" 'grep -qE "<LlmWrapperVersion>[0-9]" "$WORK/demo-app/Directory.Build.props"'
+check "Api.csproj references ParleyAI via \$(LlmWrapperVersion)" 'grep -qE "<PackageReference Include=\"ParleyAI\" Version=\"\\\$\(LlmWrapperVersion\)\"" "$APICSPROJ"'
+check "Api.csproj does NOT hardcode a ParleyAI version" '! grep -qE "Include=\"ParleyAI\" Version=\"[0-9]" "$APICSPROJ"'
+check "Api.csproj pulls OTel hosting + OTLP exporter pkg refs" 'grep -q "OpenTelemetry.Extensions.Hosting" "$APICSPROJ" && grep -q "OpenTelemetry.Exporter.OpenTelemetryProtocol" "$APICSPROJ"'
+check "Api.csproj OTel pkg refs pinned exactly (no floating)" '! grep -E "Include=\"OpenTelemetry[^\"]*\"" "$APICSPROJ" | grep -qE "Version=\"[^\"]*[][()*,]"'
+check "Program.cs registers AddParleyAi (no-glue keyed DI)" 'grep -q "AddParleyAi" "$APIPROG"'
+check "Program.cs registers AddOpenTelemetry" 'grep -q "AddOpenTelemetry" "$APIPROG"'
+check "Program.cs adds the ParleyAI ActivitySource on tracing" 'grep -q "AddSource(ParleyAiTelemetry.ActivitySourceName)" "$APIPROG"'
+check "Program.cs adds the ParleyAI Meter on metrics" 'grep -q "AddMeter(ParleyAiTelemetry.MeterName)" "$APIPROG"'
+check "Program.cs registers an OTLP exporter on BOTH signals" '[[ "$(grep -c "AddOtlpExporter()" "$APIPROG")" -ge 2 ]]'
+check "Program.cs telemetry uses public constants, NOT literals" '! grep -qE "AddSource\(\"ParleyAI\"\)|AddMeter\(\"ParleyAI\"\)" "$APIPROG"'
+check "Program.cs OTLP exporter sets NO explicit endpoint (SDK default loopback)" '! grep -qE "OTEL_EXPORTER_OTLP_ENDPOINT[[:space:]]*=|otel-collector:4317" <<<"$(grep -A1 "AddOtlpExporter()" "$APIPROG" | grep -v "^--")"'
+check "Api.csproj targets net10.0 (ParleyAI is net10-only)" 'grep -q "<TargetFramework>net10.0</TargetFramework>" "$APICSPROJ"'
+# build-config / config.json services model is fn-3's — this task does NOT add an
+# openai/anthropic systems[]-or-services entry, and does NOT touch build-config.sh.
+check ".9 does NOT add a ParleyAI/openai/anthropic config.json service entry" '! jq -e "(.services | keys) as \$k | (\$k | index(\"parleyai\")) or (\$k | index(\"anthropic-api\")) or (\$k | index(\"openai\"))" "$WORK/demo-app/config.json" >/dev/null 2>&1'
+
 # EF migrations + RLS baseline + Keycloak-gated DB auth (fn-2 task .11). The initial
 # EF migration (code-first) ships in DataAccess with the owner-wrapped RLS baseline;
 # the per-table RLS policy template + session-context unit-of-work live in DataAccess;
@@ -332,7 +384,7 @@ check ".github output token-free"              "! grep -rqE \"__SCAFFOLD_[A-Z0-9
 # and the generated shell suite under kcov — each must name a target that EXISTS.
 check "ci.yml builds the real .sln"            "grep -q 'src/system.sln' \"$GHA/workflows/ci.yml\" && [[ -f \"$WORK/demo-app/src/system.sln\" ]]"
 check "ci.yml runs the coverlet 100 line+branch gate" "grep -q 'ThresholdType=line,branch' \"$GHA/workflows/ci.yml\" && grep -q '/p:Threshold=100' \"$GHA/workflows/ci.yml\""
-check "ci.yml pins .NET SDK 9 (net9.0 native, no SDK-10 rollforward)" "grep -qE 'dotnet-version: *\"?9' \"$GHA/workflows/ci.yml\""
+check "ci.yml pins .NET SDK 10 (net10.0 native)" "grep -qE 'dotnet-version: *\"?10\\.0' \"$GHA/workflows/ci.yml\""
 check "ci.yml runs real npm scripts (build/lint/format/coverage)" "grep -q 'npm run build' \"$GHA/workflows/ci.yml\" && grep -q 'npm run lint' \"$GHA/workflows/ci.yml\" && grep -q 'npm run format:check' \"$GHA/workflows/ci.yml\" && grep -q 'npm run test:coverage' \"$GHA/workflows/ci.yml\""
 check "ci.yml verifies static SSG dist/<app>/browser/index.html" "grep -q 'dist/\$app/browser/index.html' \"$GHA/workflows/ci.yml\""
 check "ci.yml runs the generated shell suite via tests/coverage.sh --require-kcov" "grep -q 'tests/coverage.sh --require-kcov' \"$GHA/workflows/ci.yml\" && [[ -x \"$WORK/demo-app/tests/coverage.sh\" ]]"
@@ -417,7 +469,7 @@ check ".devcontainer/devcontainer.json present" "[[ -f \"$DCJ\" ]]"
 check ".devcontainer/setup.sh present + executable" "[[ -x \"$WORK/demo-app/.devcontainer/setup.sh\" ]]"
 check ".mcp.json present" '[[ -f "$WORK/demo-app/.mcp.json" ]]'
 check "devcontainer.json valid JSONC (parses after comment strip)" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e . >/dev/null"
-check "devcontainer base image is dotnet:1-9.0" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.image==\"mcr.microsoft.com/devcontainers/dotnet:1-9.0\"' >/dev/null"
+check "devcontainer base image is dotnet:1-10.0" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.image==\"mcr.microsoft.com/devcontainers/dotnet:1-10.0\"' >/dev/null"
 # Pinned features: node + the official cloud CLIs + community gcloud (:1.0.1) + jq + docker-in-docker.
 check "devcontainer pins node:2 feature"   "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.features | has(\"ghcr.io/devcontainers/features/node:2\")' >/dev/null"
 check "devcontainer pins aws/azure/github CLI features" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.features | has(\"ghcr.io/devcontainers/features/aws-cli:1\") and has(\"ghcr.io/devcontainers/features/azure-cli:1\") and has(\"ghcr.io/devcontainers/features/github-cli:1\")' >/dev/null"

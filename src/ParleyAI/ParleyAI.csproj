@@ -1,0 +1,86 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Latest LTS. The whole epic (and the re-targeted scaffold, R13) is net10.0. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ParleyAI</RootNamespace>
+    <AssemblyName>ParleyAI</AssemblyName>
+    <!-- Public API package: warn on undocumented public members so the contract surface stays documented. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- The test project exercises internal seams (settings resolution, the internal client ctor). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="ParleyAI.Tests" />
+  </ItemGroup>
+
+  <!-- Package identity + metadata (R1). -->
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>ParleyAI</PackageId>
+    <Authors>SoftwareAssassin</Authors>
+    <Company>SoftwareAssassin</Company>
+    <Copyright>Copyright (c) 2026 SoftwareAssassin</Copyright>
+    <Description>Unified, provider-agnostic non-streaming chat client over the OpenAI and Anthropic APIs, with keyed DI, OpenTelemetry GenAI telemetry, and an adaptive AIMD rate optimizer.</Description>
+    <PackageTags>openai;anthropic;llm;ai;chat;opentelemetry</PackageTags>
+    <!-- SPDX expression. NOT PackageLicenseFile — the two are mutually exclusive.
+         Packing a LICENSE/NOTICE content file ALONGSIDE the expression is allowed. -->
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <!-- Repository + SourceLink + deterministic build (R1). SourceLink for GitHub
+       ships in the .NET 10 SDK; PublishRepositoryUrl + EmbedUntrackedSources turn it on. -->
+  <PropertyGroup>
+    <RepositoryUrl>https://github.com/SoftwareAssassin2/Plugins.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <Deterministic>true</Deterministic>
+    <!-- CI-only: the build host sets ContinuousIntegrationBuild=true (R1). -->
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <!-- Symbol package as .snupkg (R1). -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <!-- Provider SDK dependencies — a single package carries both; consumers receive
+       them transitively (R2). -->
+  <ItemGroup>
+    <PackageReference Include="OpenAI" Version="2.11.0" />
+    <!-- Pinned for the Anthropic provider (fn-4.3). Audited: Anthropic.SDK 5.10.0 ships NO
+         retry/resilience layer by default (its RetryInterceptor is an opt-in Examples type, never
+         wired), so the provider's single-HTTP-attempt contract holds without an off-switch and the
+         standard resilience handler (fn-4.4) remains the sole retry authority. -->
+    <PackageReference Include="Anthropic.SDK" Version="5.10.0" />
+    <!-- DI building blocks: keyed registration, IHttpClientFactory (named, singleton-safe
+         client + IHttpClientBuilder exposure), flat IConfiguration mapping, opt-in
+         IHostedService startup validation. Pinned to the net10.0 LTS line. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.3" />
+    <!-- Standard HTTP resilience (timeout + retry pipeline, fn-4.4). The single HTTP retry
+         authority: attached EXACTLY ONCE per provider to the .2/.3-exposed IHttpClientBuilder.
+         Pinned to the net10.0 GA line. -->
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.3" />
+    <!-- Adaptive AIMD rate optimizer (fn-4.5). System.Threading.RateLimiting is NOT in the base
+         Microsoft.NETCore.App shared framework (it ships in the ASP.NET Core shared framework, which a
+         plain Microsoft.NET.Sdk library does not reference) and otherwise arrives only TRANSITIVELY via
+         Polly.RateLimiting — so it is PINNED explicitly here per the dependency-hygiene rule (never
+         relied on transitively). Pinned to the net10.0 GA line. -->
+    <PackageReference Include="System.Threading.RateLimiting" Version="10.0.0" />
+  </ItemGroup>
+
+  <!-- Pack LICENSE + NOTICE + README at the nupkg ROOT (PackagePath="") — NOT under
+       contentFiles/. LICENSE/NOTICE live at the repo root (two dirs up); README sits
+       beside this csproj. (R1/R9) -->
+  <ItemGroup>
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="" />
+    <None Include="..\..\NOTICE" Pack="true" PackagePath="" />
+    <None Include="README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+</Project>

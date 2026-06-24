@@ -1,10 +1,10 @@
 {
   // Dev container for __SCAFFOLD_PROJECT_NAME__. This file is the single home for
   // every development dependency (see docs/dev-container.md). The base image ships
-  // the .NET 9 SDK; `features` add pre-built CLIs/runtimes; everything else is
+  // the .NET 10 SDK; `features` add pre-built CLIs/runtimes; everything else is
   // installed (best-effort) by setup.sh on first create.
   "name": "__SCAFFOLD_PROJECT_NAME__",
-  "image": "mcr.microsoft.com/devcontainers/dotnet:1-9.0",
+  "image": "mcr.microsoft.com/devcontainers/dotnet:1-10.0",
 
   // Pre-built features. Pinned to a major (the resolved digests are captured in
   // the committed lockfile that `devcontainer build` writes). Node provides the

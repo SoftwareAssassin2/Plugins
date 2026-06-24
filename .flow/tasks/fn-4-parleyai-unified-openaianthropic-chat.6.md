@@ -28,7 +28,8 @@ Instrument both providers with OpenTelemetry GenAI telemetry on a named `Activit
 - [ ] Pinned semconv version + `gen_ai.*` constants in ONE source; `ActivitySource`/`Meter` names documented for .9
 
 ## Done summary
-_(filled on completion)_
-
+Instrumented both ParleyAI provider clients (OpenAI + Anthropic) with OpenTelemetry GenAI telemetry inside the clients (not a decorator): a named ActivitySource + Meter ("ParleyAI"), gen_ai.* chat spans, and the two pinned histograms gen_ai.client.operation.duration (s) + gen_ai.client.token.usage ({token}, gen_ai.token.type). Message-content capture is gated by ParleyAiTelemetryOptions.CaptureMessageContent (default OFF), threaded through AddParleyAi + the per-provider DI helpers (preserved as binary-compatible overloads); semconv version + all gen_ai.* names live in one constants source. ParleyAI takes no OTLP-exporter dependency (that is .9). 9 new tests via an in-process ActivityListener/MeterListener collector assert exact instrument names/units, span attrs for both providers, content-capture default-off + opt-in, error.type, and the documented source/meter names. Full suite: 117 passing.
 ## Evidence
-_(filled on completion)_
+- Commits: 24fd441, 9e6777f, e598304
+- Tests: dotnet test src/ParleyAI.sln, dotnet pack src/ParleyAI/ParleyAI.csproj -c Release -o ./artifacts
+- PRs:

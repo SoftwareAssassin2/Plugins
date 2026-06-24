@@ -1,0 +1,359 @@
+# ParleyAI NuGet publish workflow (the plugin repo's first `.github/`).
+#
+# Two distinct paths share this file:
+#
+#   build-test  — PR + branch-push CI, PATH-FILTERED to `src/**`. Just builds and
+#                 tests the package; never publishes. This is the everyday gate.
+#
+#   release     — `pack` -> (`publish-oidc` XOR `publish-apikey`) -> `verify-package-restorable`,
+#                 triggered ONLY by a `nuget-v*` TAG push. Tag pushes do NOT honour
+#                 `on.push.paths` (path filters apply to branch pushes, not tags), so a
+#                 release tag ALWAYS runs the full release path regardless of what changed.
+#
+# Why the release path re-runs `dotnet test`: the path-filtered `build-test` job does
+# NOT run on tag pushes, so the tagged commit is otherwise untested. `pack` runs the
+# suite on the tagged commit BEFORE packing — tests gate the tag release; we never
+# publish on `dotnet pack` succeeding alone.
+#
+# Auth is a deterministic selector, never both: `vars.NUGET_TRUSTED_PUBLISHING == 'true'`
+# selects OIDC trusted publishing (no long-lived secret); otherwise the classic
+# `secrets.NUGET_API_KEY`. Exactly one publish job runs; the other is skipped (not failed),
+# and `verify-package-restorable` asserts that invariant before declaring success.
+#
+# All actions are PINNED. Baseline permissions are least-privilege (read-only contents);
+# only `publish-oidc` widens to `id-token: write` for the OIDC token exchange.
+name: NuGet
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+  push:
+    branches: ["**"]
+    paths:
+      - "src/**"
+    tags:
+      - "nuget-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nuget-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Everyday CI: PR + branch push, scoped to src/** changes. No publish.
+  # ---------------------------------------------------------------------------
+  build-test:
+    name: build + test (src/**)
+    # Branch/PR CI only. A tag push skips this (it has no branch ref); the release
+    # path tests on its own inside `pack`.
+    if: ${{ !startsWith(github.ref, 'refs/tags/nuget-v') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Set up .NET SDK 10
+        uses: actions/setup-dotnet@v4.1.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Test
+        run: dotnet test src/ParleyAI.sln --configuration Release
+
+  # ---------------------------------------------------------------------------
+  # Release path — tag-gated. Tests on the tagged commit, asserts pin == tag,
+  # then packs and uploads the artifact for the publish jobs to consume.
+  # ---------------------------------------------------------------------------
+  pack:
+    name: test + pack (tag)
+    if: startsWith(github.ref, 'refs/tags/nuget-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Set up .NET SDK 10
+        uses: actions/setup-dotnet@v4.1.0
+        with:
+          dotnet-version: "10.0.x"
+
+      # The path-filtered build-test job does NOT run on tag pushes, so the tagged
+      # commit is untested unless we test it here. Tests gate the release.
+      - name: Test (tagged commit)
+        run: dotnet test src/ParleyAI.sln --configuration Release
+
+      # The scaffold's version pin must match the release tag exactly, or the
+      # published package and what a scaffolded project references would drift.
+      - name: Assert LlmWrapperVersion == tag
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#nuget-v}"
+          props="plugins/init-project/templates/Directory.Build.props"
+          # Extract the single <LlmWrapperVersion> value (whitespace-tolerant).
+          pin_version="$(sed -n 's@.*<LlmWrapperVersion>[[:space:]]*\(.*\)[[:space:]]*</LlmWrapperVersion>.*@\1@p' "$props" | head -n1 | tr -d '[:space:]')"
+          echo "tag version: $tag_version"
+          echo "pin version: $pin_version"
+          if [ -z "$pin_version" ]; then
+            echo "ERROR: could not read <LlmWrapperVersion> from $props" >&2
+            exit 1
+          fi
+          if [ "$pin_version" != "$tag_version" ]; then
+            echo "ERROR: scaffold pin ($pin_version) != release tag ($tag_version) — bump $props to match the tag" >&2
+            exit 1
+          fi
+
+      - name: Pack ParleyAI at the tagged version
+        run: |
+          set -euo pipefail
+          dotnet pack src/ParleyAI/ParleyAI.csproj \
+            --configuration Release \
+            -o ./artifacts \
+            /p:Version="${GITHUB_REF_NAME#nuget-v}"
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: nuget-packages
+          path: |
+            ./artifacts/*.nupkg
+            ./artifacts/*.snupkg
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Publish via OIDC trusted publishing (no long-lived secret). Selected when
+  # the repo variable NUGET_TRUSTED_PUBLISHING is 'true'. Mutually exclusive
+  # with publish-apikey.
+  # ---------------------------------------------------------------------------
+  publish-oidc:
+    name: publish (OIDC trusted publishing)
+    needs: pack
+    if: vars.NUGET_TRUSTED_PUBLISHING == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required for the OIDC token exchange in NuGet/login.
+      id-token: write
+    steps:
+      - name: Set up .NET SDK 10
+        uses: actions/setup-dotnet@v4.1.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Download package artifact
+        uses: actions/download-artifact@v4.1.8
+        with:
+          name: nuget-packages
+          path: ./artifacts
+
+      # Exchange the workflow's OIDC token for a short-lived NuGet API key.
+      # `id-token: write` ALONE is insufficient — this login step performs the
+      # actual exchange and exposes the temporary key as `steps.login.outputs.NUGET_API_KEY`.
+      # Pinned to the v1.2.0 commit SHA (NOT a floating @v1).
+      - name: NuGet login (OIDC)
+        id: login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      # Push the package AND the symbols via SEPARATE explicit commands. Each is
+      # gated on its own success EXIT CODE — we never parse log text for a "2xx"
+      # line (with --skip-duplicate a no-op push may not emit a normal success line).
+      - name: Push package (.nupkg)
+        run: |
+          set -euo pipefail
+          dotnet nuget push ./artifacts/*.nupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key ${{ steps.login.outputs.NUGET_API_KEY }} \
+            --skip-duplicate
+
+      - name: Push symbols (.snupkg)
+        run: |
+          set -euo pipefail
+          dotnet nuget push ./artifacts/*.snupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key ${{ steps.login.outputs.NUGET_API_KEY }} \
+            --skip-duplicate
+
+  # ---------------------------------------------------------------------------
+  # Publish via a classic long-lived API key. Selected when trusted publishing
+  # is NOT enabled. No id-token. Mutually exclusive with publish-oidc.
+  # ---------------------------------------------------------------------------
+  publish-apikey:
+    name: publish (API key)
+    needs: pack
+    if: vars.NUGET_TRUSTED_PUBLISHING != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up .NET SDK 10
+        uses: actions/setup-dotnet@v4.1.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Download package artifact
+        uses: actions/download-artifact@v4.1.8
+        with:
+          name: nuget-packages
+          path: ./artifacts
+
+      # Fail fast if the secret is missing — otherwise dotnet nuget push would
+      # send an empty key and produce a confusing 401.
+      - name: Assert NUGET_API_KEY present
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NUGET_API_KEY:-}" ]; then
+            echo "ERROR: secrets.NUGET_API_KEY is empty and trusted publishing is disabled — set the secret or enable vars.NUGET_TRUSTED_PUBLISHING" >&2
+            exit 1
+          fi
+
+      - name: Push package (.nupkg)
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+          dotnet nuget push ./artifacts/*.nupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "$NUGET_API_KEY" \
+            --skip-duplicate
+
+      - name: Push symbols (.snupkg)
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+          dotnet nuget push ./artifacts/*.snupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "$NUGET_API_KEY" \
+            --skip-duplicate
+
+  # ---------------------------------------------------------------------------
+  # Aggregation gate (fn-4.10 depends on this). Runs after BOTH publish jobs
+  # regardless of which one was skipped, asserts EXACTLY ONE succeeded, then
+  # polls the v3 flat-container index until ParleyAI@<version> is restorable.
+  # ---------------------------------------------------------------------------
+  verify-package-restorable:
+    name: verify package restorable
+    needs: [publish-oidc, publish-apikey]
+    if: always() && startsWith(github.ref, 'refs/tags/nuget-v')
+    runs-on: ubuntu-latest
+    steps:
+      # One publish job must SUCCEED and the other must be SKIPPED (the selector is
+      # mutually exclusive). A failure or cancellation in either, or both skipped,
+      # means the release did not publish cleanly.
+      - name: Assert exactly one publish job succeeded
+        env:
+          OIDC_RESULT: ${{ needs.publish-oidc.result }}
+          APIKEY_RESULT: ${{ needs.publish-apikey.result }}
+        run: |
+          set -euo pipefail
+          echo "publish-oidc:   $OIDC_RESULT"
+          echo "publish-apikey: $APIKEY_RESULT"
+          succeeded=0
+          for r in "$OIDC_RESULT" "$APIKEY_RESULT"; do
+            case "$r" in
+              success) succeeded=$((succeeded + 1)) ;;
+              skipped) : ;;  # expected for the non-selected job
+              *)
+                echo "ERROR: a publish job ended in '$r' (expected success or skipped)" >&2
+                exit 1
+                ;;
+            esac
+          done
+          if [ "$succeeded" -ne 1 ]; then
+            echo "ERROR: expected exactly one successful publish job, got $succeeded" >&2
+            exit 1
+          fi
+
+      # Poll the v3 flat-container registration index until the published version
+      # appears. nuget.org indexing is eventually-consistent after push, so we
+      # retry with backoff rather than assuming immediate availability. This is the
+      # signal fn-4.10's verify-scaffold-restore job waits on before doing a live
+      # fresh-scaffold restore+build.
+      - name: Poll flat-container index for ParleyAI@version
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#nuget-v}"
+          # Flat-container index is lower-cased package id.
+          url="https://api.nuget.org/v3-flatcontainer/parleyai/index.json"
+          echo "Polling $url for version $version"
+          for attempt in $(seq 1 20); do
+            body="$(curl -fsSL "$url" 2>/dev/null || echo '{}')"
+            if printf '%s' "$body" | jq -e --arg v "$version" '.versions | index($v)' >/dev/null 2>&1; then
+              echo "ok: ParleyAI@$version is restorable from the flat-container index"
+              exit 0
+            fi
+            echo "attempt $attempt/20: ParleyAI@$version not yet indexed; sleeping 15s"
+            sleep 15
+          done
+          echo "ERROR: ParleyAI@$version did not appear on the flat-container index after polling" >&2
+          exit 1
+
+  # ---------------------------------------------------------------------------
+  # Live published-restore proof (fn-4.10). Distinct from the flat-container
+  # availability poll in verify-package-restorable: that job only proves the
+  # `.nupkg` is INDEXED; this job proves a FRESH /init-project scaffold actually
+  # RESTORES + BUILDS against the PUBLISHED ParleyAI at the pinned
+  # `$(LlmWrapperVersion)`. The release is not complete until this passes.
+  #
+  # `needs: verify-package-restorable` (NOT a publish job directly) so it runs
+  # only AFTER the index confirms the package is restorable, and gated on that
+  # gate having SUCCEEDED on a release tag. No `always()` here — that belongs on
+  # the aggregation gate above; this job must NOT run if the index never showed
+  # the package.
+  #
+  # Network-enabled and tag-only by construction. The offline scaffold_test.sh
+  # (static generated-artifact assertions) is a SEPARATE, unchanged path and is
+  # never invoked here.
+  # ---------------------------------------------------------------------------
+  verify-scaffold-restore:
+    name: verify scaffold restore (live published ParleyAI)
+    needs: verify-package-restorable
+    if: needs.verify-package-restorable.result == 'success' && startsWith(github.ref, 'refs/tags/nuget-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Set up .NET SDK 10
+        uses: actions/setup-dotnet@v4.1.0
+        with:
+          dotnet-version: "10.0.x"
+
+      # The scaffold's `./system.sh build-config` dispatches to build-config.sh,
+      # which uses `jq` to read/validate config.json. jq is not guaranteed on the
+      # runner, so install it explicitly (mirrors the scaffold CI's config job).
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends jq
+
+      # Scaffold a throwaway project from the init-project templates. The scaffold
+      # references the PUBLISHED ParleyAI via Directory.Build.props' pinned
+      # $(LlmWrapperVersion) (== the release tag, asserted in `pack`), so the
+      # restore below resolves the package we just published.
+      - name: Scaffold a fresh project
+        run: |
+          set -euo pipefail
+          plugins/init-project/scaffold.sh scaffoldrestore "Live published-restore smoke" --force
+          ls -la scaffoldrestore
+
+      # build-config defaults to ./config.json (no --config needed). This stamps
+      # the generated .env / SPA config the build expects.
+      - name: Run build-config
+        working-directory: scaffoldrestore
+        run: ./system.sh build-config
+
+      # Restore + build the scaffolded net10 solution against nuget.org so the
+      # pinned $(LlmWrapperVersion) resolves the PUBLISHED ParleyAI. A failure
+      # here (package not yet restorable, version mismatch, net10 break) fails the
+      # release — it is NOT complete until a fresh scaffold builds against the
+      # live package.
+      - name: Restore scaffolded solution (live ParleyAI)
+        working-directory: scaffoldrestore
+        run: dotnet restore src/system.sln
+
+      - name: Build scaffolded solution (net10)
+        working-directory: scaffoldrestore
+        run: dotnet build src/system.sln --configuration Release --no-restore

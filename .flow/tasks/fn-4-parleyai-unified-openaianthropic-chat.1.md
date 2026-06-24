@@ -27,7 +27,8 @@ Stand up the `./src/` .NET home, the test project, and the abstraction for the s
 - [ ] Committed `src/` fixtures survive `.gitignore`
 
 ## Done summary
-_(filled on completion)_
-
+Stood up the single ParleyAI package (net10.0): solution + test project, the provider-neutral abstraction (IAiChatClient, chat DTOs, Role/FinishReason enums, ParleyAIException + ParleyAIErrorCategory, factory, ProviderKeys, options with per-category AIMD back-off), Apache-2.0 LICENSE/NOTICE, and csproj metadata that packs valid .nupkg + .snupkg (LICENSE/NOTICE/README at the nupkg root, SourceLink, deterministic). Verified build/test/pack from a clean git export; codex review SHIP.
 ## Evidence
-_(filled on completion)_
+- Commits: 6749b25d967bcf0696822a18040788101c5ec505, f7fda41fe6605e43bd9290b55481cff159324926
+- Tests: dotnet test src/ParleyAI.sln, dotnet pack src/ParleyAI/ParleyAI.csproj -c Release -o ./artifacts
+- PRs:

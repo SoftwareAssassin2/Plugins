@@ -27,7 +27,8 @@ Re-target the scaffolded .NET projects + toolchain from **net9.0 to net10.0** so
 - [ ] `scaffold_test.sh` asserts `net10.0` + no floating/range versions + consistent platform major.minor; no stale `net9`/".NET 9" strings remain
 
 ## Done summary
-_(filled on completion)_
-
+Re-targeted the init-project scaffold (9 csproj + dev-container, CI, dotnet-ef tool) from net9.0 to net10.0, pinning the Microsoft-owned ASP.NET/EF stack + dotnet-ef to one exact 10.0.4 patch (10.0.4 unifies with Npgsql.EntityFrameworkCore.PostgreSQL 10.0.2's transitive EF floor, avoiding a CS1705 version skew) and adding scaffold_test.sh assertions for net10.0 TFM, no floating/range versions, shared 10.0 major.minor, and the single MS patch. Verified a fresh scaffold builds and tests green on net10.0.
 ## Evidence
-_(filled on completion)_
+- Commits: 6d16815f48ef849c8bf2956ab54b65a7a92802e5
+- Tests: bash plugins/init-project/tests/scaffold_test.sh (298 ok, 0 fail), fresh-scaffold dotnet build src/system.sln -c Release (0 errors), fresh-scaffold dotnet test src/system.sln -c Release (86 passed, 0 failed, net10.0)
+- PRs:

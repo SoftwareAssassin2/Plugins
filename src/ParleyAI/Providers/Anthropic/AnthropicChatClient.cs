@@ -1,0 +1,162 @@
+using System;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
+using Anthropic.SDK;
+using Anthropic.SDK.Messaging;
+using ParleyAI.Abstractions;
+using ParleyAI.Telemetry;
+
+namespace ParleyAI.Providers.Anthropic;
+
+/// <summary>
+/// The Anthropic implementation of <see cref="IAiChatClient"/>, built over <c>Anthropic.SDK</c>.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Base-URL override:</b> the SDK emits absolute <c>https://api.anthropic.com/...</c> URIs and
+/// ignores <c>HttpClient.BaseAddress</c>, so an <see cref="AnthropicOriginRewriteHandler"/> on the
+/// injected (keyed, singleton-safe) <see cref="HttpClient"/> rewrites the full origin
+/// (scheme+host+port) of each request when <see cref="AnthropicChatClientSettings.BaseUrl"/> is
+/// present, preserving the SDK's <c>/v1/messages</c> path. When absent the SDK default origin
+/// applies — ParleyAI never hardcodes <c>api.anthropic.com</c>. The base URL is validated as a
+/// root-only absolute URI at construction.
+/// </para>
+/// <para>
+/// <b>Single retry authority:</b> <c>Anthropic.SDK</c> 5.10.0 adds NO retry layer of its own — a
+/// logical call makes exactly ONE HTTP attempt (its <c>RetryInterceptor</c> is an opt-in example
+/// type, never wired by default, and is NOT used here). This is verified by the single-attempt test.
+/// The standard resilience handler (fn-4.4) is therefore the only retry layer; the AIMD optimizer
+/// reacts to the final mapped error.
+/// </para>
+/// <para>
+/// <b>Role mapping:</b> a single leading <see cref="Role.System"/> message is hoisted to the
+/// top-level <c>system</c> field; User/Assistant turns map to the SDK message list. A non-leading or
+/// repeated system message is rejected with <see cref="ParleyAIErrorCategory.InvalidRequest"/>.
+/// </para>
+/// </remarks>
+public sealed class AnthropicChatClient : IAiChatClient
+{
+    private readonly AnthropicClient _client;
+    private readonly ChatTelemetryRecorder _telemetry;
+
+    /// <summary>
+    /// Constructs the client from resolved settings + the keyed transport <see cref="HttpClient"/>
+    /// whose pipeline ALREADY carries the origin-rewrite + error-capture
+    /// <see cref="AnthropicOriginRewriteHandler"/> (attached by <c>AddAnthropicChatClient</c>).
+    /// </summary>
+    /// <remarks>
+    /// This ctor is <b>internal</b> on purpose. The Anthropic base-URL override only works when the
+    /// rewrite handler sits in the transport pipeline (the SDK emits absolute URIs that ignore
+    /// <c>HttpClient.BaseAddress</c>), and an <see cref="HttpClient"/> cannot have a handler grafted
+    /// on after construction. Exposing a public "bare <see cref="HttpClient"/>" ctor would let a
+    /// caller pass a <see cref="AnthropicChatClientSettings.BaseUrl"/> that is then silently ignored.
+    /// The supported public construction path is therefore <c>AddAnthropicChatClient</c> (the DI
+    /// building block), which wires the handler; this ctor + the SDK-client seam below serve DI and
+    /// the in-process tests, which build the same pipeline explicitly.
+    /// </remarks>
+    /// <param name="settings">
+    /// The resolved connection settings (required API key + optional root-only base URL), already
+    /// having applied the ctor &gt; flat-key precedence in the DI layer.
+    /// </param>
+    /// <param name="httpClient">
+    /// The keyed, singleton-safe transport <see cref="HttpClient"/> whose pipeline carries the
+    /// rewrite handler (for the configured <see cref="AnthropicChatClientSettings.BaseUrl"/>).
+    /// </param>
+    /// <param name="telemetryOptions">
+    /// Optional GenAI telemetry tuning (content-capture gate; default off). Spans + metrics are emitted
+    /// regardless; <c>null</c> ⇒ defaults (no content capture).
+    /// </param>
+    /// <exception cref="ArgumentException">
+    /// The API key is missing/blank, or the base URL is present but not an http(s) root-only URI.
+    /// </exception>
+    internal AnthropicChatClient(
+        AnthropicChatClientSettings settings,
+        HttpClient httpClient,
+        ParleyAiTelemetryOptions? telemetryOptions = null)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(httpClient);
+
+        if (string.IsNullOrWhiteSpace(settings.ApiKey))
+        {
+            throw new ArgumentException(
+                "An Anthropic API key is required (ctor override or the flat ANTHROPIC_API_KEY config key); there is no SDK-default key.",
+                nameof(settings));
+        }
+
+        // Re-validate the base URL eagerly at construction (root-only, http(s)) so a misconfigured
+        // value fails fast even if the handler was wired by a path that did not validate. The actual
+        // origin rewrite is performed by the handler already attached to the supplied client.
+        if (!string.IsNullOrWhiteSpace(settings.BaseUrl))
+        {
+            _ = AnthropicOriginRewriteHandler.ParseRootOnly(settings.BaseUrl);
+        }
+
+        _client = new AnthropicClient(new APIAuthentication(settings.ApiKey), httpClient);
+        _telemetry = BuildRecorder(telemetryOptions);
+    }
+
+    /// <summary>Test/advanced seam: inject a pre-built <see cref="AnthropicClient"/> directly.</summary>
+    internal AnthropicChatClient(AnthropicClient client, ParleyAiTelemetryOptions? telemetryOptions = null)
+    {
+        _client = client ?? throw new ArgumentNullException(nameof(client));
+        _telemetry = BuildRecorder(telemetryOptions);
+    }
+
+    private static ChatTelemetryRecorder BuildRecorder(ParleyAiTelemetryOptions? telemetryOptions) =>
+        new(GenAiAttributes.ProviderAnthropic, telemetryOptions?.CaptureMessageContent ?? false);
+
+    /// <inheritdoc />
+    public async Task<ChatResponse> CompleteChatAsync(
+        ChatRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        // Instrument the whole logical call (incl. mapping) so the span/metrics see the FINAL mapped
+        // outcome — the recorder is INSIDE the client, not a decorator, so it never competes with the
+        // single AIMD decoration hook.
+        return await _telemetry.RecordAsync(request, ct => CompleteCoreAsync(request, ct), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<ChatResponse> CompleteCoreAsync(ChatRequest request, CancellationToken cancellationToken)
+    {
+        // Validation + role mapping (throws InvalidRequest for the single-leading-System rule).
+        MessageParameters parameters = AnthropicMessageMapper.MapRequest(request);
+
+        // Establish a capture scope on THIS async frame so the rewrite handler (a deeper frame) can
+        // record the failed response detail back into it (the SDK's exceptions drop it).
+        using AnthropicOriginRewriteHandler.CaptureScope capture = AnthropicOriginRewriteHandler.BeginCapture();
+        try
+        {
+            MessageResponse response =
+                await _client.Messages.GetClaudeMessageAsync(parameters, cancellationToken)
+                    .ConfigureAwait(false);
+            return AnthropicMessageMapper.MapResponse(response);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // COOPERATIVE cancellation (the caller's token fired) propagates un-wrapped.
+            throw;
+        }
+        catch (OperationCanceledException ex)
+        {
+            // A TaskCanceledException NOT driven by the caller token is a TRANSPORT TIMEOUT
+            // (e.g. HttpClient.Timeout / SocketsHttpHandler) — map it to Transient, not cancellation.
+            throw AnthropicErrorMapper.MapTimeout(ex);
+        }
+        catch (ParleyAIException)
+        {
+            // Mapping/validation already produced a neutral exception — surface as-is.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // The rewrite handler captured the response detail (status/headers/body) the SDK's
+            // exceptions drop; map with full fidelity. A null capture ⇒ a transport-level failure.
+            throw AnthropicErrorMapper.Map(ex, capture.Context);
+        }
+    }
+}
