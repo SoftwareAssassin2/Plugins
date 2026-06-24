@@ -79,11 +79,13 @@ row and the `|---|` separator row**, then reading one person per remaining row,
 trimming each cell.
 
 **`handle` is unique.** Registration must detect a **slug collision** — two
-distinct emails that slug to the same handle (e.g. `bob@x.com` and `bob@y.com`
-both → `bob`). On a collision, **stop** and instruct the operator to pick a
-disambiguated handle (e.g. `bob-x` / `bob-y`) and record it explicitly, so inboxes
-and routing are never ambiguous. Because the handle is *stored*, the disambiguated
-value sticks; readers never re-derive it.
+distinct emails that slug to the same handle. Because the slug runs over the
+*whole* email and collapses every non-`[a-z0-9]` run to a single `-`, distinct
+emails can still collide: `bob.smith@x.com` and `bob+smith@x.com` both →
+`bob-smith-x-com`. On a collision, **stop** and instruct the operator to pick a
+disambiguated handle (e.g. `bob-smith-dot` / `bob-smith-plus`) and record it
+explicitly, so inboxes and routing are never ambiguous. Because the handle is
+*stored*, the disambiguated value sticks; readers never re-derive it.
 
 ## Handles
 
