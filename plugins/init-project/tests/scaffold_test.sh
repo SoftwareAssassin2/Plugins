@@ -80,6 +80,8 @@ for d in business strategy customers priorities decisions; do
   check "business stub docs/$d.md is a TODO home" "grep -q '## TODO' \"\$WORK/demo-app/docs/$d.md\""
 done
 check "no docs/roadmap.md (priorities replaces it)" '[[ ! -f "$WORK/demo-app/docs/roadmap.md" ]]'
+check "docs/todo.md present (engineering follow-ups home)" '[[ -f "$WORK/demo-app/docs/todo.md" ]]'
+check "_CLAUDE.md Standards index links docs/todo.md" 'grep -q "docs/todo.md" "$WORK/demo-app/CLAUDE.md"'
 check ".gitignore present in scaffold output"       '[[ -f "$WORK/demo-app/.gitignore" ]]'
 check ".gitignore ignores .worktrees/ + generated realm" 'grep -q "^\.worktrees/" "$WORK/demo-app/.gitignore" && grep -q "src/keycloak/import/\*-realm.json" "$WORK/demo-app/.gitignore"'
 # config.json and .flow/bin/ must stay tracked — assert no ACTIVE ignore rule
@@ -408,6 +410,38 @@ check "config-drift gate passes on scaffolded config pair" "( cd \"$WORK/demo-ap
 DTMP="$(mktemp -d)"; jq '.systems[0].extra={}' "$WORK/demo-app/config.deploy.json" > "$DTMP/d.json"
 check "config-drift catches an extra empty {} node" "! ( cd \"$WORK/demo-app\" && bash .github/scripts/config-drift.sh config.json \"$DTMP/d.json\" >/dev/null 2>&1 )"
 rm -rf "$DTMP"
+
+# CI-based AI code review (fn-2 task .14, R31): BOTH host files ship with no
+# scaffold-time platform detection — GitHub Actions ai-review.yml (Codex/GPT PR
+# review) + a .gitlab-ci.yml ai-review job (GitLab Duo MR review). Both advisory /
+# non-fatal, secrets referenced via the host's store (never committed), and scoped
+# to PRs/MRs only. GitHub Actions / GitLab CI do not run here — these are
+# structural/validity assertions on the scaffolded output.
+AIR="$GHA/workflows/ai-review.yml"
+GLC="$WORK/demo-app/.gitlab-ci.yml"
+check "ai-review.yml present"                  "[[ -f \"$AIR\" ]]"
+check ".gitlab-ci.yml present"                 "[[ -f \"$GLC\" ]]"
+check "ai-review.yml valid YAML"               "python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' \"$AIR\""
+check ".gitlab-ci.yml valid YAML"              "python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' \"$GLC\""
+check "ai-review output token-free"            "! grep -rqE \"__SCAFFOLD_[A-Z0-9_]+__\" \"$AIR\" \"$GLC\""
+# GitHub: triggers on pull_request (PR-only, not push), runs a Codex/GPT review,
+# references a secret, posts feedback, and is non-fatal when the secret is absent.
+check "ai-review.yml triggers on pull_request only (no push:)" "grep -qE '^[[:space:]]*pull_request:' \"$AIR\" && ! grep -qE '^[[:space:]]*push:' \"$AIR\""
+check "ai-review.yml runs Codex/GPT reviewer"  "grep -q 'codex exec' \"$AIR\" && grep -q '@openai/codex@' \"$AIR\""
+check "ai-review.yml references OPENAI_API_KEY secret" "grep -qE 'secrets\\.OPENAI_API_KEY' \"$AIR\""
+check "ai-review.yml posts PR feedback"        "grep -q 'gh pr comment' \"$AIR\""
+check "ai-review.yml non-fatal on missing secret (warn + exit 0)" "grep -q 'is not configured' \"$AIR\" && grep -q 'have_secret' \"$AIR\""
+check "ai-review.yml pins action versions (no floating @vN-only refs)" "! grep -qE 'uses: .*@v[0-9]+\$' \"$AIR\""
+check "ai-review.yml least-privilege permissions" "grep -qE 'permissions:' \"$AIR\" && grep -qE 'contents: read' \"$AIR\""
+# GitLab: scoped to merge-request pipelines, runs GitLab Duo, non-fatal (allow_failure
+# + warn/exit-0), auth via CI variables (no committed secret).
+check ".gitlab-ci.yml scoped to merge-request pipelines" "grep -q 'CI_PIPELINE_SOURCE == \"merge_request_event\"' \"$GLC\""
+check ".gitlab-ci.yml runs GitLab Duo review"  "grep -q 'glab duo review' \"$GLC\""
+check ".gitlab-ci.yml non-fatal (allow_failure + warn/exit 0)" "grep -q 'allow_failure: true' \"$GLC\" && grep -q 'non-fatal' \"$GLC\""
+check ".gitlab-ci.yml pins image (no floating :latest)" "grep -qE 'image: .+:[^[:space:]]+' \"$GLC\" && ! grep -qE 'image: .+:latest' \"$GLC\""
+# Neither AI-review file may commit a raw secret value — auth is referenced only.
+check "ai-review files commit NO raw secret values" "! grep -rqE '(OPENAI_API_KEY|TOKEN|SECRET)[[:space:]]*[:=][[:space:]]*[A-Za-z0-9_-]{16,}' \"$AIR\" \"$GLC\""
+
 # The kcov-gate parses a kcov summary and fails below 100% line (schema-shaped test).
 GTMP="$(mktemp -d)"; mkdir -p "$GTMP/kcov-merged"
 printf '{"percent_covered":"100","covered_lines":10,"total_lines":10}' > "$GTMP/kcov-merged/coverage.json"
@@ -446,7 +480,7 @@ check "devcontainer installs postgresql-client (psql) via feature" "sed -E 's@//
 check "devcontainer wires onCreate setup.sh" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.onCreateCommand | test(\"setup.sh\")' >/dev/null"
 check "devcontainer name token-substituted" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '.name==\"demo-app\"' >/dev/null"
 check "devcontainer declares vscode extensions" "sed -E 's@//.*\$@@' \"$DCJ\" | jq -e '(.customizations.vscode.extensions|length)>0' >/dev/null"
-# setup.sh installs the script-only tools (Angular CLI, DuckDB, acli, Claude Code, Codex CLI)
+# setup.sh installs the script-only tools (Angular CLI, DuckDB, acli, glab, Claude Code, Codex CLI)
 # and best-effort enables the marketplace by its REMOTE git URL (never local ./src).
 SUP="$WORK/demo-app/.devcontainer/setup.sh"
 check "setup.sh installs Angular CLI"      "grep -q '@angular/cli' \"$SUP\""
@@ -455,6 +489,8 @@ check "setup.sh restores dotnet-ef via tool manifest" "grep -q 'dotnet tool rest
 check "setup.sh installs DuckDB"           "grep -qi 'duckdb' \"$SUP\""
 check "setup.sh pins DuckDB version"       "grep -q 'DUCKDB_VERSION=' \"$SUP\" && grep -q 'DUCKDB_INSTALL_VERSION' \"$SUP\""
 check "setup.sh installs Atlassian acli"   "grep -q 'acli' \"$SUP\""
+check "setup.sh installs GitLab CLI (glab)" "grep -q 'install_glab' \"$SUP\" && grep -q 'gitlab-org/cli' \"$SUP\""
+check "setup.sh pins glab version"         "grep -q 'GLAB_VERSION=' \"$SUP\""
 check "setup.sh installs Claude Code (install.sh)" "grep -q 'claude.ai/install.sh' \"$SUP\""
 check "setup.sh installs Codex CLI"        "grep -qi 'codex' \"$SUP\""
 check "setup.sh pins Codex CLI version"    "grep -q 'CODEX_VERSION=' \"$SUP\" && grep -q '@openai/codex@' \"$SUP\""
@@ -671,6 +707,223 @@ JD2="$(mktemp -d)"
 ( cd "$JD2" && PATH="$JQLESS/bin" bash "$SCAFFOLD" demo "x" >/dev/null 2>&1 ); rc=$?
 check "non-opt-in scaffold succeeds without jq (exit 0)" '[[ $rc -eq 0 && -f "$JD2/demo/config.json" ]]'
 rm -rf "$JD2" "$JQLESS"
+
+# =====================================================================================
+# Async team collaboration (fn-7): structural + git-tracked + behavioral hook coverage.
+# Self-contained block (scaffold_test.sh is also touched by fn-2.14 / fn-6.5 — appended
+# at the end to avoid churn). The structural half asserts the protocol doc, team
+# registry, inbox .gitkeep, and the SessionStart hook all land in a fresh scaffold and
+# coexist with the existing Stop hook + statusLine; the behavioral half runs the hook
+# against fixtures with an isolated git identity to prove R8/R10 routing + JSON output.
+# =====================================================================================
+echo "== async collaboration (fn-7) =="
+# Structural assertions must prove the feature lands in a FRESH scaffold (R14). The
+# shared "$WORK/demo-app" has already been through --update / --replace-config passes
+# above, so scaffold a dedicated pristine project here and assert against THAT.
+run collab-app "A collaboration demo" >/dev/null
+APP="$WORK/collab-app"
+
+# --- Structural: new template files land in a fresh scaffold (R14/R15) ---------------
+check "docs/collaboration.md present"             '[[ -f "$APP/docs/collaboration.md" ]]'
+check "docs/team.md present"                      '[[ -f "$APP/docs/team.md" ]]'
+check "docs/collaboration/.gitkeep present"       '[[ -f "$APP/docs/collaboration/.gitkeep" ]]'
+check "team.md fixed table columns"               'grep -qE "^\| *handle *\| *name *\| *git-email *\| *computer-name *\| *reports-to *\|" "$APP/docs/team.md"'
+
+# --- Structural: the SessionStart hook (R8) ------------------------------------------
+HK="$APP/.claude/hooks/collaboration-inbox.sh"
+check "collaboration-inbox.sh present + executable" '[[ -x "$HK" ]]'
+check "hook carries a # Description: line"          'grep -q "^# Description:" "$HK"'
+check "hook uses set -uo pipefail"                  'grep -q "set -uo pipefail" "$HK"'
+check "hook bash -n clean"                          'bash -n "$HK"'
+# No-network regression (R10): the hook must never EXECUTE git fetch/pull. `git fetch`
+# is forbidden outright; any `git pull` may appear ONLY inside an emitted advisory
+# string (markdown backticks), never as a run command. Strip comments + the literal
+# backticked advisory tokens, then assert neither command survives as code.
+check "hook never runs git fetch"                   '! grep -vE "^[[:space:]]*#" "$HK" | grep -qE "git +fetch"'
+check "hook runs no executed git pull (advisory text only)" 'CODE=$(grep -vE "^[[:space:]]*#" "$HK" | sed -E "s/\`git pull\`//g"); ! grep -qE "git +pull" <<<"$CODE"'
+
+# --- Structural: settings.json coexistence (R9) — plain JSON, jq directly ------------
+SJ="$APP/.claude/settings.json"
+check "settings.json hooks.SessionStart wired"      'jq -e ".hooks.SessionStart[0].hooks[0].command" "$SJ" >/dev/null'
+check "settings.json SessionStart runs the hook"    'jq -e ".hooks.SessionStart[0].hooks[0].command | test(\"collaboration-inbox.sh\")" "$SJ" >/dev/null'
+check "settings.json hooks.Stop preserved (coexist)" 'jq -e ".hooks.Stop[0].hooks[0].command" "$SJ" >/dev/null'
+check "settings.json statusLine preserved (coexist)" 'jq -e ".statusLine.command" "$SJ" >/dev/null'
+
+# --- Structural: thin wiring + three-surface cross-refs (R11/R12/R13) ----------------
+check "_CLAUDE.md links docs/collaboration.md"      'grep -q "docs/collaboration.md" "$APP/CLAUDE.md"'
+check "_CLAUDE.md links docs/team.md"               'grep -q "docs/team.md" "$APP/CLAUDE.md"'
+# The README caveat must actually warn private-repo-only AND no-secrets/PII, in a
+# collaboration CONTEXT — not three signals scattered anywhere in the file. Pull the
+# collaboration-mentioning line(s) and assert THAT line carries both the keep-private
+# signal and the secrets/PII/permanent-history warning.
+check "README carries the private-repo/PII caveat (one collaboration line)" 'CAVEAT="$(grep -i "collaborat" "$APP/README.md")"; grep -qiE "private|keep this repo private" <<<"$CAVEAT" && grep -qiE "secret|PII|sensitive|history permanently" <<<"$CAVEAT"'
+# Three-surface cross-refs (R12) must point at the inbox DIRECTORY surface
+# `docs/collaboration/` (the teammate-handoff surface), not merely the protocol doc.
+check "todo.md cross-references the collaboration/ surface"      'grep -qF "docs/collaboration/" "$APP/docs/todo.md"'
+check "priorities.md cross-references the collaboration/ surface" 'grep -qF "docs/collaboration/" "$APP/docs/priorities.md"'
+
+# --- git-tracked verification (R15) — the scaffolded .gitignore applies in THIS plugin
+# repo too, so a new template can be silently dropped by `git add -A`. Assert each new
+# template file is actually tracked in the plugin repo (guards the silent-drop gotcha).
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
+TMPL="plugins/init-project/templates"
+check "template docs/collaboration.md git-tracked"  'git -C "$REPO_ROOT" ls-files --error-unmatch "$TMPL/docs/collaboration.md" >/dev/null 2>&1'
+check "template docs/team.md git-tracked"           'git -C "$REPO_ROOT" ls-files --error-unmatch "$TMPL/docs/team.md" >/dev/null 2>&1'
+check "template docs/collaboration/.gitkeep git-tracked" 'git -C "$REPO_ROOT" ls-files --error-unmatch "$TMPL/docs/collaboration/.gitkeep" >/dev/null 2>&1'
+check "template .claude/hooks/collaboration-inbox.sh git-tracked" 'git -C "$REPO_ROOT" ls-files --error-unmatch "$TMPL/.claude/hooks/collaboration-inbox.sh" >/dev/null 2>&1'
+
+# =====================================================================================
+# Behavioral block (proves R8/R10): run the real template hook against fixtures.
+#
+# Git-config isolation FIRST — point HOME at a throwaway dir and neutralize global +
+# system config so the hook reads ONLY the repo-local identity each case sets. Without
+# this the CI machine's global user.email leaks in and the "no identity" case is flaky.
+# Per case: `git init` a temp scaffold, copy in the real template hook, set/omit a
+# repo-local user.email (the hook reads at the project root), write fixtures, run.
+# =====================================================================================
+COLLAB_HOME="$(mktemp -d)"
+export HOME="$COLLAB_HOME"
+export GIT_CONFIG_GLOBAL=/dev/null
+export GIT_CONFIG_SYSTEM=/dev/null
+export GIT_CONFIG_NOSYSTEM=1
+
+# Build a temp scaffold rooted at $1 with the real hook installed. Caller then git-inits
+# it and sets identity. Handles are WHOLE-git-email slugs (collaboration.md "Handles"):
+#   alice@example.com -> alice-example-com ; bob.smith@x.com -> bob-smith-x-com.
+collab_scaffold() {
+  local root="$1"
+  mkdir -p "$root/.claude/hooks" "$root/docs/collaboration"
+  cp "$HK" "$root/.claude/hooks/collaboration-inbox.sh"
+  chmod +x "$root/.claude/hooks/collaboration-inbox.sh"
+}
+# Run the hook for a scaffold; capture stdout. Hook resolves project root from its own
+# path (.claude/hooks/), so we can invoke it from anywhere.
+run_hook() { bash "$1/.claude/hooks/collaboration-inbox.sh" </dev/null 2>/dev/null; }
+
+# Fixture team.md (the fixed table; bob is the recognized "me"). Whole-email-slug handles.
+write_team_md() {
+  local root="$1"
+  cat > "$root/docs/team.md" <<'TEAM'
+# Team
+| handle | name | git-email | computer-name | reports-to |
+|---|---|---|---|---|
+| alice-example-com | Alice Example | alice@example.com | alice-box | |
+| bob-smith-x-com | Bob Smith | bob.smith@x.com | bob-box | alice-example-com |
+TEAM
+}
+
+# ---- Case (c) recognized + pending: JSON envelope, routing, freshness, JSON-escape ---
+# bob is the recognized identity. Three threads exercise latest-turn-wins routing:
+#   t1 (bob's inbox, asker alice): latest awaiting-assignee -> alerts bob (assignee).
+#        Subject + body carry "quotes" and a newline to prove additionalContext is
+#        JSON-escaped (output must still jq-parse).
+#   t2 (bob's inbox): awaiting-assignee -> awaiting-asker -> resolved -> must NOT alert
+#        (resolved supersedes; a superseded earlier status never re-alerts).
+#   t3 (alice's inbox, asker bob): latest awaiting-asker -> alerts bob (asker routing).
+CB="$WORK/collab-c"
+collab_scaffold "$CB"
+write_team_md "$CB"
+git init -q "$CB"
+git -C "$CB" config user.email "bob.smith@x.com"
+git -C "$CB" config user.name "Bob Smith"
+cat > "$CB/docs/collaboration/bob-smith-x-com.md" <<'INBOX'
+## thread:t1 | asker:alice-example-com | assignee:bob-smith-x-com | subject:Handle the "edge" case
+### turn 1 | author:alice-example-com | status:awaiting-assignee | 2026-06-24T10:00:00Z
+We hit a `"quoted"` value here.
+Second line — newline + quotes must JSON-escape cleanly.
+
+## thread:t2 | asker:alice-example-com | assignee:bob-smith-x-com | subject:Already resolved
+### turn 1 | author:alice-example-com | status:awaiting-assignee | 2026-06-24T09:00:00Z
+Original question.
+### turn 2 | author:bob-smith-x-com | status:awaiting-asker | 2026-06-24T09:30:00Z
+My answer.
+### turn 3 | author:alice-example-com | status:resolved | 2026-06-24T09:45:00Z
+Thanks, closing.
+INBOX
+cat > "$CB/docs/collaboration/alice-example-com.md" <<'INBOX'
+## thread:t3 | asker:bob-smith-x-com | assignee:alice-example-com | subject:Need Alice input
+### turn 1 | author:bob-smith-x-com | status:awaiting-assignee | 2026-06-24T11:00:00Z
+Question for Alice.
+### turn 2 | author:alice-example-com | status:awaiting-asker | 2026-06-24T11:30:00Z
+Alice answered — back to Bob.
+INBOX
+OUT_C="$(run_hook "$CB")"
+check "pending: output is valid JSON (escaping holds)" 'jq -e . <<<"$OUT_C" >/dev/null'
+check "pending: SessionStart envelope"               'jq -e ".hookSpecificOutput.hookEventName==\"SessionStart\"" <<<"$OUT_C" >/dev/null'
+check "pending: t1 surfaced (assignee routing)"      'jq -r ".hookSpecificOutput.additionalContext" <<<"$OUT_C" | grep -qF "t1"'
+check "pending: t3 surfaced (asker routing)"         'jq -r ".hookSpecificOutput.additionalContext" <<<"$OUT_C" | grep -qF "t3"'
+check "pending: resolved t2 NOT surfaced"            '! jq -r ".hookSpecificOutput.additionalContext" <<<"$OUT_C" | grep -qF "t2"'
+check "pending: freshness text present (R10)"        'jq -r ".hookSpecificOutput.additionalContext" <<<"$OUT_C" | grep -qiE "last pull|git pull"'
+check "pending: quotes survive JSON-escape"          'jq -r ".hookSpecificOutput.additionalContext" <<<"$OUT_C" | grep -qF "\"edge\""'
+
+# ---- Case (b) email present but NOT in team.md: register advisory, NO freshness ------
+CU="$WORK/collab-unknown"
+collab_scaffold "$CU"
+write_team_md "$CU"
+git init -q "$CU"
+git -C "$CU" config user.email "stranger@nowhere.test"   # not a team.md row
+OUT_U="$(run_hook "$CU")"
+check "unknown: output is valid JSON"                'jq -e . <<<"$OUT_U" >/dev/null'
+check "unknown: SessionStart envelope"               'jq -e ".hookSpecificOutput.hookEventName==\"SessionStart\"" <<<"$OUT_U" >/dev/null'
+check "unknown: register advisory mentions team.md"  'jq -r ".hookSpecificOutput.additionalContext" <<<"$OUT_U" | grep -qF "team.md"'
+check "unknown: advisory carries NO freshness text"  '! jq -r ".hookSpecificOutput.additionalContext" <<<"$OUT_U" | grep -qiE "last pull|git pull"'
+
+# ---- Case (a) no user.email (even with user.name set): silent, exit 0 ----------------
+CN="$WORK/collab-noid"
+collab_scaffold "$CN"
+write_team_md "$CN"
+git init -q "$CN"
+git -C "$CN" config user.name "Nameless Person"          # name set, but NO email
+OUT_N="$(run_hook "$CN")"; rc_n=$?
+check "no-identity: empty stdout (silent)"           '[[ -z "$OUT_N" ]]'
+check "no-identity: exit 0"                          '[[ $rc_n -eq 0 ]]'
+
+# ---- Recognized but NO pending for me: silent (no bare freshness) --------------------
+CE="$WORK/collab-empty"
+collab_scaffold "$CE"
+write_team_md "$CE"
+git init -q "$CE"
+git -C "$CE" config user.email "bob.smith@x.com"
+# An inbox that exists but has nothing awaiting bob (only a resolved thread).
+cat > "$CE/docs/collaboration/bob-smith-x-com.md" <<'INBOX'
+## thread:done | asker:alice-example-com | assignee:bob-smith-x-com | subject:Closed
+### turn 1 | author:alice-example-com | status:awaiting-assignee | 2026-06-24T08:00:00Z
+Q.
+### turn 2 | author:bob-smith-x-com | status:awaiting-asker | 2026-06-24T08:30:00Z
+A.
+### turn 3 | author:alice-example-com | status:resolved | 2026-06-24T08:45:00Z
+Closed.
+INBOX
+OUT_E="$(run_hook "$CE")"; rc_e=$?
+check "in-team-no-pending: empty stdout (silent)"    '[[ -z "$OUT_E" ]]'
+check "in-team-no-pending: exit 0"                   '[[ $rc_e -eq 0 ]]'
+
+# ---- No docs/collaboration/ dir at all: silent ---------------------------------------
+CD="$WORK/collab-nodir"
+collab_scaffold "$CD"
+write_team_md "$CD"
+rmdir "$CD/docs/collaboration"
+git init -q "$CD"
+git -C "$CD" config user.email "bob.smith@x.com"
+OUT_D="$(run_hook "$CD")"; rc_d=$?
+check "no-collab-dir: empty stdout (silent)"         '[[ -z "$OUT_D" ]]'
+check "no-collab-dir: exit 0"                        '[[ $rc_d -eq 0 ]]'
+
+# ---- No upstream (@{u}) must NOT error the hook (R10 guarded freshness) ---------------
+# The pending-thread scaffold ($CB) has no remote/upstream — running it already proves
+# the @{u} probe is guarded (the case-(c) run above produced valid JSON, not an error).
+# Add an explicit assertion that a fresh repo with a pending thread and NO upstream
+# still emits clean JSON and surfaces context without an `@{u}` failure.
+git -C "$CB" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; up_rc=$?
+check "no-upstream fixture really has no @{u}"       '[[ $up_rc -ne 0 ]]'
+check "no-upstream: hook still emits valid JSON (no @{u} error)" 'jq -e ".hookSpecificOutput.hookEventName==\"SessionStart\"" <<<"$OUT_C" >/dev/null'
+# stdout JSON alone can't catch an UNGUARDED @{u} probe: git prints
+# `fatal: no upstream ... '@{u}'` to STDERR while the hook still emits JSON. Re-run
+# the no-upstream fixture capturing stderr and assert it carries no @{u}/fatal noise.
+UP_ERR="$(bash "$CB/.claude/hooks/collaboration-inbox.sh" </dev/null 2>&1 >/dev/null)"
+check "no-upstream: hook stderr is clean (guarded @{u})" '! grep -qiE "@\{u\}|fatal:|no upstream|unknown revision" <<<"$UP_ERR"'
+
+rm -rf "$COLLAB_HOME" "$CB" "$CU" "$CN" "$CE" "$CD"
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed"

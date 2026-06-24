@@ -1,0 +1,17 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-19T16:18:38.013594Z",
+  "depends_on": [
+    "fn-6-init-project-in-place-gap-filling.4",
+    "fn-6-init-project-in-place-gap-filling.5"
+  ],
+  "id": "fn-6-init-project-in-place-gap-filling.6",
+  "priority": null,
+  "spec": "fn-6-init-project-in-place-gap-filling",
+  "spec_path": ".flow/tasks/fn-6-init-project-in-place-gap-filling.6.md",
+  "status": "todo",
+  "title": "Docs + fn-2 spec R2/R6 revision",
+  "updated_at": "2026-06-19T16:20:16.985844Z"
+}

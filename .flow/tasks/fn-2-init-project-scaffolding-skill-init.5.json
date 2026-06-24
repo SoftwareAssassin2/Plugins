@@ -11,7 +11,7 @@
   "priority": null,
   "spec": "fn-2-init-project-scaffolding-skill-init",
   "spec_path": ".flow/tasks/fn-2-init-project-scaffolding-skill-init.5.md",
-  "status": "todo",
+  "status": "done",
   "title": "Observability compose stack template (Grafana + OTel Collector)",
   "updated_at": "2026-06-14T00:34:17.288552Z"
 }

@@ -10,7 +10,7 @@
   "priority": null,
   "spec": "fn-2-init-project-scaffolding-skill-init",
   "spec_path": ".flow/tasks/fn-2-init-project-scaffolding-skill-init.12.md",
-  "status": "todo",
+  "status": "done",
   "title": "Angular SPA templates (MarketingSite + WebApp) + front-end.md",
   "updated_at": "2026-06-14T00:35:43.394376Z"
 }

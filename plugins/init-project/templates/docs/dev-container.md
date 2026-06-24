@@ -13,7 +13,7 @@ Anything the repo depends on to operate easily and efficiently belongs in
 `.devcontainer/` — no exceptions. This includes:
 
 - **System packages** (e.g. `jq`, `shellcheck`, `shfmt`)
-- **CLI tools** (e.g. `gh`, the cloud CLIs, `claude`)
+- **CLI tools** (e.g. `gh`, `glab`, the cloud CLIs, `claude`)
 - **Language runtimes** (e.g. the .NET SDK, Node)
 - **Claude Code marketplaces and plugins** — marketplaces declared in
   `.claude/settings.json`, plugins provisioned via `.devcontainer/setup.sh`
@@ -37,6 +37,7 @@ the first time someone other than the original author tries it.
 | Claude Code plugins | provisioned in `.devcontainer/setup.sh` (best-effort install) |
 | MCP servers | `.mcp.json` / settings — NOT `claude plugin install` |
 | VS Code extensions | `customizations.vscode.extensions` in `.devcontainer/devcontainer.json` |
+| Claude Code hooks (e.g. the async-collaboration SessionStart hook) | the script under `.claude/hooks/`, registered in `.claude/settings.json` |
 | Runtime service containers (compose-managed) | the component's own `src/<component>/` (e.g. `src/postgres/`, `src/keycloak/`) — NOT `.devcontainer/` |
 | Observability stack (compose-managed dev tooling) | its own `src/<component>/` (`src/otel-collector/`, `src/prometheus/`, `src/grafana/`) — NOT `.devcontainer/` |
 | Opt-in local LLM mock stack (compose-managed dev tooling) | `etc/local-llm/` (LiteLLM + Ollama) — NOT `.devcontainer/`; see `docs/local-llm.md` |
@@ -46,7 +47,12 @@ enable-steps are best-effort: each is isolated so a single failure warns but
 does not abort, and a fresh container build / `setup.sh` run succeeds regardless.
 Steps that require per-user auth or secrets (signing into a CLI, providing an API
 key) are documented as a per-user follow-up — the *installation* is
-container-level, the *credentials* are the contributor's.
+container-level, the *credentials* are the contributor's. The async
+collaboration protocol (see [`docs/collaboration.md`](collaboration.md)) is one
+such per-user follow-up: it keys identity off `git config --get user.email`, so
+each contributor sets their own git identity in the container (a dev container
+may have no `.gitconfig` unless one is mounted) — the hook stays silent until an
+identity is present, never guessing.
 
 ## 3. What deliberately lives OUTSIDE `.devcontainer/`
 

@@ -1,0 +1,52 @@
+# GitLab CI for __SCAFFOLD_PROJECT_NAME__ — AI code review on merge requests.
+#
+# This file is the GitLab counterpart to .github/workflows/ai-review.yml: there is NO
+# scaffold-time platform detection. Both files are shipped; a .gitlab-ci.yml is inert
+# on GitHub and a .github/workflows/ file is inert on GitLab, so whichever host this
+# project lands on runs its own.
+#
+# The job invokes GitLab Duo code review on each merge request. It is scoped to
+# merge-request pipelines ONLY (CI_PIPELINE_SOURCE == "merge_request_event") — it does
+# not run on branch/tag pushes.
+#
+# BEST-EFFORT / NON-FATAL by design (advisory, never a merge gate):
+#   - allow_failure: true  — a failed review never blocks the MR.
+#   - A project where GitLab Duo is not enabled, or where the review CI variable is
+#     absent, WARNS and the job exits success.
+#
+# Auth: GitLab Duo is enabled per project/group in GitLab (Settings -> GitLab Duo).
+# Any token this job needs is referenced via a CI/CD VARIABLE (Settings -> CI/CD ->
+# Variables, masked) — NEVER committed here. See README.md "CI-based AI code review".
+#
+# The container image is PINNED by digest-friendly tag (no floating :latest), mirroring
+# the pinning convention used across the scaffolded CI.
+
+stages:
+  - review
+
+ai-review:
+  stage: review
+  image: registry.gitlab.com/gitlab-org/cli:v1.54.0
+  # Advisory: a failed AI review must never block the merge request.
+  allow_failure: true
+  rules:
+    # Run ONLY on merge-request pipelines — never on branch or tag pushes.
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - |
+      set -uo pipefail
+      # GitLab Duo code review is enabled at the project/group level (Settings ->
+      # GitLab Duo). When it is not enabled — or the review token is absent — this job
+      # must WARN and pass, never fail the MR.
+      if [ -z "${GITLAB_DUO_REVIEW_ENABLED:-}" ] && [ -z "${CI_JOB_TOKEN:-}" ]; then
+        echo "WARNING: GitLab Duo review not configured for this project — skipping (non-fatal)."
+        exit 0
+      fi
+      # Request a GitLab Duo code review on the current merge request. Best-effort: any
+      # failure (Duo not enabled, API/permission error) WARNS and exits success.
+      if ! glab duo review --mr "$CI_MERGE_REQUEST_IID" 2>duo.err; then
+        echo "WARNING: GitLab Duo review did not complete — skipping (non-fatal)."
+        sed -e 's/^/duo: /' duo.err || true
+        exit 0
+      fi
+      echo "GitLab Duo review requested for MR !$CI_MERGE_REQUEST_IID."

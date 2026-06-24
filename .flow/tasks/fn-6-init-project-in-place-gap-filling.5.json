@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-19T16:18:37.846460Z",
+  "depends_on": [
+    "fn-6-init-project-in-place-gap-filling.3"
+  ],
+  "id": "fn-6-init-project-in-place-gap-filling.5",
+  "priority": null,
+  "spec": "fn-6-init-project-in-place-gap-filling",
+  "spec_path": ".flow/tasks/fn-6-init-project-in-place-gap-filling.5.md",
+  "status": "todo",
+  "title": "Tests: re-root harness + gap-fill/conflict matrix + kcov 100%",
+  "updated_at": "2026-06-19T16:25:30.110426Z"
+}

@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-19T17:44:37.102442Z",
+  "depends_on": [
+    "fn-2-init-project-scaffolding-skill-init.13"
+  ],
+  "id": "fn-2-init-project-scaffolding-skill-init.14",
+  "priority": null,
+  "spec": "fn-2-init-project-scaffolding-skill-init",
+  "spec_path": ".flow/tasks/fn-2-init-project-scaffolding-skill-init.14.md",
+  "status": "todo",
+  "title": "CI-based AI code review (GitHub Codex PR review + GitLab Duo MR review)",
+  "updated_at": "2026-06-19T17:45:00.618760Z"
+}

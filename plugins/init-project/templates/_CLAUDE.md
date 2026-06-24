@@ -4,6 +4,10 @@ __SCAFFOLD_PROJECT_DESCRIPTION__
 
 This is a **mono-repo containing every component of the software system** — infrastructure, pipelines, applications, CLIs, services, and scripts all live here together.
 
+## Communication style
+
+- End every response with the current time on a 12-hour clock in **U.S. Eastern Time** (`America/New_York` — EST or EDT, whichever daylight saving is in effect), e.g. `4:13 PM ET`.
+
 ## The component ↔ folder ↔ config invariant
 
 Every component of the system obeys a 1:1 correspondence:
@@ -60,6 +64,10 @@ When adding a new standard:
 | `docs/local-llm.md` | Working with the opt-in local LLM mock stack — switching between the `ai` (real inference) and `ai-mock` (deterministic mock) profiles, choosing a model, editing the canned mock response, GPU/offline workflows, or removing the stack. |
 | `docs/front-end.md` | Building or changing an Angular SPA — routing, build profile, styling, testing. |
 | `docs/keycloak.md` | Touching authentication, the Keycloak realm, identity, or database session-context / row-level security. |
+| `docs/flownext.md` | **Every time** the `/flownext` plugin is used — especially `/flownext:work`. Defines how to operate autonomously while the user is away (gather all blockers up front, then drive the work to completion). |
+| `docs/todo.md` | Recording or picking up engineering follow-ups — deferred fixes, open questions, things to investigate, tech debt. Check it when starting work; add to it whenever something is deferred. |
+| `docs/collaboration.md` | Handing off async work to a teammate, capturing "we need X's input" into their inbox, reading/writing a thread, or acting on the SessionStart collaboration surfacing — the git-mediated async collaboration protocol. |
+| `docs/team.md` | Identifying yourself, registering a teammate, or looking up who's who / the org chart (handle, git-email, reports-to) the collaboration protocol routes by. |
 
 ## Business direction
 
@@ -76,6 +84,15 @@ Strategic context — what we're building and why — is owned and maintained by
 ## How development should be approached
 
 Follow a **test-driven development** pattern (see `docs/tdd.md`). Design deep modules with narrow interfaces — *design the interface, then delegate the implementation* — and keep feedback loops short.
+
+Follow **YAGNI** ("You Aren't Gonna Need It"): build only what the task in front of you requires, and solve it with the least new code possible. Reuse beats writing — so before adding code, work down this ladder and stop at the first rung that applies:
+
+1. **Does it need to exist at all?** → If not, don't build it.
+2. **Does the standard library do it?** → Use it.
+3. **Is it a native platform feature?** → Use it.
+4. **Does an already-installed dependency do it?** → Use it.
+5. **Is it a one-liner?** → Write the one line.
+6. **None of the above?** → Write the minimum that works, and nothing more.
 
 ### Simplicity over complexity
 
@@ -101,6 +118,16 @@ These are inline directives — they apply to every session, not just when a doc
 - **Never claim something works without verifying it.** Run the test, read the file, check the output — then report.
 - Don't assert that a file/function/value exists from memory; confirm it. "I believe" and "should" are signals to go check.
 
+### Track open work and follow-ups
+- When something still needs doing or investigating — a deferred fix, a follow-up, an open question, tech debt you noticed but didn't address — **write it in `docs/todo.md`** instead of letting it evaporate in chat. Capture *what*, *where* (file/area), and *why it matters*.
+- **Check `docs/todo.md` when you start work**, and tick off or remove items as you finish them.
+- This is *technical* follow-up tracking — keep it distinct from `docs/priorities.md` (business scope/roadmap, owned by `/dick`).
+
+### Async collaboration
+- When the user wants another teammate's input ("we need X's input", "get X's take on this", "ask X about…"), recognize the intent: capture the question — **with liberal context** so the assignee can dig in — into that teammate's inbox per the protocol, rather than letting it stay in chat.
+- **Check your own inbox at session start** and act on anything where it's your turn (the SessionStart hook surfaces these).
+- Follow the full protocol — identity, threads, turns, status, the round-trip, and the private-repo/PII caveat — in [`docs/collaboration.md`](docs/collaboration.md). Don't restate it here.
+
 ## Business-consult sub-agent (before non-trivial work)
 
 Before starting any non-trivial piece of work, **consult the business direction** so the work is aligned with what the project is actually trying to achieve:
@@ -121,6 +148,7 @@ Before starting any non-trivial piece of work, **consult the business direction*
 
 - **`CLAUDE.md` (this file)** — a thin, always-on index: root layout, the Standards index, and the inline working agreements above. Depth lives in `docs/` and is pulled in on demand. Kept current via the auto-update reminder (below).
 - **`README.md`** — human-facing onboarding (what the project is, dev-container quickstart, how to run things). Distinct from this agent-facing file.
+- **`docs/collaboration.md` + `docs/team.md`** — the git-mediated async collaboration protocol and the team registry / org chart; per-teammate thread inboxes live under `docs/collaboration/`. One of three non-overlapping note-surfaces (teammate handoffs here, my engineering loose ends in `docs/todo.md`, business roadmap in `docs/priorities.md`).
 - **Sub-agent convention** — delegate read-heavy exploration, research, and independently-parallelizable work to sub-agents. Use them to keep the main thread's context focused on the task, not on raw file-reading.
 
 ## Keeping the docs current (auto-update reminder)

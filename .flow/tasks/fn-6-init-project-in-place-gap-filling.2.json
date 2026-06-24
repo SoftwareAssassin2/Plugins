@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-19T16:18:37.360177Z",
+  "depends_on": [
+    "fn-6-init-project-in-place-gap-filling.1"
+  ],
+  "id": "fn-6-init-project-in-place-gap-filling.2",
+  "priority": null,
+  "spec": "fn-6-init-project-in-place-gap-filling",
+  "spec_path": ".flow/tasks/fn-6-init-project-in-place-gap-filling.2.md",
+  "status": "todo",
+  "title": "Engine: gap-fill apply, manifest-as-output, retire strict/--force/--update",
+  "updated_at": "2026-06-19T16:24:57.434184Z"
+}

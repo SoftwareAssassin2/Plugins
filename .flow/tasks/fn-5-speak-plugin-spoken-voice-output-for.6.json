@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-06-15T11:09:37.248708Z",
+  "depends_on": [
+    "fn-5-speak-plugin-spoken-voice-output-for.5"
+  ],
+  "id": "fn-5-speak-plugin-spoken-voice-output-for.6",
+  "priority": null,
+  "spec": "fn-5-speak-plugin-spoken-voice-output-for",
+  "spec_path": ".flow/tasks/fn-5-speak-plugin-spoken-voice-output-for.6.md",
+  "status": "todo",
+  "title": "Tests + coverage.sh + /speak-test command",
+  "updated_at": "2026-06-15T11:12:11.703015Z"
+}

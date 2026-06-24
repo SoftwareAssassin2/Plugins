@@ -12,6 +12,16 @@
     }
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/collaboration-inbox.sh"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

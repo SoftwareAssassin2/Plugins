@@ -1,0 +1,6 @@
+# Keeps the docs/collaboration/ inbox directory present in a fresh scaffold while
+# it is empty. Per-person thread inboxes (docs/collaboration/<handle>.md) are
+# created at runtime by the AI agent when a teammate first raises a thread — they
+# are NOT shipped by the scaffold, so they never collide with a template-owned
+# path. See docs/collaboration.md for the thread/turn protocol. Remove this
+# .gitkeep once real inbox files land here.
