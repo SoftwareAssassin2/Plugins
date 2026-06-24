@@ -65,6 +65,7 @@ When adding a new standard:
 | `docs/front-end.md` | Building or changing an Angular SPA — routing, build profile, styling, testing. |
 | `docs/keycloak.md` | Touching authentication, the Keycloak realm, identity, or database session-context / row-level security. |
 | `docs/flownext.md` | **Every time** the `/flownext` plugin is used — especially `/flownext:work`. Defines how to operate autonomously while the user is away (gather all blockers up front, then drive the work to completion). |
+| `docs/todo.md` | Recording or picking up engineering follow-ups — deferred fixes, open questions, things to investigate, tech debt. Check it when starting work; add to it whenever something is deferred. |
 
 ## Business direction
 
@@ -114,6 +115,11 @@ These are inline directives — they apply to every session, not just when a doc
 ### Verify before claiming
 - **Never claim something works without verifying it.** Run the test, read the file, check the output — then report.
 - Don't assert that a file/function/value exists from memory; confirm it. "I believe" and "should" are signals to go check.
+
+### Track open work and follow-ups
+- When something still needs doing or investigating — a deferred fix, a follow-up, an open question, tech debt you noticed but didn't address — **write it in `docs/todo.md`** instead of letting it evaporate in chat. Capture *what*, *where* (file/area), and *why it matters*.
+- **Check `docs/todo.md` when you start work**, and tick off or remove items as you finish them.
+- This is *technical* follow-up tracking — keep it distinct from `docs/priorities.md` (business scope/roadmap, owned by `/dick`).
 
 ## Business-consult sub-agent (before non-trivial work)
 

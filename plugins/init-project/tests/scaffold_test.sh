@@ -80,6 +80,8 @@ for d in business strategy customers priorities decisions; do
   check "business stub docs/$d.md is a TODO home" "grep -q '## TODO' \"\$WORK/demo-app/docs/$d.md\""
 done
 check "no docs/roadmap.md (priorities replaces it)" '[[ ! -f "$WORK/demo-app/docs/roadmap.md" ]]'
+check "docs/todo.md present (engineering follow-ups home)" '[[ -f "$WORK/demo-app/docs/todo.md" ]]'
+check "_CLAUDE.md Standards index links docs/todo.md" 'grep -q "docs/todo.md" "$WORK/demo-app/CLAUDE.md"'
 check ".gitignore present in scaffold output"       '[[ -f "$WORK/demo-app/.gitignore" ]]'
 check ".gitignore ignores .worktrees/ + generated realm" 'grep -q "^\.worktrees/" "$WORK/demo-app/.gitignore" && grep -q "src/keycloak/import/\*-realm.json" "$WORK/demo-app/.gitignore"'
 # config.json and .flow/bin/ must stay tracked — assert no ACTIVE ignore rule
