@@ -300,9 +300,18 @@ jobs:
   #
   # `needs: verify-package-restorable` (NOT a publish job directly) so it runs
   # only AFTER the index confirms the package is restorable, and gated on that
-  # gate having SUCCEEDED on a release tag. No `always()` here — that belongs on
-  # the aggregation gate above; this job must NOT run if the index never showed
-  # the package.
+  # gate having SUCCEEDED on a release tag.
+  #
+  # `always()` IS required here (NOT redundant with the gate above). This job's
+  # transitive `needs` closure includes `publish-apikey`, which is SKIPPED on the
+  # OIDC path (and `publish-oidc` is skipped on the API-key path). GitHub
+  # propagates a "skipped" status to every downstream job whose dependency
+  # closure contains a skipped job UNLESS that job uses `always()` — the
+  # intermediate `always()` on the aggregation gate makes IT run, but does NOT
+  # shield this further-downstream job. Without `always()` here, this job is
+  # silently skipped on EVERY real release. The explicit
+  # `needs.verify-package-restorable.result == 'success'` guard preserves the
+  # intent: it must NOT run if the index never showed the package.
   #
   # Network-enabled and tag-only by construction. The offline scaffold_test.sh
   # (static generated-artifact assertions) is a SEPARATE, unchanged path and is
@@ -311,7 +320,7 @@ jobs:
   verify-scaffold-restore:
     name: verify scaffold restore (live published ParleyAI)
     needs: verify-package-restorable
-    if: needs.verify-package-restorable.result == 'success' && startsWith(github.ref, 'refs/tags/nuget-v')
+    if: always() && needs.verify-package-restorable.result == 'success' && startsWith(github.ref, 'refs/tags/nuget-v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
