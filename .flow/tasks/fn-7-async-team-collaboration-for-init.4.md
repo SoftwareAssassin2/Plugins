@@ -43,7 +43,10 @@ Add `scaffold_test.sh` assertions proving the whole feature lands in a fresh sca
 - [ ] Full `scaffold_test.sh` green; `shellcheck` clean
 
 ## Done summary
-_(filled on completion)_
+Added a self-contained async-collaboration assertion block to plugins/init-project/tests/scaffold_test.sh: structural checks (all new template files land in a dedicated FRESH scaffold; hook executable + # Description: + set -uo pipefail + bash -n + no executed git fetch/pull; settings.json hooks.SessionStart wired AND hooks.Stop + statusLine preserved; _CLAUDE.md links collaboration.md/team.md; tightened README PII caveat on one collaboration line; todo.md + priorities.md cross-ref the docs/collaboration/ directory surface), git-tracked verification of all four new template files (incl. the hook) guarding the scaffolded-.gitignore silent-drop gotcha, and a behavioral hook block proving R8/R10 with isolated git config (temp HOME + GIT_CONFIG_GLOBAL/SYSTEM=/dev/null, git init per case with repo-local user.email): whole-email-slug fixtures, latest-turn routing (resolved/superseded does NOT alert, asker + assignee routing), register advisory without freshness, silent cases (no email / in-team-no-pending / no collab dir), quotes+newline JSON-escape proof, and a no-upstream @{u} guard asserting both clean JSON and clean stderr. Full suite green at 398 passed / 0 failed; shellcheck clean; codex review SHIP.
 
+Note: scaffold_test.sh is also slated to be touched by fn-2.14 (todo) and fn-6.5 (todo, harness rewrite) — this block is appended self-contained at the end to minimize merge churn.
 ## Evidence
-_(filled on completion)_
+- Commits: bcdf039, 3b7a71e, f5ca7ff30e15847e2be3a0aff0e840375abcc277
+- Tests: bash plugins/init-project/tests/scaffold_test.sh (398 passed, 0 failed), bash -n plugins/init-project/tests/scaffold_test.sh, shellcheck plugins/init-project/tests/scaffold_test.sh (clean; only pre-existing SC2016/SC2034 check-predicate convention)
+- PRs:
