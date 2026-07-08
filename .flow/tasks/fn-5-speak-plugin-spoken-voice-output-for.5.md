@@ -39,7 +39,8 @@ Add four slash commands and the `doctor` diagnostic, plus runtime dependency det
 - [ ] `doctor` reports `nc` **capability** per C6, not mere presence; `-l` reported "not checked; proven by --serve" per C5; forward-mode unusable flag fails (R23); a capability failure is **distinguishable** from an unreachable/refused listener in the output
 
 ## Done summary
-_(filled on completion)_
-
+Added the four /speak:* slash commands (now/on/off/status command files) and replaced the doctor stub in bin/speak with the full C5-exact diagnostic: default doctor with per-mode required-vs-other-feature dependency labelling, --hook readiness-if-enabled, and --listener host-only four-way classification (incl. C7 rc-11 live-different-port, markers preserved) reusing .8's identity helpers verbatim, .4's deps_missing (extended with a listener mode), .2's C6 nc capability cache, and a new C4 retry/backoff reachability wrapper. Codex impl-review: SHIP (first pass).
 ## Evidence
-_(filled on completion)_
+- Commits: 796fd4bc1a18e486b0ac474f3a2f3f4733c34c43
+- Tests: bash -n plugins/speak/bin/speak (and /bin/bash 3.2 -n), shellcheck plugins/speak/bin/speak (clean), shellcheck -x plugins/speak/hooks/stop-speak.sh (clean), manual doctor battery: healthy local exit 0 (no listener, jq absent still 0); missing say -> exit 1 as missing LOCAL dep with no listener failure; SPEAK_MODE=bogus -> INVALID exit 1; forced-local on fake-Linux -> 'unsupported local TTS backend'; bare fake-Linux -> 'UNSUPPORTED host OS'; forward: refused connection -> UNREACHABLE distinct from fake nc without -z -> capability NOT CHECKED; invalid SPEAK_PORT non-fatal local / fatal forward; doctor --hook READY exit 0 with toggle shown not gating; doctor --listener four-way vs REAL --serve on :18765 (healthy 0; SPEAK_PORT=18766 -> C7 rc11 'listener running on :18765, not :18766' markers preserved; stopped -> 'unrelated process / nothing on port'; foreign nc -l -> 'port reachable but not recognized as this listener'; dead-pid stale markers cleaned); forward-context --listener TCP-only; speak status alias; /speak:now handoff sim: code-fence+backtick body via file-stdin to stubbed say -> cleaned text exit 0; explicit unreachable -> immediate stderr message with ./plugins/speak/bin/speak --serve
+- PRs:
