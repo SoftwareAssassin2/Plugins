@@ -511,6 +511,13 @@ play_local() {
 SPEAK_SPOOL_CAP=50
 SPEAK_SESSION_WINDOW_SECS=60
 
+# C7 grace window: a lifetime lock with NO pidfile behind it is only removed
+# as stale once it is older than this — cmd_serve writes the pidfile right
+# after acquiring the lock, so a younger lock-without-pidfile means a --serve
+# startup is in flight and removing it would reopen the double-start race.
+# Plain variable so the .6 tests can shrink it.
+SPEAK_LOCK_GRACE_SECS=10
+
 # File-backed listener state paths — populated by listener_init_state (C3).
 # Empty-string defaults keep sourced use nounset-safe.
 SPEAK_LISTENER_LOG=""
@@ -775,6 +782,12 @@ listener_identity_check() {
   return 0
 }
 
+# file_mtime_epoch — portable file mtime as epoch seconds (BSD/macOS
+# `stat -f %m`, GNU `stat -c %Y`). Empty output when unreadable.
+file_mtime_epoch() {
+  stat -f %m "${1-}" 2>/dev/null || stat -c %Y "${1-}" 2>/dev/null || true
+}
+
 # listener_stale_cleanup — remove STALE C7 markers only, at this well-defined
 # validation point (never from the mutex helpers' timeout paths): a pidfile
 # whose identity fails (dead/mismatched pid, ps shape, port, or lock), and a
@@ -785,17 +798,25 @@ listener_identity_check() {
 # Reachability plays no part here (C4): an unreachable-but-live listener is
 # NOT stale, and this function never probes.
 listener_stale_cleanup() {
-  local port rc
+  local port rc now mt
   port="${1-}"
   rc=0
   listener_identity_check "$port" || rc=$?
   case "$rc" in
     0) return 10 ;; # live valid listener — never touch its markers
     1)
-      # No pidfile at all: any lingering lifetime lock is stale by definition.
+      # No pidfile: a lingering lifetime lock is stale ONLY once older than
+      # SPEAK_LOCK_GRACE_SECS. cmd_serve writes its pidfile immediately after
+      # acquiring the lock, so a younger lock-without-pidfile means a --serve
+      # startup is IN FLIGHT — removing it would hand the lock to a second
+      # starter and reopen the exact double-start race the lock closes.
       if [ -d "${SPEAK_LIFETIME_LOCK_DIR:-}" ]; then
-        rm -rf "$SPEAK_LIFETIME_LOCK_DIR"
-        listener_log "removed stale lifetime lock (no pidfile behind it)"
+        now="$(date +%s)"
+        mt="$(file_mtime_epoch "$SPEAK_LIFETIME_LOCK_DIR")"
+        if [ -n "$mt" ] && [ $((now - mt)) -gt "$SPEAK_LOCK_GRACE_SECS" ]; then
+          rm -rf "$SPEAK_LIFETIME_LOCK_DIR"
+          listener_log "removed stale lifetime lock (no pidfile behind it, age $((now - mt))s)"
+        fi
       fi
       ;;
     *)
@@ -1203,11 +1224,22 @@ cmd_serve() {
   fi
   SPEAK_SERVE_OWNS_LIFETIME=1
 
+  # C7: publish the identity pidfile IMMEDIATELY after acquiring the lock —
+  # our live ps shape already contains bin/speak + --serve, so identity is
+  # fully valid from here and a concurrent starter classifies us "already
+  # running" instead of stale-cleaning a lock that has no pidfile behind it
+  # yet. If the bind below fails, serve_shutdown removes this marker + the
+  # lock, so no stale identity survives a failed start.
+  if ! listener_pidfile_write "$port"; then
+    listener_log "warning: could not write pidfile ${SPEAK_PIDFILE} — doctor cannot identify this listener"
+  fi
+
   rm -rf "$SPEAK_LOCK_DIR" # stale update mutex from a previous unclean stop
   listener_reset_state
   dir="$(listener_state_dir)"
   if ! SPEAK_SPOOL_DIR="$(mktemp -d "$dir/spool.XXXXXX" 2>/dev/null)"; then
     echo "speak: cannot create spool dir under '$dir'" >&2
+    rm -f "$SPEAK_PIDFILE"                               # ours (written above)
     rmdir "$SPEAK_LIFETIME_LOCK_DIR" 2>/dev/null || true # ours (acquired above)
     return 1
   fi
@@ -1222,15 +1254,6 @@ cmd_serve() {
   listener_accept_loop "$port" &
   SPEAK_SERVE_ACCEPT_PID=$!
   trap 'serve_shutdown 0' INT TERM
-
-  # C7: publish the identity pidfile once the bind is underway (the accept
-  # loop above owns the actual `nc -l` bind — C5). If that bind fails, the
-  # loop exits non-zero and serve_shutdown removes this marker + our lock, so
-  # no stale identity ever survives a failed start. Trap is installed first
-  # so an early INT/TERM still cleans up.
-  if ! listener_pidfile_write "$port"; then
-    listener_log "warning: could not write pidfile ${SPEAK_PIDFILE} — doctor cannot identify this listener"
-  fi
 
   echo "speak: listening on 127.0.0.1:${port} (SPEAK_PORT overrides; state: ${dir}; Ctrl-C to stop)"
   listener_log "listener started on 127.0.0.1:${port} (pid $$)"
