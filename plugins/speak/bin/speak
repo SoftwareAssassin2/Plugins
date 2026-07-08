@@ -7,7 +7,7 @@
 #   speak -- doctor         speak a literal reserved word
 #
 # Reserved first args dispatch as subcommands (never spoken):
-#   --serve   host listener            (stub here — owned by task .3)
+#   --serve   host listener            (task .3; hardening owned by .8/.9)
 #   doctor    full diagnostic          (stub here — owned by task .5)
 #   status    alias for doctor         (stub here — owned by task .5)
 #   on / off  auto-speak toggle writes (stub here — owned by task .4)
@@ -15,13 +15,20 @@
 # Contracts (epic fn-5 §Canonical Contracts — C-IDs are authoritative):
 #   C1  mode-detection precedence (implemented below in speak_mode)
 #   C2  wire frame `<sanitized-session-id>\t<base64>\n` + 65536-byte encoded
-#       cap with sender-side UTF-8-boundary truncation (build_frame)
+#       cap with sender-side UTF-8-boundary truncation (build_frame); the
+#       listener rejects malformed/undecodable frames (validate_frame)
+#   C3  listener_state_dir = ${SPEAK_DATA_DIR:-$HOME/.local/state/speak} for
+#       ALL listener state (pid/lock/log/spool) — deliberately no
+#       CLAUDE_PLUGIN_DATA so a terminal listener and doctor agree
 #   C4  reachability: `nc -z` probe is ADVISORY ONLY (listener_reachable);
 #       the send itself uses bounded retry/backoff, never a probe gate
+#   C5  listen (-l) capability is NEVER pre-probed — the real `--serve` bind
+#       is the only authoritative listen check
 #   C6  nc capability detection (owned HERE — .3/.4/.5 reuse, no re-derivation)
 #   C8  sanitize_session_id: [A-Za-z0-9._-], capped, empty -> 'unknown'
 #   C9  SPEAK_PORT validated 1..65535; SPEAK_MAX_CHARS: unset = no cap;
-#       invalid = treated unset + stderr note
+#       invalid = treated unset + stderr note; spool cap 50 (drop-oldest);
+#       active-session rolling window 60s
 #   Exit codes are simple 0 = success / non-zero = failure (R30) — deliberately
 #   NOT this repo's 64/127 dispatcher contract.
 #
@@ -456,15 +463,566 @@ play_local() {
 }
 
 # ---------------------------------------------------------------------------
-# Subcommand stubs — final behavior owned by later tasks (.3/.4/.5). The point
-# in THIS task is only that reserved first args dispatch here and are never
-# spoken as text.
+# Listener core (task .3): `speak --serve` — the host side of forward mode.
+#
+# Shape (R6/R15–R18): a respawn loop around one-shot `nc -l` accepts frames on
+# 127.0.0.1:$SPEAK_PORT and FAST-enqueues each validated+decoded line into a
+# bounded spool (a temp DIR of sortable files — deliberately NOT a named pipe,
+# which can't drop-oldest and blocks writers); a SINGLE playback worker drains
+# the spool to `say` in order so utterances never overlap and accepting never
+# blocks on playback. All cross-process state (counters, session log, current
+# state) is FILE-backed — bash background workers can't propagate variables to
+# the parent — and every queue/counter/session-log mutation is guarded by an
+# atomic `mkdir` lock dir. A background renderer repaints the live status line
+# from those files.
+#
+# Provisionally unhardened by design: per-connection watchdog + bounded
+# cap+1-byte capture are task .9; pidfile identity/lifetime-lock/double-start
+# classification are task .8. The epic does not ship without them.
+#
+# Sourceable-helper contract for the .6 unit tests: everything below except
+# cmd_serve's own orchestration (validate_frame, b64_decode_flag/-line,
+# listener_state_dir, listener_init_state, speak_lock_acquire/release,
+# spool_next_seq/enqueue/prune/claim, counter_read/incr, session_log_append,
+# session_active_count, render_status_line, process_frame_line) works sourced,
+# against paths set by listener_init_state (override via SPEAK_DATA_DIR).
 # ---------------------------------------------------------------------------
 
-cmd_serve() {
-  echo "speak: --serve (host listener) is not yet implemented" >&2
-  return 1
+# C9 listener constants: bounded spool cap (drop-oldest) + the active-session
+# rolling window. Plain variables so the .6 tests can shrink them.
+SPEAK_SPOOL_CAP=50
+SPEAK_SESSION_WINDOW_SECS=60
+
+# File-backed listener state paths — populated by listener_init_state (C3).
+# Empty-string defaults keep sourced use nounset-safe.
+SPEAK_LISTENER_LOG=""
+SPEAK_LOCK_DIR=""
+SPEAK_COUNTER_OK=""
+SPEAK_COUNTER_FAIL=""
+SPEAK_SESSIONS_FILE=""
+SPEAK_STATE_FILE=""
+SPEAK_SPOOL_DIR=""
+
+# validate_frame outputs (bash 3.2 has no rich returns; globals + rc).
+SPEAK_FRAME_SID=""
+SPEAK_FRAME_B64=""
+
+# base64 decode-flag cache — detected once per process by b64_decode_flag.
+SPEAK_B64_DECODE_FLAG=""
+
+# Serve-time job pids (own process groups via `set -m`; see cmd_serve).
+SPEAK_SERVE_WORKER_PID=""
+SPEAK_SERVE_RENDER_PID=""
+SPEAK_SERVE_ACCEPT_PID=""
+
+# listener_state_dir — C3: THE resolver for all listener state (pid/lock/log/
+# spool). Deliberately `${SPEAK_DATA_DIR:-$HOME/.local/state/speak}` with NO
+# CLAUDE_PLUGIN_DATA — a terminal-started listener and a same-host
+# `doctor --listener` (.5) must agree on the same dir.
+listener_state_dir() {
+  printf '%s\n' "${SPEAK_DATA_DIR:-${HOME-}/.local/state/speak}"
 }
+
+# nc_listen_args — R15: the ONE place the listen invocation is spelled.
+# Pins the macOS-first positional form:
+#     nc -l 127.0.0.1 <port>
+# BSD/OpenBSD variance: Apple/BSD nc and OpenBSD nc both accept
+# `-l [host] port` positionally (and both serve ONE connection per -l, hence
+# the respawn loop). GNU/traditional netcat would instead need
+# `-l -p <port> -s 127.0.0.1` — deliberately NOT emitted: the listener side of
+# the contract is the macOS host (C4/R15); a GNU-netcat host is out of scope.
+# Loopback bind only — never expose the listener beyond the machine.
+nc_listen_args() {
+  printf '%s\n' "-l 127.0.0.1 $1"
+}
+
+# b64_decode_flag — detect the base64 DECODE flag (BSD `-D` vs GNU `-d`) by a
+# real round-trip probe, never hard-coded. stdout: the flag. Cached per
+# process. 0 ok; 3 base64 missing; 5 neither flag decodes.
+b64_decode_flag() {
+  local out
+  if [ -n "$SPEAK_B64_DECODE_FLAG" ]; then
+    printf '%s\n' "$SPEAK_B64_DECODE_FLAG"
+    return 0
+  fi
+  command -v base64 >/dev/null 2>&1 || return 3
+  out="$(printf 'c3Bl' | base64 -d 2>/dev/null || true)"
+  if [ "$out" = "spe" ]; then
+    SPEAK_B64_DECODE_FLAG="-d"
+    printf '%s\n' "-d"
+    return 0
+  fi
+  out="$(printf 'c3Bl' | base64 -D 2>/dev/null || true)"
+  if [ "$out" = "spe" ]; then
+    SPEAK_B64_DECODE_FLAG="-D"
+    printf '%s\n' "-D"
+    return 0
+  fi
+  return 5
+}
+
+# b64_decode_line — stdin base64 -> stdout decoded bytes using the detected
+# flag. Non-zero on undecodable input (callers log + skip per R18).
+b64_decode_line() {
+  local flag
+  flag="$(b64_decode_flag)" || return "$?"
+  base64 "$flag" 2>/dev/null
+}
+
+# validate_frame — C2/R18 frame validation, PURE bash (unit-testable with no
+# listener running). $1 = one received line (no trailing newline). On success
+# sets SPEAK_FRAME_SID / SPEAK_FRAME_B64. Distinct sourceable return codes:
+#   0 valid; 10 not exactly one tab; 11 empty session id; 12 empty payload
+# (undecodable base64 is detected at decode time — it needs the base64 tool).
+validate_frame() {
+  local line stripped ntabs sid b64
+  line="${1-}"
+  SPEAK_FRAME_SID=""
+  SPEAK_FRAME_B64=""
+  stripped="${line//$'\t'/}"
+  ntabs=$((${#line} - ${#stripped}))
+  [ "$ntabs" -eq 1 ] || return 10
+  sid="${line%%$'\t'*}"
+  b64="${line#*$'\t'}"
+  [ -n "$sid" ] || return 11
+  [ -n "$b64" ] || return 12
+  SPEAK_FRAME_SID="$sid"
+  SPEAK_FRAME_B64="$b64"
+  return 0
+}
+
+# listener_init_state — resolve the C3 file-backed state paths (creating the
+# state dir). The spool dir is per-run and created by cmd_serve (or a test).
+listener_init_state() {
+  local dir
+  dir="$(listener_state_dir)"
+  mkdir -p "$dir" || return 1
+  SPEAK_LISTENER_LOG="$dir/listener.log"
+  SPEAK_LOCK_DIR="$dir/state.lock" # update mutex — NOT .8's lifetime listener.lock
+  SPEAK_COUNTER_OK="$dir/counter.ok"
+  SPEAK_COUNTER_FAIL="$dir/counter.fail"
+  SPEAK_SESSIONS_FILE="$dir/sessions.log"
+  SPEAK_STATE_FILE="$dir/state"
+}
+
+# listener_reset_state — zero the per-run observables (R17 totals are running
+# totals for THIS serve run; listener.log persists across runs).
+listener_reset_state() {
+  printf '0\n' >"$SPEAK_COUNTER_OK"
+  printf '0\n' >"$SPEAK_COUNTER_FAIL"
+  : >"$SPEAK_SESSIONS_FILE"
+  printf 'idle\n' >"$SPEAK_STATE_FILE"
+}
+
+# listener_log — append one line to <listener_state_dir>/listener.log. This is
+# where malformed/dropped/probe-adjacent events go — NEVER the status totals
+# (those are playback outcomes only, R17/R18). Never fails the caller.
+listener_log() {
+  [ -n "${SPEAK_LISTENER_LOG:-}" ] || return 0
+  printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || printf '-')" "$*" \
+    >>"$SPEAK_LISTENER_LOG" 2>/dev/null || true
+}
+
+# speak_lock_acquire / speak_lock_release — the atomic `mkdir` mutex guarding
+# every enqueue / prune / counter / session-log mutation. $1 overrides the
+# lock dir (default $SPEAK_LOCK_DIR). Acquire is a bounded spin (~2s) so a
+# crashed holder can't wedge the listener forever; callers treat a timeout as
+# "proceed carefully" (single-writer accept loop + single worker in practice).
+speak_lock_acquire() {
+  local lockdir tries
+  lockdir="${1:-$SPEAK_LOCK_DIR}"
+  [ -n "$lockdir" ] || return 1
+  tries=0
+  while ! mkdir "$lockdir" 2>/dev/null; do
+    tries=$((tries + 1))
+    [ "$tries" -ge 100 ] && return 1
+    sleep 0.02 2>/dev/null || sleep 1
+  done
+  return 0
+}
+
+speak_lock_release() {
+  rmdir "${1:-$SPEAK_LOCK_DIR}" 2>/dev/null || true
+}
+
+# counter_read — print the integer in counter file $1 (missing/garbage -> 0).
+counter_read() {
+  local v
+  v="$(cat "${1-}" 2>/dev/null || true)"
+  case "$v" in '' | *[!0-9]*) v=0 ;; esac
+  printf '%s\n' "$v"
+}
+
+# counter_incr — lock-guarded increment of counter file $1 (temp + rename so
+# the renderer never reads a torn write). Playback outcomes ONLY (R17).
+counter_incr() {
+  local f tmp n
+  f="${1-}"
+  [ -n "$f" ] || return 1
+  speak_lock_acquire || true
+  n="$(counter_read "$f")"
+  if tmp="$(mktemp "${f}.XXXXXX" 2>/dev/null)"; then
+    printf '%s\n' "$((n + 1))" >"$tmp"
+    mv -f "$tmp" "$f"
+  fi
+  speak_lock_release
+}
+
+# session_log_append — lock-guarded: record "epoch sid" for the active-session
+# window, pruning entries older than the window in the same rewrite so the
+# file stays bounded. $1 = ALREADY-SANITIZED session id (C8).
+session_log_append() {
+  local sid now tmp
+  sid="${1-}"
+  [ -n "$sid" ] || return 1
+  now="$(date +%s)"
+  speak_lock_acquire || true
+  if ! tmp="$(mktemp "${SPEAK_SESSIONS_FILE}.XXXXXX" 2>/dev/null)"; then
+    speak_lock_release
+    return 1
+  fi
+  {
+    if [ -f "$SPEAK_SESSIONS_FILE" ]; then
+      awk -v cutoff="$((now - SPEAK_SESSION_WINDOW_SECS))" '($1 + 0) >= cutoff' \
+        "$SPEAK_SESSIONS_FILE" 2>/dev/null || true
+    fi
+    printf '%s %s\n' "$now" "$sid"
+  } >"$tmp"
+  mv -f "$tmp" "$SPEAK_SESSIONS_FILE"
+  speak_lock_release
+}
+
+# session_active_count — the C9 window calculation: distinct session ids seen
+# within the last SPEAK_SESSION_WINDOW_SECS. Read-only (no lock needed — the
+# file is replaced atomically by rename).
+session_active_count() {
+  local now
+  [ -f "${SPEAK_SESSIONS_FILE:-}" ] || {
+    printf '0\n'
+    return 0
+  }
+  now="$(date +%s)"
+  awk -v cutoff="$((now - SPEAK_SESSION_WINDOW_SECS))" \
+    '($1 + 0) >= cutoff && $2 != "" { seen[$2] = 1 } END { n = 0; for (k in seen) n++; print n }' \
+    "$SPEAK_SESSIONS_FILE" 2>/dev/null || printf '0\n'
+}
+
+# spool_next_seq — allocate the next zero-padded sequence key (caller MUST
+# hold the lock: the read-increment-write on .seq is what the lock makes
+# atomic, giving no duplicate and no reordered sequence numbers).
+spool_next_seq() {
+  local f n
+  f="$SPEAK_SPOOL_DIR/.seq"
+  n="$(cat "$f" 2>/dev/null || true)"
+  case "$n" in '' | *[!0-9]*) n=0 ;; esac
+  n=$((n + 1))
+  printf '%s\n' "$n" >"$f"
+  printf '%010d\n' "$n"
+}
+
+# spool_enqueue — ATOMIC enqueue of one decoded utterance (text on stdin):
+# write to an mktemp temp name first, then take the lock, allocate the
+# sortable sequence key, and rename into the queue — a reader never sees a
+# partial file and names never collide. Prunes to the cap in the same
+# critical section.
+spool_enqueue() {
+  local tmp seq
+  [ -n "${SPEAK_SPOOL_DIR:-}" ] || return 1
+  tmp="$(mktemp "$SPEAK_SPOOL_DIR/.in.XXXXXX" 2>/dev/null)" || return 1
+  cat >"$tmp"
+  speak_lock_acquire || true
+  seq="$(spool_next_seq)"
+  mv -f "$tmp" "$SPEAK_SPOOL_DIR/$seq.frame"
+  spool_prune
+  speak_lock_release
+}
+
+# spool_prune — drop-oldest beyond SPEAK_SPOOL_CAP, each drop logged (R16).
+# Caller MUST hold the lock. Only *.frame files are queue entries, and the
+# worker CLAIMS a file by renaming it out of the *.frame namespace under the
+# same lock — so a file is never pruned mid-playback.
+spool_prune() {
+  local f count
+  count=0
+  for f in "$SPEAK_SPOOL_DIR"/*.frame; do
+    [ -e "$f" ] && count=$((count + 1))
+  done
+  while [ "$count" -gt "$SPEAK_SPOOL_CAP" ]; do
+    for f in "$SPEAK_SPOOL_DIR"/*.frame; do
+      break # glob sorts lexicographically; zero-padded keys make that oldest-first
+    done
+    rm -f "$f"
+    listener_log "queue full (cap $SPEAK_SPOOL_CAP): dropped oldest entry ${f##*/}"
+    count=$((count - 1))
+  done
+}
+
+# spool_claim — worker side: under the lock, move the OLDEST queue entry to a
+# non-queue name and print its path (rc 1 when the queue is empty). The rename
+# removes it from the prunable *.frame namespace before playback starts.
+spool_claim() {
+  local f claimed
+  claimed=""
+  speak_lock_acquire || true
+  for f in "$SPEAK_SPOOL_DIR"/*.frame; do
+    if [ -e "$f" ]; then
+      claimed="$SPEAK_SPOOL_DIR/.current.$$"
+      mv -f "$f" "$claimed" 2>/dev/null || claimed=""
+    fi
+    break
+  done
+  speak_lock_release
+  [ -n "$claimed" ] || return 1
+  printf '%s\n' "$claimed"
+}
+
+# listener_set_state — atomically publish idle|speaking for the renderer.
+listener_set_state() {
+  local tmp
+  tmp="$(mktemp "${SPEAK_STATE_FILE}.XXXXXX" 2>/dev/null)" || return 1
+  printf '%s\n' "${1-idle}" >"$tmp"
+  mv -f "$tmp" "$SPEAK_STATE_FILE"
+}
+
+# process_frame_line — handle ONE received line: validate (C2), decode
+# (detected -d/-D), record the session, enqueue. ALWAYS returns 0 — a bad
+# frame is logged + skipped and the listener keeps serving (R18). Malformed/
+# dropped events go to listener.log ONLY, never the playback totals.
+# A zero-byte connection (the `nc -z` probe) never reaches here at all — EOF
+# with no line means the read loop body never runs — so the probe stays
+# silent: neither logged nor counted.
+process_frame_line() {
+  local line rc sid text
+  line="${1-}"
+  line="${line%$'\r'}"
+  if [ -z "$line" ]; then
+    listener_log "rejected frame: empty line"
+    return 0
+  fi
+  # Cheap over-cap guard (C2): a well-formed frame is pure ASCII so the char
+  # count equals bytes. The REAL bounded cap+1-byte read (never buffering an
+  # unbounded newline-less stream) is task .9's bounded-capture work.
+  if [ "${#line}" -gt "$SPEAK_MAX_FRAME_BYTES" ]; then
+    listener_log "rejected frame: over the ${SPEAK_MAX_FRAME_BYTES}-byte encoded frame cap (${#line} chars)"
+    return 0
+  fi
+  rc=0
+  validate_frame "$line" || rc=$?
+  case "$rc" in
+    0) ;;
+    10)
+      listener_log "rejected frame: expected exactly one tab"
+      return 0
+      ;;
+    11)
+      listener_log "rejected frame: empty session id"
+      return 0
+      ;;
+    12)
+      listener_log "rejected frame: empty payload"
+      return 0
+      ;;
+    *)
+      listener_log "rejected frame: invalid (rc=$rc)"
+      return 0
+      ;;
+  esac
+  # C8: sanitize BEFORE the sid is used in any log line or state file.
+  sid="$(sanitize_session_id "$SPEAK_FRAME_SID")"
+  if ! text="$(printf '%s' "$SPEAK_FRAME_B64" | b64_decode_line)"; then
+    listener_log "rejected frame from session '$sid': undecodable base64"
+    return 0
+  fi
+  if [ -z "$text" ]; then
+    listener_log "skipped frame from session '$sid': payload decoded to empty text"
+    return 0
+  fi
+  session_log_append "$sid" || true
+  if ! printf '%s' "$text" | spool_enqueue; then
+    listener_log "enqueue failed for session '$sid'"
+  fi
+  return 0
+}
+
+# listener_accept_lines — drain one connection's stdout line-by-line. The
+# `|| [ -n "$line" ]` arm also processes a final unterminated line (the .2
+# sender always terminates, but a foreign client may not; .9 hardens this).
+listener_accept_lines() {
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    process_frame_line "$line"
+  done
+}
+
+# listener_accept_loop — the respawn loop (R15): BSD/OpenBSD `nc -l` serves
+# ONE connection then exits, so re-invoke forever. The loop only validates/
+# decodes/enqueues — playback lives in the worker, so accepting NEVER blocks
+# on `say` (R16). Three consecutive non-zero nc exits (e.g. the port is
+# already bound) abort the listener — the real bind here is the ONLY
+# authoritative listen check (C5); friendly already-running classification
+# is task .8.
+listener_accept_loop() {
+  set +e # background job: a transient failure must not kill the loop
+  local port args ncrc fails
+  port="$1"
+  args="$(nc_listen_args "$port")"
+  fails=0
+  while :; do
+    # shellcheck disable=SC2086  # $args intentionally word-splits (safe tokens)
+    nc $args </dev/null 2>>"$SPEAK_LISTENER_LOG" | listener_accept_lines
+    ncrc="${PIPESTATUS[0]}"
+    if [ "$ncrc" -ne 0 ]; then
+      fails=$((fails + 1))
+      listener_log "nc -l exited rc=$ncrc (consecutive failure $fails)"
+      if [ "$fails" -ge 3 ]; then
+        listener_log "giving up: cannot listen on 127.0.0.1:$port"
+        echo "speak: cannot listen on 127.0.0.1:${port} (nc exit $ncrc) — is the port in use? see $(listener_state_dir)/listener.log" >&2
+        return 1
+      fi
+      sleep 0.2 2>/dev/null || sleep 1
+    else
+      fails=0
+    fi
+  done
+}
+
+# playback_worker — THE single drain of the spool (R16): claims the oldest
+# entry, publishes speaking/idle, plays via the play_local OS seam (`say` on
+# stdin — text is data, never a shell string), and updates the playback-only
+# totals. A `say` failure increments failures + logs and the worker keeps
+# draining — it never crashes the listener (R17/R18).
+playback_worker() {
+  set +e # background job: a failed playback must not kill the worker
+  local f text
+  while :; do
+    if ! f="$(spool_claim)"; then
+      listener_set_state idle
+      sleep 0.2 2>/dev/null || sleep 1
+      continue
+    fi
+    listener_set_state speaking
+    text="$(cat "$f" 2>/dev/null)"
+    if play_local "$text" >>"$SPEAK_LISTENER_LOG" 2>&1; then
+      counter_incr "$SPEAK_COUNTER_OK"
+    else
+      counter_incr "$SPEAK_COUNTER_FAIL"
+      listener_log "playback failed for entry ${f##*/} (counted in failure total)"
+    fi
+    rm -f "$f"
+  done
+}
+
+# render_status_line — compose the R17 status line from the FILE-BACKED state
+# (worker-side updates are in files, so they're visible across processes).
+render_status_line() {
+  local port state ok fail act
+  port="${1-}"
+  state="$(cat "${SPEAK_STATE_FILE:-}" 2>/dev/null || true)"
+  [ -n "$state" ] || state="idle"
+  ok="$(counter_read "$SPEAK_COUNTER_OK")"
+  fail="$(counter_read "$SPEAK_COUNTER_FAIL")"
+  act="$(session_active_count)"
+  printf 'speak --serve [%s] 127.0.0.1:%s | sessions(last %ss): %s | spoken: %s ok / %s failed' \
+    "$state" "$port" "$SPEAK_SESSION_WINDOW_SECS" "$act" "$ok" "$fail"
+}
+
+# status_renderer — background repaint loop: in-place (\r) on a tty, or a new
+# line only when the status text changes otherwise (keeps piped logs sane).
+status_renderer() {
+  set +e
+  local port cur last
+  port="$1"
+  last=""
+  while :; do
+    cur="$(render_status_line "$port")"
+    if [ -t 1 ]; then
+      printf '\r\033[K%s' "$cur"
+    elif [ "$cur" != "$last" ]; then
+      printf '%s\n' "$cur"
+    fi
+    last="$cur"
+    sleep 1
+  done
+}
+
+# serve_shutdown — the INT/TERM path: kill the worker/renderer/accept process
+# GROUPS (killing the accept group takes the live `nc -l` with it, freeing the
+# port), then remove the spool temp dir and the update mutex.
+serve_shutdown() {
+  set +e
+  local code
+  code="${1:-0}"
+  trap - INT TERM
+  [ -n "${SPEAK_SERVE_ACCEPT_PID:-}" ] && kill -- "-${SPEAK_SERVE_ACCEPT_PID}" 2>/dev/null
+  [ -n "${SPEAK_SERVE_WORKER_PID:-}" ] && kill -- "-${SPEAK_SERVE_WORKER_PID}" 2>/dev/null
+  [ -n "${SPEAK_SERVE_RENDER_PID:-}" ] && kill -- "-${SPEAK_SERVE_RENDER_PID}" 2>/dev/null
+  wait 2>/dev/null
+  [ -n "${SPEAK_SPOOL_DIR:-}" ] && rm -rf "$SPEAK_SPOOL_DIR"
+  speak_lock_release # a lock held mid-flight by a killed worker
+  listener_log "listener stopped (exit $code)"
+  printf '\n'
+  echo "speak: listener stopped"
+  exit "$code"
+}
+
+# cmd_serve — `speak --serve` (R6/R7: started MANUALLY by the user; nothing
+# in the plugin ever auto-starts it). Preflight order: validate SPEAK_PORT
+# (C9), check listener deps say/base64/nc (+ a usable decode flag), THEN bind.
+# No `nc -l` pre-probe of any kind — the real bind is the only authoritative
+# listen check (C5).
+cmd_serve() {
+  local port dir missing rc
+  if ! port="$(speak_port)"; then
+    echo "speak: invalid SPEAK_PORT='${SPEAK_PORT:-}' — expected an integer 1..65535" >&2
+    return 1
+  fi
+  missing=""
+  command -v say >/dev/null 2>&1 || missing="$missing say"
+  command -v base64 >/dev/null 2>&1 || missing="$missing base64"
+  command -v nc >/dev/null 2>&1 || missing="$missing nc"
+  if [ -n "$missing" ]; then
+    echo "speak: missing listener dependencies:${missing} — the listener needs say, base64, and nc" >&2
+    return 1
+  fi
+  if ! b64_decode_flag >/dev/null; then
+    echo "speak: this 'base64' decodes with neither -d nor -D — cannot decode forwarded frames" >&2
+    return 1
+  fi
+  if ! listener_init_state; then
+    echo "speak: cannot create listener state dir '$(listener_state_dir)'" >&2
+    return 1
+  fi
+  rm -rf "$SPEAK_LOCK_DIR" # stale update mutex from a previous unclean stop
+  listener_reset_state
+  dir="$(listener_state_dir)"
+  if ! SPEAK_SPOOL_DIR="$(mktemp -d "$dir/spool.XXXXXX" 2>/dev/null)"; then
+    echo "speak: cannot create spool dir under '$dir'" >&2
+    return 1
+  fi
+
+  # Job control ON so each background job gets its OWN process group —
+  # shutdown then kills whole trees by pgid (incl. the live one-shot nc).
+  set -m
+  playback_worker &
+  SPEAK_SERVE_WORKER_PID=$!
+  status_renderer "$port" &
+  SPEAK_SERVE_RENDER_PID=$!
+  listener_accept_loop "$port" &
+  SPEAK_SERVE_ACCEPT_PID=$!
+  trap 'serve_shutdown 0' INT TERM
+
+  echo "speak: listening on 127.0.0.1:${port} (SPEAK_PORT overrides; state: ${dir}; Ctrl-C to stop)"
+  listener_log "listener started on 127.0.0.1:${port} (pid $$)"
+
+  rc=0
+  wait "$SPEAK_SERVE_ACCEPT_PID" || rc=$?
+  serve_shutdown "$rc"
+}
+
+# ---------------------------------------------------------------------------
+# Subcommand stubs — final behavior owned by later tasks (.4/.5). The point
+# is only that reserved first args dispatch here and are never spoken as text.
+# ---------------------------------------------------------------------------
 
 cmd_doctor() {
   echo "speak: doctor/status diagnostics are not yet implemented" >&2
