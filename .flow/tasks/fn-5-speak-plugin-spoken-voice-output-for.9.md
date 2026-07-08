@@ -30,7 +30,8 @@ Harden the listener accept path: the per-connection watchdog and the bounded-cap
 - [ ] **Proof evidence (owned here):** scripted/manual proof that a stalled/missing-newline client does not wedge the listener and leaves no zombie; `.6` owns the repeatable unit coverage of the bounded-capture helpers (incl. oversized newline-less input)
 
 ## Done summary
-_(filled on completion)_
-
+Hardened the listener accept path (fills .3's seam): each connection is drained through a bounded cap+1-byte reader (`LC_ALL=C read -n 65537` + byte-exact `wc -c` check mirroring build_frame's cap-includes-newline arithmetic) with a per-read watchdog deadline — bash 3.2's ambiguous rc-1 timeout is disambiguated via the recorded concrete `nc` pid (ps-cmdline-verified, never a foreign/recycled pid) and an lsof open-connection check, so stalled/newline-less/oversized clients are dropped + logged pre-decode and severed while an idle listener is never killed; watchdog kills are not counted as bind failures, a per-connection reject budget bounds log growth against NUL floods, and drops go to listener.log only. Proven with 18 scripted checks under system bash 3.2 plus an executable regression smoke; codex review SHIP after fixing two contract findings (unterminated EOF lines decoded; cap off-by-one vs sender).
 ## Evidence
-_(filled on completion)_
+- Commits: 5e65fe0, 74765fd
+- Tests: bash -n plugins/speak/bin/speak, shellcheck plugins/speak/bin/speak (clean), scratchpad/proof-fn5.9.sh — 18/18 under /bin/bash 3.2.57: baseline frame spoken; stalled client severed at deadline + listener keeps serving; 70000-byte newline-less stream capped at 65537 bytes, dropped pre-decode, severed; valid-looking newline-less EOF frame dropped pre-decode (never spoken); exact 65536-byte-body boundary rejected; empty-line flood severed by reject budget; ok=5/fail=0 counters (drops logged, never counted); exactly one live nc, zero zombies; clean shutdown frees port, scratchpad/smoke-exec.sh — real executable --serve regression: listener up, frame spoken, port freed, clean stop
+- PRs:
