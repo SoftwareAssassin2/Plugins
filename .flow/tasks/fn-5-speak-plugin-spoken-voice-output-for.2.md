@@ -36,7 +36,8 @@ Add the container-side forwarding path to `speak`: base64-encode the cleaned tex
 - [ ] In forward mode the CLI does not attempt local `say` (R22)
 
 ## Done summary
-_(filled on completion)_
-
+Added the container-side forward path to plugins/speak/bin/speak: C6 nc capability detection (usage-error probing for -G/-w, -N/-q 0, -z with distinct unsupported/missing/unreachable return codes), C9 port validation, C8 session-id sanitization, C2 frame building (sid\tb64\n, 65536-byte cap with UTF-8-boundary sender-side truncation), C4 advisory listener_reachable probe, and forward_send with bounded retry/backoff that never gates on a probe and never attempts local say in forward mode.
 ## Evidence
-_(filled on completion)_
+- Commits: bde254f05dd23208464d93919b27d46949c4f502
+- Tests: shellcheck plugins/speak/bin/speak, bash -n plugins/speak/bin/speak, sourced-helper unit tests under /bin/bash 3.2: speak_port (10 cases incl. 0/65536/alpha/leading-zeros), sanitize_session_id (charset/cap-64/empty->unknown), speak_session_id (SPEAK_SESSION + hostname fallback), nc capability detection on Apple BSD nc (-G detected, -N correctly rejected as arg-taking, -q invalid -> EOF rc=5 distinct) and on shim GNU/OpenBSD flavor (-w/-N/-z detected), build_frame: >76-char payload one line/one tab/one newline + base64 round-trip; 65536 cap enforced for ASCII+multibyte with UTF-8-boundary truncation (emoji/euro cut at every byte offset stays valid UTF-8); exact-fit emits no notice, listener_reachable: real nc -l listener up rc=0 / down rc=1 / bad port rc=6, 19ms probe, forward_send E2E via shim nc: frame delivered + decoded, retry succeeds on 3rd attempt after 2 simulated respawn-gap failures, listener-down fails in ~1s rc=1 with --serve guidance, invalid SPEAK_PORT clear failure, nc/base64 missing rc=3, R22: shim say never invoked in forward mode; local-mode regression: say invoked, codex impl-review verdict SHIP (first pass, 0 findings)
+- PRs:
