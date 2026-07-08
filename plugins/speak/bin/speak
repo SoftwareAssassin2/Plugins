@@ -1291,8 +1291,13 @@ cmd_serve() {
     [ "$rc" -eq 0 ] && rc=1 # died this early = failed bind, never a success
     serve_shutdown "$rc"    # the accept loop already printed the classification
   fi
+  # Pidfile write failure is STARTUP failure: a listener running without its
+  # identity marker can never be recognized (C7), and once the lock grace
+  # expires a second --serve would stale-clean the lock out from under it.
   if ! listener_pidfile_write "$port"; then
-    listener_log "warning: could not write pidfile ${SPEAK_PIDFILE} — doctor cannot identify this listener"
+    echo "speak: cannot write listener pidfile '${SPEAK_PIDFILE}' — refusing to serve without an identity marker" >&2
+    listener_log "fatal: could not write pidfile ${SPEAK_PIDFILE} — shutting down"
+    serve_shutdown 1
   fi
 
   echo "speak: listening on 127.0.0.1:${port} (SPEAK_PORT overrides; state: ${dir}; Ctrl-C to stop)"
