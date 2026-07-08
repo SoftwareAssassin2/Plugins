@@ -14,7 +14,14 @@
 #
 # Contracts (epic fn-5 §Canonical Contracts — C-IDs are authoritative):
 #   C1  mode-detection precedence (implemented below in speak_mode)
-#   C9  SPEAK_MAX_CHARS: unset = no cap; invalid = treated unset + stderr note
+#   C2  wire frame `<sanitized-session-id>\t<base64>\n` + 65536-byte encoded
+#       cap with sender-side UTF-8-boundary truncation (build_frame)
+#   C4  reachability: `nc -z` probe is ADVISORY ONLY (listener_reachable);
+#       the send itself uses bounded retry/backoff, never a probe gate
+#   C6  nc capability detection (owned HERE — .3/.4/.5 reuse, no re-derivation)
+#   C8  sanitize_session_id: [A-Za-z0-9._-], capped, empty -> 'unknown'
+#   C9  SPEAK_PORT validated 1..65535; SPEAK_MAX_CHARS: unset = no cap;
+#       invalid = treated unset + stderr note
 #   Exit codes are simple 0 = success / non-zero = failure (R30) — deliberately
 #   NOT this repo's 64/127 dispatcher contract.
 #
@@ -125,6 +132,312 @@ speak_mode() {
   return 4
 }
 
+# ---------------------------------------------------------------------------
+# Forward transport (task .2): nc capability detection (C6), port validation
+# (C9), session-id sanitization (C8), wire frame + cap (C2), reachability
+# probe + retried send (C4).
+#
+# Shared sourceable return-code contract for the helpers in this section —
+# capability problems are NEVER conflated with refused/unreachable:
+#   0  ok / supported / reachable / sent
+#   1  unreachable or send failed (a transport outcome, not a capability)
+#   3  required tool missing entirely (nc, base64)
+#   5  nc present but lacks a required capability flag
+#   6  invalid SPEAK_PORT
+# ---------------------------------------------------------------------------
+
+# C2/C9 internal constants. SPEAK_MAX_FRAME_BYTES is deliberately NOT
+# env-overridable — the cap is a wire contract shared with the listener (.3).
+SPEAK_MAX_FRAME_BYTES=65536
+SPEAK_SESSION_ID_MAX=64
+
+# nc capability cache — detected once per process by nc_detect.
+SPEAK_NC_DETECTED=""
+SPEAK_NC_TIMEOUT_FLAG=""
+SPEAK_NC_EOF_FLAGS=""
+SPEAK_NC_Z_OK=""
+
+# nc_flag_usable — probe one nc option by USAGE ERROR, never by connecting
+# (so capability detection can't be conflated with refused/unreachable) and
+# never via `nc -l`. Invoked with the flag(s) only — no destination:
+#   * an UNKNOWN option yields an invalid/illegal/unrecognized-option error;
+#   * a SUPPORTED flag yields only the generic missing-destination usage;
+#   * "requires an argument" means the letter exists but takes a value (e.g.
+#     Apple nc -N, which is NOT OpenBSD's boolean EOF-shutdown -N — treating
+#     it as usable would make `nc -N host port` eat the hostname), so it is
+#     rejected for the boolean capability being probed.
+# Returns 0 = usable, 1 = not usable.
+nc_flag_usable() {
+  local out
+  out="$(nc "$@" </dev/null 2>&1 || true)"
+  case "$out" in
+    *"invalid option"* | *"illegal option"* | *"unrecognized option"* | \
+      *"unknown option"* | *"requires an argument"*)
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+# nc_detect — C6: populate the SPEAK_NC_* capability cache (once per process).
+# Detects: connect-timeout -G (BSD) else -w (GNU/OpenBSD); EOF-shutdown -N
+# else -q 0 (neither -> send capability unsupported); zero-I/O probe -z.
+# Returns 0 = nc present (cache valid), 3 = nc missing entirely.
+nc_detect() {
+  if [ -n "$SPEAK_NC_DETECTED" ]; then
+    [ "$SPEAK_NC_DETECTED" = "ok" ] && return 0
+    return 3
+  fi
+  if ! command -v nc >/dev/null 2>&1; then
+    SPEAK_NC_DETECTED="missing"
+    return 3
+  fi
+  SPEAK_NC_DETECTED="ok"
+  if nc_flag_usable -G1; then
+    SPEAK_NC_TIMEOUT_FLAG="-G"
+  elif nc_flag_usable -w1; then
+    SPEAK_NC_TIMEOUT_FLAG="-w"
+  fi
+  if nc_flag_usable -N; then
+    SPEAK_NC_EOF_FLAGS="-N"
+  elif nc_flag_usable -q 0; then
+    SPEAK_NC_EOF_FLAGS="-q 0"
+  fi
+  if nc_flag_usable -z; then
+    SPEAK_NC_Z_OK="yes"
+  fi
+  return 0
+}
+
+# nc_connect_timeout_flag — stdout: "-G" or "-w". 0 ok; 3 nc missing;
+# 5 neither timeout flag supported.
+nc_connect_timeout_flag() {
+  nc_detect || return 3
+  [ -n "$SPEAK_NC_TIMEOUT_FLAG" ] || return 5
+  printf '%s\n' "$SPEAK_NC_TIMEOUT_FLAG"
+}
+
+# nc_eof_flags — stdout: "-N" or "-q 0" (caller word-splits intentionally).
+# 0 ok; 3 nc missing; 5 neither EOF-shutdown flag supported (the send would
+# hang without one — callers direct the user to netcat-openbsd).
+nc_eof_flags() {
+  nc_detect || return 3
+  [ -n "$SPEAK_NC_EOF_FLAGS" ] || return 5
+  printf '%s\n' "$SPEAK_NC_EOF_FLAGS"
+}
+
+# nc_probe_supported — 0 when zero-I/O `-z` is usable; 3 nc missing; 5 not.
+nc_probe_supported() {
+  nc_detect || return 3
+  [ "$SPEAK_NC_Z_OK" = "yes" ] || return 5
+}
+
+# speak_port — C9: validate SPEAK_PORT (default 8765) as an integer 1..65535.
+# stdout: the normalized port. 0 ok; 6 invalid (callers print the clear
+# failure message so this stays a silent sourceable probe).
+speak_port() {
+  local p
+  p="${SPEAK_PORT:-8765}"
+  case "$p" in
+    '' | *[!0-9]*) return 6 ;;
+  esac
+  [ "${#p}" -le 5 ] || return 6
+  p=$((10#$p)) # normalize leading zeros
+  if [ "$p" -lt 1 ] || [ "$p" -gt 65535 ]; then
+    return 6
+  fi
+  printf '%s\n' "$p"
+}
+
+# sanitize_session_id — C8: reduce $1 to [A-Za-z0-9._-], capped at
+# SPEAK_SESSION_ID_MAX chars; empty-after-sanitize -> safe non-empty
+# fallback 'unknown'. Applied before ANY use of a session id in a frame,
+# log line, or filename — no raw id ever becomes a filesystem path.
+sanitize_session_id() {
+  local out
+  out="$(printf '%s' "${1-}" | LC_ALL=C tr -cd 'A-Za-z0-9._-')"
+  out="${out:0:$SPEAK_SESSION_ID_MAX}"
+  [ -n "$out" ] || out="unknown"
+  printf '%s\n' "$out"
+}
+
+# speak_session_id — session id for the wire frame: SPEAK_SESSION if set
+# (the Stop hook passes its session_id this way), else hostname; sanitized.
+speak_session_id() {
+  local raw
+  raw="${SPEAK_SESSION:-}"
+  if [ -z "$raw" ]; then
+    raw="$(hostname 2>/dev/null || true)"
+  fi
+  sanitize_session_id "$raw"
+}
+
+# b64_encode_line — C2: base64-encode stdin stripping ALL interior newlines
+# (GNU base64 wraps at 76 cols by default) so the payload is exactly one line.
+b64_encode_line() {
+  base64 | LC_ALL=C tr -d '\r\n'
+}
+
+# truncate_utf8_bytes — the documented C2/R20 truncation helper: byte-truncate
+# stdin to at most $1 bytes, then back off past any dangling partial multibyte
+# sequence so the cut lands on a UTF-8 character boundary (never mid-char).
+# bash 3.2 mechanism: hard byte cut via `head -c`, then inspect the final <=4
+# byte values (od) — if the last lead byte (>=0xC0) has fewer continuation
+# bytes than its sequence length requires, drop that partial sequence.
+truncate_utf8_bytes() {
+  local max out vals k j b lead expect have total
+  max="$1"
+  out="$(head -c "$max" || true)"
+  if [ -z "$out" ]; then
+    return 0
+  fi
+  vals="$(printf '%s' "$out" | tail -c 4 | od -An -tu1 | tr '\n' ' ')"
+  # shellcheck disable=SC2086  # word-splitting the byte values is the point
+  set -- $vals
+  k=$#
+  b="${!k}"
+  if [ "$b" -lt 128 ]; then # ASCII tail — already on a boundary
+    printf '%s' "$out"
+    return 0
+  fi
+  j=$k
+  while [ "$j" -ge 1 ]; do
+    b="${!j}"
+    if [ "$b" -ge 192 ]; then
+      break
+    fi
+    j=$((j - 1))
+  done
+  if [ "$j" -lt 1 ]; then # no lead byte in the last 4 — not a dangling cut
+    printf '%s' "$out"
+    return 0
+  fi
+  lead="${!j}"
+  if [ "$lead" -ge 240 ]; then
+    expect=4
+  elif [ "$lead" -ge 224 ]; then
+    expect=3
+  else
+    expect=2
+  fi
+  have=$((k - j + 1))
+  if [ "$have" -ge "$expect" ]; then # final sequence is complete
+    printf '%s' "$out"
+    return 0
+  fi
+  total="$(printf '%s' "$out" | wc -c)"
+  printf '%s' "$out" | head -c $((total - have))
+}
+
+# build_frame — C2: emit the wire frame for cleaned text $1:
+#   <sanitized-session-id>\t<base64-one-line>\n   (one tab, one newline)
+# Sender-side pre-check: len(session)+1(tab)+len(base64)+1(newline) must be
+# <= SPEAK_MAX_FRAME_BYTES; when over, the CLEANED TEXT is truncated by bytes
+# on a UTF-8 boundary (truncate_utf8_bytes) and re-encoded, with a stderr
+# notice that is never spoken (R20 forward exception — never a silent
+# listener-side drop). sid and base64 are pure ASCII, so ${#} char counts
+# are byte counts here.
+build_frame() {
+  local text sid b64 limit maxb
+  text="${1-}"
+  sid="$(speak_session_id)"
+  b64="$(printf '%s' "$text" | b64_encode_line)"
+  if [ $((${#sid} + 1 + ${#b64} + 1)) -gt "$SPEAK_MAX_FRAME_BYTES" ]; then
+    limit=$((SPEAK_MAX_FRAME_BYTES - ${#sid} - 2))
+    # shellcheck disable=SC2017  # floor(limit/4)*3 is REQUIRED: base64 emits
+    # 4 chars per 3-byte group, so the "more precise" limit*3/4 can overshoot
+    # the cap by one partial group.
+    maxb=$((limit / 4 * 3))
+    text="$(printf '%s' "$text" | truncate_utf8_bytes "$maxb")"
+    echo "speak: cleaned text truncated to ${maxb} bytes to fit the ${SPEAK_MAX_FRAME_BYTES}-byte encoded frame cap (notice not spoken)" >&2
+    b64="$(printf '%s' "$text" | b64_encode_line)"
+  fi
+  printf '%s\t%s\n' "$sid" "$b64"
+}
+
+# listener_reachable — C4: fast ADVISORY reachability probe (zero-byte
+# `nc -z` with the detected 1s connect timeout). Never a send gate —
+# probe-then-send races the one-shot `nc -l` respawn loop; doctor/health
+# (.5) layer retry/backoff on top of this.
+#   $1 host (default: host.docker.internal in forward/client context,
+#            127.0.0.1 otherwise)   $2 port (default: validated SPEAK_PORT)
+# Returns 0 reachable; 1 unreachable; 3 nc missing; 5 -z/timeout flag
+# unsupported; 6 invalid SPEAK_PORT.
+listener_reachable() {
+  local host port tf mode
+  host="${1:-}"
+  port="${2:-}"
+  if [ -z "$host" ]; then
+    if mode="$(speak_mode)" && [ "$mode" = "forward" ]; then
+      host="host.docker.internal"
+    else
+      host="127.0.0.1"
+    fi
+  fi
+  if [ -z "$port" ]; then
+    port="$(speak_port)" || return 6
+  fi
+  nc_probe_supported || return "$?"
+  tf="$(nc_connect_timeout_flag)" || return "$?"
+  if nc -z "${tf}1" "$host" "$port" </dev/null >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+# forward_send — C2/C4: frame cleaned text $1 and send it to the host
+# listener over nc. NEVER gated on a prior -z probe; instead the send itself
+# runs bounded retry/backoff (3 attempts) to tolerate the listener's one-shot
+# `nc -l` respawn gap, and fails fast + clear when the listener stays down.
+#   $1 text   $2 host (default host.docker.internal)   $3 port (default
+#   validated SPEAK_PORT)
+# Returns 0 sent; 1 listener unreachable after retries; 3 missing tool;
+# 5 nc capability unsupported; 6 invalid SPEAK_PORT.
+forward_send() {
+  local text host port tf ef frame attempt
+  text="${1-}"
+  host="${2:-host.docker.internal}"
+  port="${3:-}"
+  if ! command -v base64 >/dev/null 2>&1; then
+    echo "speak: missing forward dependency: 'base64' not found on PATH" >&2
+    return 3
+  fi
+  if ! nc_detect; then
+    echo "speak: missing forward dependency: 'nc' not found on PATH — install netcat-openbsd" >&2
+    return 3
+  fi
+  if ! tf="$(nc_connect_timeout_flag)"; then
+    echo "speak: this 'nc' lacks a connect-timeout flag (-G/-w) — install netcat-openbsd" >&2
+    return 5
+  fi
+  if ! ef="$(nc_eof_flags)"; then
+    echo "speak: this 'nc' lacks an EOF-shutdown flag (-N or -q 0) so a send would hang — install netcat-openbsd" >&2
+    return 5
+  fi
+  if [ -z "$port" ]; then
+    if ! port="$(speak_port)"; then
+      echo "speak: invalid SPEAK_PORT='${SPEAK_PORT:-}' — expected an integer 1..65535" >&2
+      return 6
+    fi
+  fi
+  frame="$(build_frame "$text")"
+  attempt=1
+  while :; do
+    # shellcheck disable=SC2086  # $ef intentionally word-splits ("-q 0")
+    if printf '%s\n' "$frame" | nc "${tf}1" $ef "$host" "$port" >/dev/null 2>&1; then
+      return 0
+    fi
+    if [ "$attempt" -ge 3 ]; then
+      break
+    fi
+    # bounded backoff over the respawn gap (fractional sleep where available)
+    sleep "0.$((attempt * 3))" 2>/dev/null || sleep 1
+    attempt=$((attempt + 1))
+  done
+  echo "speak: could not reach the host listener at ${host}:${port} after ${attempt} attempts — start it on the host with: ./plugins/speak/bin/speak --serve" >&2
+  return 1
+}
+
 # play_local — THE single isolated playback backend function (R10/R11).
 # macOS `say` is the only implemented backend today; Windows later plugs in
 # here without touching callers. Text reaches `say` via STDIN — never
@@ -226,10 +539,10 @@ cmd_speak() {
       play_local "$cleaned"
       ;;
     forward)
-      # Forward transport (base64-over-nc to the host listener) is owned by
-      # task .2; this task owns detection + the local branch only.
-      echo "speak: forward mode (container -> host listener) is not yet implemented" >&2
-      return 1
+      # R22: in forward mode the CLI NEVER attempts local `say` — the cleaned
+      # text goes to the host listener as one base64 frame (C2). Public exit
+      # stays simple 0/1 (R30); the distinct codes are for sourcing callers.
+      forward_send "$cleaned" || return 1
       ;;
   esac
 }
