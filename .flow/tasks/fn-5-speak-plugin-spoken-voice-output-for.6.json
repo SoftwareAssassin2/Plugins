@@ -12,6 +12,6 @@
   "spec": "fn-5-speak-plugin-spoken-voice-output-for",
   "spec_path": ".flow/tasks/fn-5-speak-plugin-spoken-voice-output-for.6.md",
   "status": "todo",
-  "title": "Tests + coverage.sh + /speak-test command",
+  "title": "Tests + coverage.sh + /speak:test command",
   "updated_at": "2026-07-08T12:53:29.274738Z"
 }

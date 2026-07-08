@@ -12,6 +12,6 @@
   "spec": "fn-5-speak-plugin-spoken-voice-output-for",
   "spec_path": ".flow/tasks/fn-5-speak-plugin-spoken-voice-output-for.5.md",
   "status": "todo",
-  "title": "Slash commands (/speak, /speak-on, /speak-off, /speak-status) + doctor + dep detection",
+  "title": "Slash commands (/speak:now, /speak:on, /speak:off, /speak:status) + doctor + dep detection",
   "updated_at": "2026-07-08T12:53:29.274738Z"
 }
