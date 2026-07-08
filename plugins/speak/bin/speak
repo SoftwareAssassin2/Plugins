@@ -1623,6 +1623,10 @@ deps_missing() {
           printf 'nc\tthis nc lacks a usable EOF-shutdown flag (-N or -q 0) so sends would hang — install netcat-openbsd\n'
           missing=1
         fi
+        if ! nc_probe_supported; then
+          printf 'nc\tthis nc lacks the zero-I/O probe flag (-z) needed for reachability checks — install netcat-openbsd\n'
+          missing=1
+        fi
       fi
       ;;
     listener)
@@ -1647,14 +1651,19 @@ deps_missing() {
 }
 
 # auto_speak_enabled — R4/R21: read the global auto-speak toggle. ON iff
-# <plugin_state_dir>/auto-speak exists and contains exactly "on" (trailing
-# newline tolerated). EVERYTHING else — unresolvable state dir, missing or
-# unreadable file, any other content — is OFF (the safe default). Plain file
-# read, no jq (the hook calls this before its jq check). 0 = on; 1 = off.
+# <plugin_state_dir>/auto-speak exists and contains EXACTLY the three bytes
+# "on\n" (C3 contract; $(cat) alone would strip trailing newlines and accept
+# "on\n\n"). EVERYTHING else — unresolvable state dir, missing or unreadable
+# file, wrong byte count, any other content — is OFF (the safe default).
+# Plain file read, no jq (the hook calls this before its jq check).
+# 0 = on; 1 = off.
 auto_speak_enabled() {
-  local dir content
+  local dir flag content
   dir="$(plugin_state_dir)" || return 1
-  content="$(cat "$dir/auto-speak" 2>/dev/null)" || return 1
+  flag="$dir/auto-speak"
+  [ -f "$flag" ] || return 1
+  [ "$(wc -c <"$flag" 2>/dev/null | tr -d '[:space:]')" = "3" ] || return 1
+  content="$(cat "$flag" 2>/dev/null)" || return 1
   [ "$content" = "on" ]
 }
 

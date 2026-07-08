@@ -250,6 +250,10 @@ check "nc missing entirely -> rc 3" '[ $rc -eq 3 ]'
 check "detection probed nc at least once" '[ -s "$NC_LOG" ]'
 check "detection NEVER probes -l (listen proven only by --serve)" \
   '! grep -qE "(^| )-l( |$)" "$NC_LOG"'
+SHIM_NCNOZ="$WORK/nc-noz"; make_nc_shim "$SHIM_NCNOZ" "-G1" "-N"  # timeout+EOF ok, no -z
+out="$(PATH="$SHIM_NCNOZ:$PATH" bash -c '. "'"$SPEAK"'"; nc_detect_reset 2>/dev/null || true; deps_missing forward' 2>/dev/null)"; rc=$?
+check "deps_missing forward: nc without -z reported as missing capability (C6/R23)" \
+  '[ $rc -eq 1 ] && printf "%s" "$out" | grep -q "zero-I/O probe"'
 
 echo "== extract_last (verified real schema fixtures, fn-5.4) =="
 check "jq present (required for extraction tests)" 'command -v jq >/dev/null 2>&1'
@@ -330,6 +334,12 @@ printf 'off\n' >"$WORK/toggle2/auto-speak"
 check "'off' -> OFF"                 '[ $rc -eq 1 ]'
 ( unset SPEAK_DATA_DIR CLAUDE_PLUGIN_DATA; auto_speak_enabled ); rc=$?
 check "unresolvable state dir -> OFF" '[ $rc -eq 1 ]'
+printf 'on' >"$WORK/toggle2/auto-speak"
+( export SPEAK_DATA_DIR="$WORK/toggle2"; auto_speak_enabled ); rc=$?
+check "'on' without newline (2 bytes) -> OFF (C3 exact on\\n)" '[ $rc -eq 1 ]'
+printf 'on\n\n' >"$WORK/toggle2/auto-speak"
+( export SPEAK_DATA_DIR="$WORK/toggle2"; auto_speak_enabled ); rc=$?
+check "'on\\n\\n' (4 bytes) -> OFF (C3 exact on\\n)" '[ $rc -eq 1 ]'
 
 echo "== doctor rows (C1/C5 fatal-config classifications) =="
 ( export SPEAK_MODE=bogus; PATH="$SHIM_SAY:$PATH" "$SPEAK" doctor >"$WORK/o" 2>&1 ); rc=$?
