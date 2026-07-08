@@ -11,6 +11,6 @@
   "spec": "fn-5-speak-plugin-spoken-voice-output-for",
   "spec_path": ".flow/tasks/fn-5-speak-plugin-spoken-voice-output-for.3.md",
   "status": "todo",
-  "title": "speak --serve host listener: FIFO queue, live status, resilience (PROOF POINT)",
-  "updated_at": "2026-06-15T11:12:11.236104Z"
+  "title": "speak --serve listener core: spool queue, live status, frame validation (PROOF POINT)",
+  "updated_at": "2026-07-08T12:53:29.274738Z"
 }
