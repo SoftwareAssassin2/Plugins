@@ -1183,7 +1183,7 @@ serve_shutdown() {
 # bind during that gap — R27), THEN bind. No `nc -l` pre-probe of any kind —
 # the real bind is the only authoritative listen check (C5).
 cmd_serve() {
-  local port dir missing rc
+  local port dir missing rc i
   if ! port="$(speak_port)"; then
     echo "speak: invalid SPEAK_PORT='${SPEAK_PORT:-}' — expected an integer 1..65535" >&2
     return 1
@@ -1215,31 +1215,22 @@ cmd_serve() {
   fi
   listener_stale_cleanup "$port" || true # identity just failed, so rc 10 is unreachable
   if ! mkdir "$SPEAK_LIFETIME_LOCK_DIR" 2>/dev/null; then
-    # Lost the startup race: another --serve created the lifetime lock between
-    # our check and this mkdir. Its listener owns the port lifecycle now —
-    # treat as already running (exit 0) and NEVER remove a lock we did not
-    # acquire.
-    echo "speak: listener already running on 127.0.0.1:${port} (another 'speak --serve' holds the lifetime lock) — nothing to do"
+    # A lock we could not stale-clean and could not acquire: either a running
+    # listener whose pidfile has not landed yet, or a concurrent --serve
+    # startup that won the mkdir race. Its bind will prove itself out (C5) —
+    # exit benignly WITHOUT claiming a valid listener exists (no valid
+    # pidfile was found, so we do not know yet), and NEVER remove a lock we
+    # did not acquire.
+    echo "speak: another 'speak --serve' is starting or running on 127.0.0.1:${port} (lifetime lock held) — nothing to do; if nothing ends up listening, re-run in a few seconds"
     return 0
   fi
   SPEAK_SERVE_OWNS_LIFETIME=1
-
-  # C7: publish the identity pidfile IMMEDIATELY after acquiring the lock —
-  # our live ps shape already contains bin/speak + --serve, so identity is
-  # fully valid from here and a concurrent starter classifies us "already
-  # running" instead of stale-cleaning a lock that has no pidfile behind it
-  # yet. If the bind below fails, serve_shutdown removes this marker + the
-  # lock, so no stale identity survives a failed start.
-  if ! listener_pidfile_write "$port"; then
-    listener_log "warning: could not write pidfile ${SPEAK_PIDFILE} — doctor cannot identify this listener"
-  fi
 
   rm -rf "$SPEAK_LOCK_DIR" # stale update mutex from a previous unclean stop
   listener_reset_state
   dir="$(listener_state_dir)"
   if ! SPEAK_SPOOL_DIR="$(mktemp -d "$dir/spool.XXXXXX" 2>/dev/null)"; then
     echo "speak: cannot create spool dir under '$dir'" >&2
-    rm -f "$SPEAK_PIDFILE"                               # ours (written above)
     rmdir "$SPEAK_LIFETIME_LOCK_DIR" 2>/dev/null || true # ours (acquired above)
     return 1
   fi
@@ -1254,6 +1245,31 @@ cmd_serve() {
   listener_accept_loop "$port" &
   SPEAK_SERVE_ACCEPT_PID=$!
   trap 'serve_shutdown 0' INT TERM
+
+  # C7/C5: publish the identity pidfile only once the bind is ESTABLISHED —
+  # identity must never be true for a startup that fails to bind, or a second
+  # --serve racing an unrelated port holder would misreport "already
+  # running". The accept loop gives up after 3 consecutive `nc -l` bind
+  # failures (well under a second on EADDRINUSE), so out-surviving this
+  # window IS the bind confirmation (no probe — the real bind is the only
+  # authoritative listen check). Until the pidfile lands, concurrent starters
+  # see only the grace-guarded startup lock and exit without claiming a
+  # valid listener.
+  i=0
+  while [ "$i" -lt 15 ]; do
+    kill -0 "$SPEAK_SERVE_ACCEPT_PID" 2>/dev/null || break
+    i=$((i + 1))
+    sleep 0.1 2>/dev/null || sleep 1
+  done
+  if ! kill -0 "$SPEAK_SERVE_ACCEPT_PID" 2>/dev/null; then
+    rc=0
+    wait "$SPEAK_SERVE_ACCEPT_PID" 2>/dev/null || rc=$?
+    [ "$rc" -eq 0 ] && rc=1 # died this early = failed bind, never a success
+    serve_shutdown "$rc"    # the accept loop already printed the classification
+  fi
+  if ! listener_pidfile_write "$port"; then
+    listener_log "warning: could not write pidfile ${SPEAK_PIDFILE} — doctor cannot identify this listener"
+  fi
 
   echo "speak: listening on 127.0.0.1:${port} (SPEAK_PORT overrides; state: ${dir}; Ctrl-C to stop)"
   listener_log "listener started on 127.0.0.1:${port} (pid $$)"
