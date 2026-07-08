@@ -7,7 +7,8 @@
 #   speak -- doctor         speak a literal reserved word
 #
 # Reserved first args dispatch as subcommands (never spoken):
-#   --serve   host listener            (task .3; hardening owned by .8/.9)
+#   --serve   host listener            (.3 core; .8 identity/lifetime lock;
+#                                       watchdog/bounded capture owned by .9)
 #   doctor    full diagnostic          (stub here — owned by task .5)
 #   status    alias for doctor         (stub here — owned by task .5)
 #   on / off  auto-speak toggle writes (task .4 — atomic flag under
@@ -29,6 +30,15 @@
 #   C5  listen (-l) capability is NEVER pre-probed — the real `--serve` bind
 #       is the only authoritative listen check
 #   C6  nc capability detection (owned HERE — .3/.4/.5 reuse, no re-derivation)
+#   C7  listener identity + lifetime lock: pidfile <listener_state_dir>/
+#       listener.pid (schema exactly pid=/port=/cmd=/started=); identity =
+#       pid alive + live ps command contains bin/speak AND --serve + recorded
+#       port == checked port + lifetime lock held — NO reachability folded in
+#       (C4), no opaque token, NOT an exact script-path match. Lifetime lock =
+#       <listener_state_dir>/listener.lock (atomic mkdir, stale-validated
+#       against the pidfile), held for the whole `--serve` lifetime, checked
+#       BEFORE binding. Stale markers (dead/mismatched pid, ps shape, port,
+#       or lock) are removed.
 #   C8  sanitize_session_id: [A-Za-z0-9._-], capped, empty -> 'unknown'
 #   C9  SPEAK_PORT validated 1..65535; SPEAK_MAX_CHARS: unset = no cap;
 #       invalid = treated unset + stderr note; spool cap 50 (drop-oldest);
@@ -480,16 +490,20 @@ play_local() {
 # atomic `mkdir` lock dir. A background renderer repaints the live status line
 # from those files.
 #
+# Identity/lifetime-lock/double-start classification is task .8 (C7, below).
 # Provisionally unhardened by design: per-connection watchdog + bounded
-# cap+1-byte capture are task .9; pidfile identity/lifetime-lock/double-start
-# classification are task .8. The epic does not ship without them.
+# cap+1-byte capture are task .9. The epic does not ship without them.
 #
-# Sourceable-helper contract for the .6 unit tests: everything below except
-# cmd_serve's own orchestration (validate_frame, b64_decode_flag/-line,
-# listener_state_dir, listener_init_state, speak_lock_acquire/release,
-# spool_next_seq/enqueue/prune/claim, counter_read/incr, session_log_append,
-# session_active_count, render_status_line, process_frame_line) works sourced,
-# against paths set by listener_init_state (override via SPEAK_DATA_DIR).
+# Sourceable-helper contract for the .5 doctor and the .6 unit tests:
+# everything below except cmd_serve's own orchestration (validate_frame,
+# b64_decode_flag/-line, listener_state_dir, listener_init_state,
+# speak_lock_acquire/release, spool_next_seq/enqueue/prune/claim,
+# counter_read/incr, session_log_append, session_active_count,
+# render_status_line, process_frame_line, listener_pidfile_write/read,
+# listener_identity_check, listener_stale_cleanup) works sourced, against
+# paths set by listener_init_state (override via SPEAK_DATA_DIR). The C7
+# identity helpers in particular are reused VERBATIM by `doctor --listener`
+# (.5) — no re-derivation.
 # ---------------------------------------------------------------------------
 
 # C9 listener constants: bounded spool cap (drop-oldest) + the active-session
@@ -506,6 +520,20 @@ SPEAK_COUNTER_FAIL=""
 SPEAK_SESSIONS_FILE=""
 SPEAK_STATE_FILE=""
 SPEAK_SPOOL_DIR=""
+SPEAK_PIDFILE=""
+SPEAK_LIFETIME_LOCK_DIR=""
+
+# C7 pidfile fields as parsed by listener_pidfile_read (bash 3.2: globals+rc).
+SPEAK_PIDFILE_PID=""
+SPEAK_PIDFILE_PORT=""
+SPEAK_PIDFILE_CMD=""
+SPEAK_PIDFILE_STARTED=""
+
+# Set to 1 ONLY after cmd_serve's own successful lifetime-lock mkdir; the
+# shutdown trap releases the lock + pidfile ONLY when set — this process must
+# never remove a lock/marker it does not own (same invariant as the state.lock
+# mutex: a helper never releases a foreign lock).
+SPEAK_SERVE_OWNS_LIFETIME=""
 
 # validate_frame outputs (bash 3.2 has no rich returns; globals + rc).
 SPEAK_FRAME_SID=""
@@ -616,11 +644,13 @@ listener_init_state() {
   dir="$(listener_state_dir)"
   mkdir -p "$dir" || return 1
   SPEAK_LISTENER_LOG="$dir/listener.log"
-  SPEAK_LOCK_DIR="$dir/state.lock" # update mutex — NOT .8's lifetime listener.lock
+  SPEAK_LOCK_DIR="$dir/state.lock" # update mutex — NOT the C7 lifetime listener.lock
   SPEAK_COUNTER_OK="$dir/counter.ok"
   SPEAK_COUNTER_FAIL="$dir/counter.fail"
   SPEAK_SESSIONS_FILE="$dir/sessions.log"
   SPEAK_STATE_FILE="$dir/state"
+  SPEAK_PIDFILE="$dir/listener.pid"           # C7 identity marker
+  SPEAK_LIFETIME_LOCK_DIR="$dir/listener.lock" # C7 lifetime lock (whole --serve run)
 }
 
 # listener_reset_state — zero the per-run observables (R17 totals are running
@@ -663,6 +693,120 @@ speak_lock_acquire() {
 
 speak_lock_release() {
   rmdir "${1:-$SPEAK_LOCK_DIR}" 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
+# C7 — listener identity + lifetime lock (task .8). Sourceable: reused
+# VERBATIM by `doctor --listener` (.5) and unit-tested by .6. All helpers work
+# against the paths set by listener_init_state (override via SPEAK_DATA_DIR).
+# Identity is deliberately reachability-free (C4): a momentary respawn-gap
+# unreachable NEVER deletes the pidfile or marks the listener stale.
+# ---------------------------------------------------------------------------
+
+# listener_pidfile_write — write <listener_state_dir>/listener.pid with the
+# EXACT C7 schema (atomic temp + rename):
+#     pid=<n>\nport=<n>\ncmd=<argv0>\nstarted=<epoch-or-unknown>
+# $1 = the bound port. cmd records $0 exactly as launched — identity matching
+# is on the live `ps` shape, NOT this path, so ./plugins/speak/bin/speak vs
+# ${CLAUDE_PLUGIN_ROOT}/bin/speak both work (path-normalization-resilient).
+listener_pidfile_write() {
+  local port tmp started
+  port="${1-}"
+  [ -n "${SPEAK_PIDFILE:-}" ] || return 1
+  [ -n "$port" ] || return 1
+  started="$(date +%s 2>/dev/null || true)"
+  case "$started" in '' | *[!0-9]*) started="unknown" ;; esac
+  tmp="$(mktemp "${SPEAK_PIDFILE}.XXXXXX" 2>/dev/null)" || return 1
+  printf 'pid=%s\nport=%s\ncmd=%s\nstarted=%s\n' "$$" "$port" "$0" "$started" >"$tmp"
+  mv -f "$tmp" "$SPEAK_PIDFILE"
+}
+
+# listener_pidfile_read — parse the pidfile into SPEAK_PIDFILE_PID/PORT/CMD/
+# STARTED. rc: 0 parsed (pid+port numeric); 1 no pidfile; 2 malformed
+# (missing/non-numeric pid or port). Unknown lines are ignored, order-free.
+# CMD/STARTED are read by sourcing callers (.5 doctor, .6 tests), not here:
+# shellcheck disable=SC2034
+listener_pidfile_read() {
+  local line
+  SPEAK_PIDFILE_PID=""
+  SPEAK_PIDFILE_PORT=""
+  SPEAK_PIDFILE_CMD=""
+  SPEAK_PIDFILE_STARTED=""
+  [ -n "${SPEAK_PIDFILE:-}" ] && [ -f "$SPEAK_PIDFILE" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      pid=*) SPEAK_PIDFILE_PID="${line#pid=}" ;;
+      port=*) SPEAK_PIDFILE_PORT="${line#port=}" ;;
+      cmd=*) SPEAK_PIDFILE_CMD="${line#cmd=}" ;;
+      started=*) SPEAK_PIDFILE_STARTED="${line#started=}" ;;
+    esac
+  done <"$SPEAK_PIDFILE"
+  case "$SPEAK_PIDFILE_PID" in '' | *[!0-9]*) return 2 ;; esac
+  case "$SPEAK_PIDFILE_PORT" in '' | *[!0-9]*) return 2 ;; esac
+  return 0
+}
+
+# listener_identity_check — THE C7 identity rule, nothing more:
+#   identity = pid alive
+#            + live `ps` command contains `bin/speak` AND `--serve`
+#            + pidfile port == checked port ($1)
+#            + lifetime lock held (listener.lock dir exists)
+# NO reachability folded in (C4), NO opaque token, NOT an exact script-path
+# match. Distinct sourceable return codes (doctor/.6 classify on them):
+#   0 identity true; 1 no pidfile; 2 malformed pidfile; 3 pid dead;
+#   4 ps command shape mismatch; 5 port mismatch; 6 lifetime lock not held.
+# On success the SPEAK_PIDFILE_* globals describe the live listener.
+listener_identity_check() {
+  local port cmdline
+  port="${1-}"
+  listener_pidfile_read || return "$?"
+  kill -0 "$SPEAK_PIDFILE_PID" 2>/dev/null || return 3
+  cmdline="$(ps -p "$SPEAK_PIDFILE_PID" -o command= 2>/dev/null || true)"
+  case "$cmdline" in
+    *bin/speak*) ;;
+    *) return 4 ;;
+  esac
+  case "$cmdline" in
+    *--serve*) ;;
+    *) return 4 ;;
+  esac
+  [ "$SPEAK_PIDFILE_PORT" = "$port" ] || return 5
+  [ -d "${SPEAK_LIFETIME_LOCK_DIR:-}" ] || return 6
+  return 0
+}
+
+# listener_stale_cleanup — remove STALE C7 markers only, at this well-defined
+# validation point (never from the mutex helpers' timeout paths): a pidfile
+# whose identity fails (dead/mismatched pid, ps shape, port, or lock), and a
+# lifetime lock dir with no valid pidfile behind it (the lock is
+# stale-validated AGAINST the pidfile). $1 = the port being checked.
+# rc: 0 = no valid marker remains (cleaned or nothing to clean);
+#     10 = a VALID live listener identity holds this port — NOTHING removed.
+# Reachability plays no part here (C4): an unreachable-but-live listener is
+# NOT stale, and this function never probes.
+listener_stale_cleanup() {
+  local port rc
+  port="${1-}"
+  rc=0
+  listener_identity_check "$port" || rc=$?
+  case "$rc" in
+    0) return 10 ;; # live valid listener — never touch its markers
+    1)
+      # No pidfile at all: any lingering lifetime lock is stale by definition.
+      if [ -d "${SPEAK_LIFETIME_LOCK_DIR:-}" ]; then
+        rm -rf "$SPEAK_LIFETIME_LOCK_DIR"
+        listener_log "removed stale lifetime lock (no pidfile behind it)"
+      fi
+      ;;
+    *)
+      # Pidfile present but identity false (rc: 2 malformed, 3 pid dead,
+      # 4 ps shape, 5 port, 6 lock missing) — the marker pair is stale.
+      rm -f "${SPEAK_PIDFILE:-}"
+      [ -d "${SPEAK_LIFETIME_LOCK_DIR:-}" ] && rm -rf "$SPEAK_LIFETIME_LOCK_DIR"
+      listener_log "removed stale listener marker(s) (identity rc=$rc)"
+      ;;
+  esac
+  return 0
 }
 
 # counter_read — print the integer in counter file $1 (missing/garbage -> 0).
@@ -892,10 +1036,12 @@ listener_accept_lines() {
 # listener_accept_loop — the respawn loop (R15): BSD/OpenBSD `nc -l` serves
 # ONE connection then exits, so re-invoke forever. The loop only validates/
 # decodes/enqueues — playback lives in the worker, so accepting NEVER blocks
-# on `say` (R16). Three consecutive non-zero nc exits (e.g. the port is
-# already bound) abort the listener — the real bind here is the ONLY
-# authoritative listen check (C5); friendly already-running classification
-# is task .8.
+# on `say` (R16). Three consecutive non-zero nc exits (the port is bound by
+# someone else) abort the listener — the real bind here is the ONLY
+# authoritative listen check (C5). Classification (R27/C7): cmd_serve already
+# established BEFORE binding that no valid listener marker holds this port
+# (our own `--serve` would have exited "already running" instead), so a bind
+# failure here IS the unrelated-process case — never misdiagnosed as ours.
 listener_accept_loop() {
   set +e # background job: a transient failure must not kill the loop
   local port args ncrc fails
@@ -910,8 +1056,8 @@ listener_accept_loop() {
       fails=$((fails + 1))
       listener_log "nc -l exited rc=$ncrc (consecutive failure $fails)"
       if [ "$fails" -ge 3 ]; then
-        listener_log "giving up: cannot listen on 127.0.0.1:$port"
-        echo "speak: cannot listen on 127.0.0.1:${port} (nc exit $ncrc) — is the port in use? see $(listener_state_dir)/listener.log" >&2
+        listener_log "giving up: cannot bind 127.0.0.1:$port (port in use by another process)"
+        echo "speak: port :${port} in use by another process (no valid listener marker) — cannot bind 127.0.0.1:${port} (nc exit $ncrc); see $(listener_state_dir)/listener.log" >&2
         return 1
       fi
       sleep 0.2 2>/dev/null || sleep 1
@@ -982,7 +1128,9 @@ status_renderer() {
 
 # serve_shutdown — the INT/TERM path: kill the worker/renderer/accept process
 # GROUPS (killing the accept group takes the live `nc -l` with it, freeing the
-# port), then remove the spool temp dir and the update mutex.
+# port), then remove the spool temp dir, the update mutex, and — ONLY when
+# this process acquired them (C7 ownership: never release a foreign lock or
+# marker) — the pidfile and the lifetime lock.
 serve_shutdown() {
   set +e
   local code
@@ -994,6 +1142,11 @@ serve_shutdown() {
   wait 2>/dev/null
   [ -n "${SPEAK_SPOOL_DIR:-}" ] && rm -rf "$SPEAK_SPOOL_DIR"
   speak_lock_release # a lock held mid-flight by a killed worker
+  if [ -n "${SPEAK_SERVE_OWNS_LIFETIME:-}" ]; then
+    # Ours by construction: written/created under OUR lifetime lock.
+    rm -f "${SPEAK_PIDFILE:-}"
+    rmdir "${SPEAK_LIFETIME_LOCK_DIR:-}" 2>/dev/null || true
+  fi
   listener_log "listener stopped (exit $code)"
   printf '\n'
   echo "speak: listener stopped"
@@ -1002,9 +1155,12 @@ serve_shutdown() {
 
 # cmd_serve — `speak --serve` (R6/R7: started MANUALLY by the user; nothing
 # in the plugin ever auto-starts it). Preflight order: validate SPEAK_PORT
-# (C9), check listener deps say/base64/nc (+ a usable decode flag), THEN bind.
-# No `nc -l` pre-probe of any kind — the real bind is the only authoritative
-# listen check (C5).
+# (C9), check listener deps say/base64/nc (+ a usable decode flag), acquire
+# the C7 lifetime lock + validate any existing pidfile BEFORE binding (the
+# one-shot `nc -l` respawn loop leaves the port briefly unbound between
+# accepts, so a bind-failure-only check would let a second --serve win the
+# bind during that gap — R27), THEN bind. No `nc -l` pre-probe of any kind —
+# the real bind is the only authoritative listen check (C5).
 cmd_serve() {
   local port dir missing rc
   if ! port="$(speak_port)"; then
@@ -1027,11 +1183,32 @@ cmd_serve() {
     echo "speak: cannot create listener state dir '$(listener_state_dir)'" >&2
     return 1
   fi
+
+  # C7/R27 double-start gate — BEFORE any shared-state mutation and BEFORE
+  # binding. A valid live lock/pidfile means a listener already owns this
+  # port: exit 0 with the friendly message (and leave its counters, mutex,
+  # and markers strictly alone).
+  if listener_identity_check "$port"; then
+    echo "speak: listener already running on 127.0.0.1:${port} (pid ${SPEAK_PIDFILE_PID}) — nothing to do"
+    return 0
+  fi
+  listener_stale_cleanup "$port" || true # identity just failed, so rc 10 is unreachable
+  if ! mkdir "$SPEAK_LIFETIME_LOCK_DIR" 2>/dev/null; then
+    # Lost the startup race: another --serve created the lifetime lock between
+    # our check and this mkdir. Its listener owns the port lifecycle now —
+    # treat as already running (exit 0) and NEVER remove a lock we did not
+    # acquire.
+    echo "speak: listener already running on 127.0.0.1:${port} (another 'speak --serve' holds the lifetime lock) — nothing to do"
+    return 0
+  fi
+  SPEAK_SERVE_OWNS_LIFETIME=1
+
   rm -rf "$SPEAK_LOCK_DIR" # stale update mutex from a previous unclean stop
   listener_reset_state
   dir="$(listener_state_dir)"
   if ! SPEAK_SPOOL_DIR="$(mktemp -d "$dir/spool.XXXXXX" 2>/dev/null)"; then
     echo "speak: cannot create spool dir under '$dir'" >&2
+    rmdir "$SPEAK_LIFETIME_LOCK_DIR" 2>/dev/null || true # ours (acquired above)
     return 1
   fi
 
@@ -1045,6 +1222,15 @@ cmd_serve() {
   listener_accept_loop "$port" &
   SPEAK_SERVE_ACCEPT_PID=$!
   trap 'serve_shutdown 0' INT TERM
+
+  # C7: publish the identity pidfile once the bind is underway (the accept
+  # loop above owns the actual `nc -l` bind — C5). If that bind fails, the
+  # loop exits non-zero and serve_shutdown removes this marker + our lock, so
+  # no stale identity ever survives a failed start. Trap is installed first
+  # so an early INT/TERM still cleans up.
+  if ! listener_pidfile_write "$port"; then
+    listener_log "warning: could not write pidfile ${SPEAK_PIDFILE} — doctor cannot identify this listener"
+  fi
 
   echo "speak: listening on 127.0.0.1:${port} (SPEAK_PORT overrides; state: ${dir}; Ctrl-C to stop)"
   listener_log "listener started on 127.0.0.1:${port} (pid $$)"
