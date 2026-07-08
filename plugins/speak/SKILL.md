@@ -1,6 +1,6 @@
 ---
 name: speak
-description: Speak Claude's responses aloud through the native OS voice (macOS `say`) — on demand via /speak:now or automatically on every response via a toggleable Stop hook. Works locally on a Mac and, through a manually started host listener, from inside a Dev Container. Use when the user wants responses read aloud / spoken / voice output, wants auto-speak turned on or off, or asks whether the speak install is healthy.
+description: Speak Claude's responses aloud through the native OS voice (macOS `say`) — on demand via /speak:speak (last response) or /speak:specify (pick one), or automatically on every response via a toggleable Stop hook. Works locally on a Mac and, through a manually started host listener, from inside a Dev Container. Use when the user wants responses read aloud / spoken / voice output, wants auto-speak turned on or off, or asks whether the speak install is healthy.
 argument-hint: "[optional: text to speak]"
 ---
 
@@ -14,12 +14,13 @@ terminal. Full setup, dependency, and troubleshooting detail lives in
 
 ## Commands
 
-The command surface is exactly five slash commands (namespaced by the plugin
+The command surface is exactly six slash commands (namespaced by the plugin
 name — these are `/speak:*`, not `/speak-*`):
 
 | Command | What it does |
 |---|---|
-| `/speak:now` | Speak a chosen recent assistant response. Always asks WHICH response first (pick list, most-recent first) — several responses can accumulate between prompts. Works regardless of the auto-speak toggle. |
+| `/speak:speak` | Speak the very last assistant response immediately — never asks. Also answers to unprefixed `/speak` while no other installed command claims the name. Works regardless of the auto-speak toggle. |
+| `/speak:specify` | Speak a chosen recent assistant response. Always asks WHICH response first (pick list, most-recent first) — several responses can accumulate between prompts. Works regardless of the auto-speak toggle. |
 | `/speak:on` | Turn auto-speak ON — the Stop hook speaks every assistant response until `/speak:off`. Defaults to OFF; opt-in. |
 | `/speak:off` | Turn auto-speak OFF. |
 | `/speak:status` | Full diagnostic (`speak doctor`): toggle state, detected mode, port, listener reachability, per-dependency presence with required-vs-optional labels. |

@@ -2,7 +2,7 @@
 description: Speak a chosen recent assistant response aloud (asks which one first, works regardless of the auto-speak toggle)
 ---
 
-# /speak:now — speak a recent assistant response aloud
+# /speak:specify — pick a recent assistant response and speak it aloud
 
 Speak one of the recent assistant responses in this conversation out loud via the speak plugin CLI. This works regardless of whether auto-speak is on or off. Follow these steps exactly.
 
@@ -14,7 +14,7 @@ Several assistant responses may have accumulated since the user's last prompt, s
 - Label each option with a short one-line summary of that response (e.g. "Explained the doctor exit codes"), and mark which one is the most recent.
 - Ask even when only one response is available (the user can still decline).
 
-Only the explicit `/speak:now` path offers this selection — auto-speak (the Stop hook) never asks and only ever speaks the just-finished response.
+Only the explicit `/speak:specify` path offers this selection — `/speak:speak` speaks the very last response without asking, and auto-speak (the Stop hook) never asks and only ever speaks the just-finished response.
 
 ## 2. Hand the chosen text to the CLI — robust stdin handoff
 
@@ -22,11 +22,11 @@ Recover the chosen response's body **as faithfully as possible** — best-effort
 
 Raw assistant markdown can contain backticks, code fences, quotes, and any delimiter, so never paste the text inline into a shell command line. Use a temp file:
 
-1. Write the exact text to a temp file (use the Write tool with a path like `/tmp/speak-now-<random>.txt`, or `mktemp`).
+1. Write the exact text to a temp file (use the Write tool with a path like `/tmp/speak-specify-<random>.txt`, or `mktemp`).
 2. Feed it to the CLI as stdin with the Bash tool:
 
    ```bash
-   "${CLAUDE_PLUGIN_ROOT}/bin/speak" < /tmp/speak-now-<random>.txt
+   "${CLAUDE_PLUGIN_ROOT}/bin/speak" < /tmp/speak-specify-<random>.txt
    ```
 
 3. Remove the temp file afterwards (`rm -f`).

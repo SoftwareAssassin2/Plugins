@@ -5,7 +5,7 @@ markdown, code blocks, and URLs, then spoken through the Mac's native system
 voice (`say`). It works in the two supported scenarios: Claude Code running
 **locally on a Mac** (direct playback) and Claude Code running **inside a Dev
 Container** (the text is forwarded over TCP to a listener you run on the Mac).
-Speech is on-demand via `/speak:now`, or automatic for every response via a
+Speech is on-demand via `/speak:speak` (last response, immediately — also reachable as plain `/speak` while no other command claims that name) or `/speak:specify` (pick which response), or automatic for every response via a
 Stop hook governed by an opt-in toggle (`/speak:on` / `/speak:off`, default
 OFF).
 
@@ -41,7 +41,8 @@ Five slash commands (namespaced by the plugin name — `/speak:*`):
 
 | Command | What it does |
 |---|---|
-| `/speak:now` | Speak a chosen recent assistant response — asks which one first. Works regardless of the toggle. |
+| `/speak:speak` | Speak the very last assistant response immediately — no selection prompt. Unprefixed `/speak` resolves here when unambiguous. Works regardless of the toggle. |
+| `/speak:specify` | Speak a chosen recent assistant response — asks which one first (pick list, most-recent first). Works regardless of the toggle. |
 | `/speak:on` | Auto-speak ON: the Stop hook speaks every response. |
 | `/speak:off` | Auto-speak OFF (the default). |
 | `/speak:status` | Full diagnostic (`speak doctor`). |
