@@ -95,8 +95,8 @@ run_hook() {
 echo "== hooks.json wiring (R3/C9) =="
 check "Stop hook wired with timeout 10 (C9)" \
   '[ "$("$JQ_BIN" -r ".hooks.Stop[0].hooks[0].timeout" "$HOOKS_JSON")" = "10" ]'
-check "hook command runs stop-speak.sh via CLAUDE_PLUGIN_ROOT" \
-  '"$JQ_BIN" -r ".hooks.Stop[0].hooks[0].command" "$HOOKS_JSON" | grep -q "stop-speak.sh"'
+check "hook uses exec form: command=bash, args[0]=CLAUDE_PLUGIN_ROOT stop-speak.sh" \
+  '[ "$("$JQ_BIN" -r ".hooks.Stop[0].hooks[0].command" "$HOOKS_JSON")" = "bash" ] && "$JQ_BIN" -r ".hooks.Stop[0].hooks[0].args[0]" "$HOOKS_JSON" | grep -q "stop-speak.sh"'
 
 echo "== step 1: toggle gates everything (R4) =="
 toggle_off; mkdir -p "$STATE"

@@ -6,7 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/stop-speak.sh\"",
+            "command": "bash",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/stop-speak.sh"],
             "timeout": 10
           }
         ]
