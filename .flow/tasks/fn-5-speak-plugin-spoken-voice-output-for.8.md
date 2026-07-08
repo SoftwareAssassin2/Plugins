@@ -33,7 +33,8 @@ Listener identity, lifetime lock, and double-start handling for `speak --serve`:
 - [ ] Identity/lock validation is exposed as sourceable helpers (reused by `.5` doctor, unit-tested by `.6`)
 
 ## Done summary
-_(filled on completion)_
-
+Implemented C7 listener identity + lifetime lock + double-start classification for `speak --serve`: sourceable helpers (listener_pidfile_write/read, listener_identity_check, listener_stale_cleanup) with the exact pid=/port=/cmd=/started= pidfile schema, a before-bind mkdir lifetime lock (listener.lock) with grace-windowed stale validation, pidfile publication only after bind confirmation, friendly "already running" exit-0 vs "port in use by another process" non-zero classification, and trap-owned marker cleanup that never releases a foreign lock. Codex impl-review: SHIP after 4 fix rounds (startup-race, pre-bind identity, live-different-port protection, fatal pidfile-write failure).
 ## Evidence
-_(filled on completion)_
+- Commits: 443fe25846cb4759b39984909e88871171dfdc02, 0504a3444f2ee12cd1fed1de1979186352973536, 4ea7049a1d09056694a04f4dd1454dc1ecbcaa64, ef7fa7b1c9a53fd2ec688ed347b23c2be13d3860, fee63974fcaf622299ddd8c1778324c40967863d
+- Tests: shellcheck plugins/speak/bin/speak, bash -n plugins/speak/bin/speak, sourced C7 helper unit checks (pidfile schema/read, identity rcs 0-6, stale-cleanup incl. rc 10/11, grace window) — 31 PASS, e2e: --serve pidfile+lock, double-start exit 0, TERM cleanup, unrelated-holder non-zero classification, startup-in-progress lock, pidfile-write failure abort — 21 PASS
+- PRs:
