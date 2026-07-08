@@ -61,6 +61,12 @@
       "source": "./plugins/grill-with-docs"
     },
     {
+      "name": "computer-specs",
+      "displayName": "Computer Specs",
+      "description": "Profile the running machine's hardware — RAM, CPU(s), GPU(s), and free disk space (cross-platform, read-only) — and report it in plain natural language. Triggers on any 'what are my specs / hardware' question.",
+      "source": "./plugins/computer-specs"
+    },
+    {
       "name": "dick",
       "displayName": "Dick Ballsy",
       "description": "Boot Dick Ballsy, a brash, contrarian business-architect advisor who interrogates your business and maintains the business docs (business/strategy/customers/priorities/decisions). Use only when explicitly invoked or accepted from the /init-project hand-off.",

@@ -83,7 +83,7 @@ Strategic context — what we're building and why — is owned and maintained by
 
 ## How development should be approached
 
-Follow a **test-driven development** pattern (see `docs/tdd.md`). Design deep modules with narrow interfaces — *design the interface, then delegate the implementation* — and keep feedback loops short.
+Follow a **test-driven development** pattern — the `/tdd` skill, red → green → refactor (see `docs/tdd.md`) — for **all code changes**: both when `/flow-next:work` implements an epic plan and whenever you're prompted to make a change directly. Design deep modules with narrow interfaces — *design the interface, then delegate the implementation* — and keep feedback loops short.
 
 Follow **YAGNI** ("You Aren't Gonna Need It"): build only what the task in front of you requires, and solve it with the least new code possible. Reuse beats writing — so before adding code, work down this ladder and stop at the first rung that applies:
 
@@ -127,6 +127,13 @@ These are inline directives — they apply to every session, not just when a doc
 - When the user wants another teammate's input ("we need X's input", "get X's take on this", "ask X about…"), recognize the intent: capture the question — **with liberal context** so the assignee can dig in — into that teammate's inbox per the protocol, rather than letting it stay in chat.
 - **Check your own inbox at session start** and act on anything where it's your turn (the SessionStart hook surfaces these).
 - Follow the full protocol — identity, threads, turns, status, the round-trip, and the private-repo/PII caveat — in [`docs/collaboration.md`](docs/collaboration.md). Don't restate it here.
+
+### Grill before you build (`/grill-with-docs`)
+- **Before any non-trivial or design-bearing change, run `/grill-with-docs` first — don't dive in cold.** It interviews you relentlessly to sharpen the plan, then records the decisions (ADRs) and terminology (glossary) as it goes. This is a **mandate**, not a suggestion.
+- **Trivial, mechanical edits are exempt** — a typo, a rename, a version bump, an obvious one-liner. Grilling those is pure friction (and against *Brevity* + *YAGNI*, above). When in doubt whether a change is non-trivial, grill.
+- **For new epic work, `/grill-with-docs` is the preferred way to establish the plan — use it over `/flow-next:interview`.** Grill first, then hand the sharpened plan to `/flow-next:plan` / `/flow-next:work`.
+- **It's interactive and runs on the main thread, before the work starts — never inside a headless `/flow-next:work` worker** (like `/dick`, a relentless-interview skill can't run in a sub-agent).
+- **Sequence for non-trivial work:** consult business direction (below) → `/grill-with-docs` to sharpen + record decisions → implement via TDD (`/tdd`, above) → commit per the git policy.
 
 ## Business-consult sub-agent (before non-trivial work)
 
