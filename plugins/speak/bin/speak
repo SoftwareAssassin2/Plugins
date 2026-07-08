@@ -37,8 +37,9 @@
 #       (C4), no opaque token, NOT an exact script-path match. Lifetime lock =
 #       <listener_state_dir>/listener.lock (atomic mkdir, stale-validated
 #       against the pidfile), held for the whole `--serve` lifetime, checked
-#       BEFORE binding. Stale markers (dead/mismatched pid, ps shape, port,
-#       or lock) are removed.
+#       BEFORE binding. Stale markers (dead/mismatched pid, ps shape, or
+#       lock) are removed; a LIVE listener recorded on a different port is
+#       NOT stale — its markers are left alone and --serve refuses instead.
 #   C8  sanitize_session_id: [A-Za-z0-9._-], capped, empty -> 'unknown'
 #   C9  SPEAK_PORT validated 1..65535; SPEAK_MAX_CHARS: unset = no cap;
 #       invalid = treated unset + stderr note; spool cap 50 (drop-oldest);
@@ -790,11 +791,13 @@ file_mtime_epoch() {
 
 # listener_stale_cleanup — remove STALE C7 markers only, at this well-defined
 # validation point (never from the mutex helpers' timeout paths): a pidfile
-# whose identity fails (dead/mismatched pid, ps shape, port, or lock), and a
+# whose identity fails (dead/mismatched pid, ps shape, or lock), and a
 # lifetime lock dir with no valid pidfile behind it (the lock is
 # stale-validated AGAINST the pidfile). $1 = the port being checked.
 # rc: 0 = no valid marker remains (cleaned or nothing to clean);
-#     10 = a VALID live listener identity holds this port — NOTHING removed.
+#     10 = a VALID live listener identity holds this port — NOTHING removed;
+#     11 = a LIVE listener (pid/ps/lock all valid) is recorded on a DIFFERENT
+#          port — NOT stale, NOTHING removed (SPEAK_PIDFILE_* describe it).
 # Reachability plays no part here (C4): an unreachable-but-live listener is
 # NOT stale, and this function never probes.
 listener_stale_cleanup() {
@@ -804,6 +807,19 @@ listener_stale_cleanup() {
   listener_identity_check "$port" || rc=$?
   case "$rc" in
     0) return 10 ;; # live valid listener — never touch its markers
+    5)
+      # Port mismatch alone, with the pid alive, the ps shape right, and the
+      # lock held, is NOT a stale marker — it is a live listener serving a
+      # different port (this state dir tracks one listener). Deleting its
+      # markers would orphan its lifecycle, so leave them strictly alone.
+      [ -d "${SPEAK_LIFETIME_LOCK_DIR:-}" ] || {
+        # No lock -> it is not a live tracked listener after all: stale pair.
+        rm -f "${SPEAK_PIDFILE:-}"
+        listener_log "removed stale listener marker(s) (identity rc=$rc, no lock)"
+        return 0
+      }
+      return 11
+      ;;
     1)
       # No pidfile: a lingering lifetime lock is stale ONLY once older than
       # SPEAK_LOCK_GRACE_SECS. cmd_serve writes its pidfile immediately after
@@ -821,7 +837,7 @@ listener_stale_cleanup() {
       ;;
     *)
       # Pidfile present but identity false (rc: 2 malformed, 3 pid dead,
-      # 4 ps shape, 5 port, 6 lock missing) — the marker pair is stale.
+      # 4 ps shape, 6 lock missing) — the marker pair is stale.
       rm -f "${SPEAK_PIDFILE:-}"
       [ -d "${SPEAK_LIFETIME_LOCK_DIR:-}" ] && rm -rf "$SPEAK_LIFETIME_LOCK_DIR"
       listener_log "removed stale listener marker(s) (identity rc=$rc)"
@@ -1213,7 +1229,15 @@ cmd_serve() {
     echo "speak: listener already running on 127.0.0.1:${port} (pid ${SPEAK_PIDFILE_PID}) — nothing to do"
     return 0
   fi
-  listener_stale_cleanup "$port" || true # identity just failed, so rc 10 is unreachable
+  rc=0
+  listener_stale_cleanup "$port" || rc=$? # identity just failed, so rc 10 is unreachable
+  if [ "$rc" -eq 11 ]; then
+    # A live listener (ours by every identity test except the port) already
+    # runs from this state dir on a different port. One state dir = one
+    # listener: refuse rather than orphan its markers or fight for the lock.
+    echo "speak: a listener is already running on 127.0.0.1:${SPEAK_PIDFILE_PORT} (pid ${SPEAK_PIDFILE_PID}) from this state dir — stop it first, or run with SPEAK_PORT=${SPEAK_PIDFILE_PORT}" >&2
+    return 1
+  fi
   if ! mkdir "$SPEAK_LIFETIME_LOCK_DIR" 2>/dev/null; then
     # A lock we could not stale-clean and could not acquire: either a running
     # listener whose pidfile has not landed yet, or a concurrent --serve
