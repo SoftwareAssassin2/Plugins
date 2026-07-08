@@ -256,17 +256,25 @@ nc_probe_supported() {
   [ "$SPEAK_NC_Z_OK" = "yes" ] || return 5
 }
 
-# speak_port — C9: validate SPEAK_PORT (default 8765) as an integer 1..65535.
+# speak_port — C9: validate SPEAK_PORT (default 47837) as an integer 1..65535.
+# 47837 chosen post-ship: 8765 collided with VS Code dev-container port
+# forwarding on the reference machine; 47837 is unassigned (IANA), below the
+# macOS ephemeral range (49152+), and unused by common dev tooling.
 # stdout: the normalized port. 0 ok; 6 invalid (callers print the clear
 # failure message so this stays a silent sourceable probe).
 speak_port() {
   local p
-  p="${SPEAK_PORT:-8765}"
+  p="${SPEAK_PORT:-47837}"
   case "$p" in
     '' | *[!0-9]*) return 6 ;;
   esac
+  # Strip leading zeros BEFORE the length guard — "047837" is a legitimate
+  # spelling of a valid port (the old order rejected 6-char zero-padded
+  # strings while accepting 5-char ones). The guard then bounds what feeds
+  # the arithmetic normalization.
+  while [ "${#p}" -gt 1 ] && [ "${p#0}" != "$p" ]; do p="${p#0}"; done
   [ "${#p}" -le 5 ] || return 6
-  p=$((10#$p)) # normalize leading zeros
+  p=$((10#$p)) # normalize (now redundant for zeros, kept for int coercion)
   if [ "$p" -lt 1 ] || [ "$p" -gt 65535 ]; then
     return 6
   fi
@@ -2187,6 +2195,103 @@ EOF
 
 # cmd_doctor — parse `doctor` options (--hook / --listener are options UNDER
 # doctor, not extra command surface — R29) and dispatch.
+# --- LaunchAgent management (macOS) --------------------------------------
+# `speak agent install|uninstall|status` — opt-in always-on listener: a per-user
+# LaunchAgent that starts `speak --serve` at login and restarts it if it dies.
+# The plugin never installs this on its own; the USER runs `agent install`
+# (post-ship revision of the no-auto-start boundary — install is explicit and
+# host-side, so the container/host isolation rationale is preserved).
+# KeepAlive uses SuccessfulExit=false: a crash (non-zero/signal) restarts the
+# listener, but a clean exit 0 — e.g. "already running" next to a manual
+# listener — does NOT relaunch-loop.
+
+agent_label() { printf '%s\n' "com.softwareassassin.speak.listener"; }
+agent_plist_path() { printf '%s\n' "${HOME}/Library/LaunchAgents/$(agent_label).plist"; }
+
+# agent_plist <abs-script-path> <log-path> — pure stdout generator (unit-tested).
+agent_plist() {
+  cat <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$(agent_label)</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>$1</string>
+    <string>--serve</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key>
+  <dict><key>SuccessfulExit</key><false/></dict>
+  <key>StandardOutPath</key><string>$2</string>
+  <key>StandardErrorPath</key><string>$2</string>
+</dict>
+</plist>
+PLIST
+}
+
+cmd_agent() {
+  local action script dir plist log label uid tmp
+  action="${1-}"
+  label="$(agent_label)"
+  plist="$(agent_plist_path)"
+  uid="$(id -u)"
+  case "$action" in
+    install)
+      if [ "$(uname -s)" != "Darwin" ]; then
+        echo "speak: agent install is macOS-only (launchd LaunchAgent); the listener runs on the Mac host" >&2
+        return 1
+      fi
+      # Absolute path of THIS script — baked into the plist. Prefer a repo/stable
+      # checkout over the plugin cache (a cache path breaks on version updates;
+      # install from the repo copy when possible — documented in the README).
+      script="${BASH_SOURCE[0]:-$0}"
+      dir="$(cd "$(dirname "$script")" && pwd)" || return 1
+      script="$dir/$(basename "$script")"
+      dir="$(listener_state_dir)"
+      mkdir -p "$dir" "${HOME}/Library/LaunchAgents" || return 1
+      log="$dir/agent.log"
+      tmp="$(mktemp "${plist}.XXXXXX")" || return 1
+      agent_plist "$script" "$log" >"$tmp" || { rm -f "$tmp"; return 1; }
+      mv "$tmp" "$plist" || { rm -f "$tmp"; return 1; }
+      # Re-bootstrap idempotently: modern launchctl first, legacy fallback.
+      launchctl bootout "gui/$uid/$label" >/dev/null 2>&1 || true
+      if launchctl bootstrap "gui/$uid" "$plist" >/dev/null 2>&1 \
+         || launchctl load -w "$plist" >/dev/null 2>&1; then
+        echo "speak: listener agent installed — $label"
+        echo "  starts now, at every login, and restarts on crash (log: $log)"
+        echo "  binary: $script"
+        echo "  remove with: speak agent uninstall"
+        return 0
+      fi
+      echo "speak: wrote $plist but launchctl failed to load it — try: launchctl bootstrap gui/$uid $plist" >&2
+      return 1
+      ;;
+    uninstall)
+      launchctl bootout "gui/$uid/$label" >/dev/null 2>&1 \
+        || launchctl unload -w "$plist" >/dev/null 2>&1 || true
+      if [ -f "$plist" ]; then rm -f "$plist"; echo "speak: listener agent removed ($label)"; else echo "speak: no listener agent installed"; fi
+      return 0
+      ;;
+    status)
+      if [ ! -f "$plist" ]; then echo "speak: agent not installed (no $plist)"; return 1; fi
+      if launchctl print "gui/$uid/$label" >/dev/null 2>&1; then
+        echo "speak: agent loaded ($label) — plist: $plist"
+      else
+        echo "speak: plist present but agent NOT loaded — try: launchctl bootstrap gui/$uid $plist"
+        return 1
+      fi
+      return 0
+      ;;
+    *)
+      echo "usage: speak agent install|uninstall|status" >&2
+      return 1
+      ;;
+  esac
+}
+
 cmd_doctor() {
   local flag
   flag=""
@@ -2314,6 +2419,11 @@ main() {
       off)
         shift
         cmd_off "$@"
+        return
+        ;;
+      agent)
+        shift
+        cmd_agent "$@"
         return
         ;;
       --)

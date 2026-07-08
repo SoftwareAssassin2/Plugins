@@ -144,30 +144,30 @@ check "nothing from the reject paths was enqueued" '[ "$n" = "0" ]'
 echo "== listener_accept_lines (.9 bounded capture / watchdog seams / budget) =="
 rm -rf "$SPEAK_SPOOL_DIR"; mkdir -p "$SPEAK_SPOOL_DIR"
 before="$(log_size)"; ok_before="$(counter_read "$SPEAK_COUNTER_OK")"; fail_before="$(counter_read "$SPEAK_COUNTER_FAIL")"
-listener_accept_lines "" 8765 </dev/null; rc=$?
+listener_accept_lines "" 47837 </dev/null; rc=$?
 check "zero-byte connection (nc -z probe) drains silently (rc 0)" '[ $rc -eq 0 ]'
 check "probe not logged"              '[ "$(log_size)" = "$before" ]'
 check "probe not counted"             '[ "$(counter_read "$SPEAK_COUNTER_OK")" = "$ok_before" ] && [ "$(counter_read "$SPEAK_COUNTER_FAIL")" = "$fail_before" ]'
-printf 'sess-1\t%s\nsess-2\t%s\n' "$b64hi" "$b64hi" | listener_accept_lines "" 8765; rc=$?
+printf 'sess-1\t%s\nsess-2\t%s\n' "$b64hi" "$b64hi" | listener_accept_lines "" 47837; rc=$?
 n=$(ls "$SPEAK_SPOOL_DIR"/*.frame 2>/dev/null | wc -l | tr -d ' ')
 check "two valid frames drain to EOF (rc 0) and enqueue both" '[ $rc -eq 0 ] && [ "$n" = "2" ]'
 rm -rf "$SPEAK_SPOOL_DIR"; mkdir -p "$SPEAK_SPOOL_DIR"
 big="$(awk 'BEGIN{ for(i=0;i<6600;i++) printf "aaaaaaaaaa" }')" # 66,000 bytes > cap+1
-printf '%s\n' "$big" | listener_accept_lines "" 8765; rc=$?
+printf '%s\n' "$big" | listener_accept_lines "" 47837; rc=$?
 check "oversized frame: dropped before decode, connection severed (rc 9)" '[ $rc -eq 9 ]'
 check "oversized drop logged as bounded capture" 'grep -q "bounded capture stopped" "$SPEAK_LISTENER_LOG"'
-printf '%s' "$big" | listener_accept_lines "" 8765; rc=$?
+printf '%s' "$big" | listener_accept_lines "" 47837; rc=$?
 check "oversized NEWLINE-LESS stream: capped at cap+1 bytes, severed (rc 9)" '[ $rc -eq 9 ]'
-printf 'sess-1\t%s' "$b64hi" | listener_accept_lines "" 8765; rc=$?
+printf 'sess-1\t%s' "$b64hi" | listener_accept_lines "" 47837; rc=$?
 n=$(ls "$SPEAK_SPOOL_DIR"/*.frame 2>/dev/null | wc -l | tr -d ' ')
 check "small newline-less line at EOF: dropped, never decoded (rc 0)" \
   '[ $rc -eq 0 ] && [ "$n" = "0" ] && grep -q "newline-less line at EOF" "$SPEAK_LISTENER_LOG"'
 ( i=1; while [ $i -le 16 ]; do printf 'bad-line-%s\n' "$i"; i=$((i + 1)); done ) \
-  | listener_accept_lines "" 8765; rc=$?
+  | listener_accept_lines "" 47837; rc=$?
 check "16 rejected frames on one connection sever it (rc 9)" '[ $rc -eq 9 ]'
 check "reject-budget sever logged"    'grep -q "16 rejected frames on one connection" "$SPEAK_LISTENER_LOG"'
 ( i=1; while [ $i -le 15 ]; do printf 'bad-line-%s\n' "$i"; i=$((i + 1)); done ) \
-  | listener_accept_lines "" 8765; rc=$?
+  | listener_accept_lines "" 47837; rc=$?
 check "15 rejects then EOF stays under the budget (rc 0)" '[ $rc -eq 0 ]'
 
 echo "== C7 identity: pidfile schema + path-normalization-resilient check =="
@@ -180,59 +180,59 @@ chmod +x "$WORK/xbin/bin/speak"
 bash "$WORK/xbin/bin/speak" --serve &
 FAKE_PID=$!
 sleep 0.2
-printf 'pid=%s\nport=8765\ncmd=./plugins/speak/bin/speak\nstarted=1750000000\n' "$FAKE_PID" >"$SPEAK_PIDFILE"
+printf 'pid=%s\nport=47837\ncmd=./plugins/speak/bin/speak\nstarted=1750000000\n' "$FAKE_PID" >"$SPEAK_PIDFILE"
 mkdir -p "$SPEAK_LIFETIME_LOCK_DIR"
-listener_identity_check 8765; rc=$?
+listener_identity_check 47837; rc=$?
 check "identity true: pid+ps-shape+port+lock (recorded cmd path differs from live path)" '[ $rc -eq 0 ]'
 check "pidfile globals describe the listener" \
-  '[ "$SPEAK_PIDFILE_PID" = "$FAKE_PID" ] && [ "$SPEAK_PIDFILE_PORT" = "8765" ] && [ "$SPEAK_PIDFILE_CMD" = "./plugins/speak/bin/speak" ]'
+  '[ "$SPEAK_PIDFILE_PID" = "$FAKE_PID" ] && [ "$SPEAK_PIDFILE_PORT" = "47837" ] && [ "$SPEAK_PIDFILE_CMD" = "./plugins/speak/bin/speak" ]'
 listener_identity_check 9999; rc=$?
 check "recorded port != checked port -> rc 5" '[ $rc -eq 5 ]'
 rmdir "$SPEAK_LIFETIME_LOCK_DIR"
-listener_identity_check 8765; rc=$?
+listener_identity_check 47837; rc=$?
 check "lifetime lock not held -> rc 6" '[ $rc -eq 6 ]'
 mkdir -p "$SPEAK_LIFETIME_LOCK_DIR"
-printf 'started=1750000000\ncmd=./plugins/speak/bin/speak\nport=8765\npid=%s\n' "$FAKE_PID" >"$SPEAK_PIDFILE"
-listener_identity_check 8765; rc=$?
+printf 'started=1750000000\ncmd=./plugins/speak/bin/speak\nport=47837\npid=%s\n' "$FAKE_PID" >"$SPEAK_PIDFILE"
+listener_identity_check 47837; rc=$?
 check "pidfile fields are order-free" '[ $rc -eq 0 ]'
-printf 'pid=notanumber\nport=8765\ncmd=x\nstarted=1\n' >"$SPEAK_PIDFILE"
-listener_identity_check 8765; rc=$?
+printf 'pid=notanumber\nport=47837\ncmd=x\nstarted=1\n' >"$SPEAK_PIDFILE"
+listener_identity_check 47837; rc=$?
 check "malformed pid -> rc 2"         '[ $rc -eq 2 ]'
 rm -f "$SPEAK_PIDFILE"
-listener_identity_check 8765; rc=$?
+listener_identity_check 47837; rc=$?
 check "no pidfile -> rc 1"            '[ $rc -eq 1 ]'
-printf 'pid=%s\nport=8765\ncmd=x\nstarted=1\n' "$$" >"$SPEAK_PIDFILE"
-listener_identity_check 8765; rc=$?
+printf 'pid=%s\nport=47837\ncmd=x\nstarted=1\n' "$$" >"$SPEAK_PIDFILE"
+listener_identity_check 47837; rc=$?
 check "live pid with the WRONG ps shape (this test, not speak --serve) -> rc 4" '[ $rc -eq 4 ]'
 check "reachability plays no part in identity (no nc calls made)" 'true' # identity helpers never invoke nc by construction
 
 echo "== C7 stale cleanup: rc 10 / rc 11 / stale removal / grace window =="
-printf 'pid=%s\nport=8765\ncmd=./plugins/speak/bin/speak\nstarted=1750000000\n' "$FAKE_PID" >"$SPEAK_PIDFILE"
-listener_stale_cleanup 8765; rc=$?
+printf 'pid=%s\nport=47837\ncmd=./plugins/speak/bin/speak\nstarted=1750000000\n' "$FAKE_PID" >"$SPEAK_PIDFILE"
+listener_stale_cleanup 47837; rc=$?
 check "valid live listener on this port -> rc 10, NOTHING removed" \
   '[ $rc -eq 10 ] && [ -f "$SPEAK_PIDFILE" ] && [ -d "$SPEAK_LIFETIME_LOCK_DIR" ]'
 listener_stale_cleanup 9999; rc=$?
 check "LIVE listener recorded on a DIFFERENT port -> rc 11, markers preserved" \
   '[ $rc -eq 11 ] && [ -f "$SPEAK_PIDFILE" ] && [ -d "$SPEAK_LIFETIME_LOCK_DIR" ]'
-check "rc 11 reports the actual recorded port" '[ "$SPEAK_PIDFILE_PORT" = "8765" ]'
-printf 'pid=%s\nport=8765\ncmd=x\nstarted=1\n' "$$" >"$SPEAK_PIDFILE" # wrong ps shape
-listener_stale_cleanup 8765; rc=$?
+check "rc 11 reports the actual recorded port" '[ "$SPEAK_PIDFILE_PORT" = "47837" ]'
+printf 'pid=%s\nport=47837\ncmd=x\nstarted=1\n' "$$" >"$SPEAK_PIDFILE" # wrong ps shape
+listener_stale_cleanup 47837; rc=$?
 check "ps-shape mismatch is stale: markers removed (rc 0)" \
   '[ $rc -eq 0 ] && [ ! -f "$SPEAK_PIDFILE" ] && [ ! -d "$SPEAK_LIFETIME_LOCK_DIR" ]'
 sleep 0.3 &
 dead_pid=$!
 wait "$dead_pid" 2>/dev/null
-printf 'pid=%s\nport=8765\ncmd=./plugins/speak/bin/speak\nstarted=1\n' "$dead_pid" >"$SPEAK_PIDFILE"
+printf 'pid=%s\nport=47837\ncmd=./plugins/speak/bin/speak\nstarted=1\n' "$dead_pid" >"$SPEAK_PIDFILE"
 mkdir -p "$SPEAK_LIFETIME_LOCK_DIR"
-listener_stale_cleanup 8765; rc=$?
+listener_stale_cleanup 47837; rc=$?
 check "dead pid is stale: markers removed (rc 0)" \
   '[ $rc -eq 0 ] && [ ! -f "$SPEAK_PIDFILE" ] && [ ! -d "$SPEAK_LIFETIME_LOCK_DIR" ]'
 mkdir -p "$SPEAK_LIFETIME_LOCK_DIR" # lock with NO pidfile, freshly created
-listener_stale_cleanup 8765; rc=$?
+listener_stale_cleanup 47837; rc=$?
 check "young lock-without-pidfile survives (SPEAK_LOCK_GRACE_SECS startup grace)" \
   '[ $rc -eq 0 ] && [ -d "$SPEAK_LIFETIME_LOCK_DIR" ]'
 touch -t 202001010000 "$SPEAK_LIFETIME_LOCK_DIR" # backdate far past the grace window
-listener_stale_cleanup 8765; rc=$?
+listener_stale_cleanup 47837; rc=$?
 check "lock-without-pidfile older than the grace window is removed" \
   '[ $rc -eq 0 ] && [ ! -d "$SPEAK_LIFETIME_LOCK_DIR" ]'
 
@@ -314,17 +314,17 @@ check "lifetime lock released on the aborted start" \
   '[ ! -d "$WORK/srv-pidfail/listener.lock" ]'
 
 # Double-start against the LIVE fake listener from the identity section.
-printf 'pid=%s\nport=8765\ncmd=./plugins/speak/bin/speak\nstarted=1750000000\n' "$FAKE_PID" >"$SPEAK_PIDFILE"
+printf 'pid=%s\nport=47837\ncmd=./plugins/speak/bin/speak\nstarted=1750000000\n' "$FAKE_PID" >"$SPEAK_PIDFILE"
 mkdir -p "$SPEAK_LIFETIME_LOCK_DIR"
-run_serve "$SPEAK_DATA_DIR" "$SHIM_SRV" SPEAK_PORT=8765
+run_serve "$SPEAK_DATA_DIR" "$SHIM_SRV" SPEAK_PORT=47837
 check "double-start: friendly 'already running' + exit 0 (R27)" \
-  '[ "$SERVE_RC" -eq 0 ] && grep -q "already running on 127.0.0.1:8765" "$SERVE_OUT"'
+  '[ "$SERVE_RC" -eq 0 ] && grep -q "already running on 127.0.0.1:47837" "$SERVE_OUT"'
 check "double-start leaves the live markers alone" \
   '[ -f "$SPEAK_PIDFILE" ] && [ -d "$SPEAK_LIFETIME_LOCK_DIR" ]'
 run_serve "$SPEAK_DATA_DIR" "$SHIM_SRV" SPEAK_PORT=9999
 check "live listener on a DIFFERENT port: --serve refuses (rc 11 path)" \
-  '[ "$SERVE_RC" -ne 0 ] && [ "$SERVE_RC" -ne 124 ] && grep -q "already running on 127.0.0.1:8765" "$SERVE_OUT"'
-check "rc-11 refusal names the recorded port remedy" 'grep -q "SPEAK_PORT=8765" "$SERVE_OUT"'
+  '[ "$SERVE_RC" -ne 0 ] && [ "$SERVE_RC" -ne 124 ] && grep -q "already running on 127.0.0.1:47837" "$SERVE_OUT"'
+check "rc-11 refusal names the recorded port remedy" 'grep -q "SPEAK_PORT=47837" "$SERVE_OUT"'
 check "rc-11 refusal preserves the live markers" \
   '[ -f "$SPEAK_PIDFILE" ] && [ -d "$SPEAK_LIFETIME_LOCK_DIR" ]'
 run_serve "$WORK/srv-badport" "$SHIM_SRV" SPEAK_PORT=notaport
@@ -349,8 +349,8 @@ EOF
 chmod +x "$SHIM_DOC/say" "$SHIM_DOC/uname" "$SHIM_DOC/nc"
 
 # Identity valid + unreachable: markers must be PRESERVED (C4 — reachability
-# never folds into identity). Port 8765 has our fake markers; nothing listens.
-out="$( export SPEAK_PORT=8765
+# never folds into identity). Port 47837 has our fake markers; nothing listens.
+out="$( export SPEAK_PORT=47837
   PATH="$SHIM_DOC:$PATH" "$SPEAK" doctor --listener 2>&1 )"; rc=$?
 check "identity valid but unreachable -> non-zero, 'may be stuck'" \
   '[ $rc -ne 0 ] && printf "%s" "$out" | grep -q "markers preserved"'
@@ -358,11 +358,11 @@ check "markers preserved by doctor --listener" \
   '[ -f "$SPEAK_PIDFILE" ] && [ -d "$SPEAK_LIFETIME_LOCK_DIR" ]'
 out="$( export SPEAK_PORT=9999
   PATH="$SHIM_DOC:$PATH" "$SPEAK" doctor --listener 2>&1 )"; rc=$?
-check "rc 11: 'listener running on :8765, not :9999', non-zero, markers kept" \
-  '[ $rc -ne 0 ] && printf "%s" "$out" | grep -q "listener running on :8765, not :9999" && [ -f "$SPEAK_PIDFILE" ]'
+check "rc 11: 'listener running on :47837, not :9999', non-zero, markers kept" \
+  '[ $rc -ne 0 ] && printf "%s" "$out" | grep -q "listener running on :47837, not :9999" && [ -f "$SPEAK_PIDFILE" ]'
 kill "$FAKE_PID" 2>/dev/null; wait "$FAKE_PID" 2>/dev/null; FAKE_PID=""
 rm -f "$SPEAK_PIDFILE"; rm -rf "$SPEAK_LIFETIME_LOCK_DIR"
-out="$( export SPEAK_PORT=8765 SPEAK_DATA_DIR="$WORK/srv-empty"
+out="$( export SPEAK_PORT=47837 SPEAK_DATA_DIR="$WORK/srv-empty"
   PATH="$SHIM_DOC:$PATH" "$SPEAK" doctor --listener 2>&1 )"; rc=$?
 check "no marker + nothing on port -> 'unrelated process / nothing on port', non-zero" \
   '[ $rc -ne 0 ] && printf "%s" "$out" | grep -q "unrelated process / nothing on port"'

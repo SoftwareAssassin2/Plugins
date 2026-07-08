@@ -42,7 +42,7 @@ Context detection is separate from dependency availability:
 - **Forward (Dev Container):** Linux plus a container marker (`/.dockerenv` /
   `/run/.containerenv`), or explicit `SPEAK_MODE=forward` → the response is
   base64-encoded and sent over TCP (`nc`) to a listener on the Mac at
-  `host.docker.internal:${SPEAK_PORT:-8765}`. This container→host path is the
+  `host.docker.internal:${SPEAK_PORT:-47837}`. This container→host path is the
   shipped, verified transport — no fallback needed.
 - Anything else (bare non-container Linux, unknown OS) → a clear "unsupported
   host OS" diagnostic, never a guessed forward attempt.
@@ -51,7 +51,7 @@ Context detection is separate from dependency availability:
 
 Forward mode needs `speak --serve` running on the Mac. The plugin NEVER starts
 it for you: open a terminal **on the host** at the workspace root and run
-`./plugins/speak/bin/speak --serve`. It binds `127.0.0.1:${SPEAK_PORT:-8765}`,
+`./plugins/speak/bin/speak --serve` — or better, install the always-on LaunchAgent once with `./plugins/speak/bin/speak agent install` (starts at login, restarts on crash; `agent status`/`agent uninstall` to manage). Either way it binds `127.0.0.1:${SPEAK_PORT:-47837}`,
 queues incoming utterances, and plays them through `say`. Ctrl-C stops it.
 
 ## Auto-speak toggle + debounced notice

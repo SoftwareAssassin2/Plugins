@@ -160,7 +160,7 @@ if [ "$mode" = "forward" ]; then
   # probe must never drop auto-speech.
   if ! listener_reachable; then
     notice_reason="$sid.listener-unreachable"
-    notice_msg="speak plugin: the host listener on host.docker.internal:$port looks unreachable. If it isn't running, open a terminal ON THE HOST at the workspace root and run: ./plugins/speak/bin/speak --serve — it plays forwarded speech through the Mac's voice (details: plugins/speak/README.md). The response was still sent in case this is a transient blip."
+    notice_msg="speak plugin: the host listener on host.docker.internal:$port looks unreachable. Recommended (one-time, on your Mac): from the Plugins repo run ./plugins/speak/bin/speak agent install — it installs a LaunchAgent so the listener starts immediately, at every login, and restarts if it dies. One-off alternative: ./plugins/speak/bin/speak --serve in a Mac terminal (details: plugins/speak/README.md). The response was still sent in case this is a transient blip."
   fi
 fi
 

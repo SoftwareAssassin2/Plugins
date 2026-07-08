@@ -19,12 +19,12 @@ container terminal)**, run:
 ./plugins/speak/bin/speak --serve
 ```
 
-It binds `127.0.0.1:${SPEAK_PORT:-8765}` and plays each forwarded response
+It binds `127.0.0.1:${SPEAK_PORT:-47837}` and plays each forwarded response
 through `say`. Leave it running while you want voice; Ctrl-C stops it. This is
 exactly the command the hook's "listener unreachable" notice tells you to run.
 
 Inside the container, the forward client connects to
-`host.docker.internal:${SPEAK_PORT:-8765}` — Docker Desktop routes that name to
+`host.docker.internal:${SPEAK_PORT:-47837}` — Docker Desktop routes that name to
 the host, where the loopback-bound listener answers. This container→host path
 is the shipped, verified transport (proven green end-to-end); no extra
 devcontainer network config is needed.
@@ -34,6 +34,29 @@ devcontainer network config is needed.
 The loopback-only bind minimizes (and usually avoids) the prompt, but if speech
 from the container silently never arrives, check System Settings → Network →
 Firewall.
+
+
+### Always-on listener (recommended): `speak agent install`
+
+Instead of starting the listener by hand each time, install it as a per-user
+macOS **LaunchAgent** (one-time, on the Mac host, from the Plugins repo):
+
+```bash
+./plugins/speak/bin/speak agent install
+```
+
+It starts the listener immediately, at every login (so it survives reboots),
+and restarts it if it crashes (`KeepAlive` on non-zero exit only — a clean
+"already running" exit next to a manually-started listener does not
+relaunch-loop). Logs go to `~/.local/state/speak/agent.log`. Manage it with
+`speak agent status` / `speak agent uninstall`.
+
+Install from a stable checkout (this repo), not the plugin cache — the plist
+bakes in the binary's absolute path, and cache paths change on plugin updates.
+
+The default port is **47837** — deliberately obscure (unassigned, below the
+macOS ephemeral range) after the original 8765 collided with VS Code
+dev-container port forwarding. Override with `SPEAK_PORT` on BOTH ends.
 
 ## Commands
 
@@ -84,7 +107,7 @@ auto-provision these — this plugins repo has no `.devcontainer` of its own.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SPEAK_PORT` | `8765` | Listener/forward port. Validated as an integer 1..65535 by the client, the listener, and `doctor`; an invalid value fails clearly (and yields a debounced `invalid-port` hook notice). |
+| `SPEAK_PORT` | `47837` | Listener/forward port. Validated as an integer 1..65535 by the client, the listener, and `doctor`; an invalid value fails clearly (and yields a debounced `invalid-port` hook notice). |
 | `SPEAK_MAX_CHARS` | unset | Optional cap on spoken text length. Unset/empty = no cap; an invalid value is treated as unset with a stderr diagnostic. |
 | `SPEAK_SESSION` | hostname | Optional session id for the terminal path's wire frames. |
 | `SPEAK_DATA_DIR` | see note | Controls BOTH the listener's runtime-state dir (pid/log/spool; default `~/.local/state/speak`) AND the authoritative toggle/debounce dir. Inside Claude Code the toggle dir comes from `CLAUDE_PLUGIN_DATA`; for terminal `speak on`/`speak off` **outside** Claude you must set `SPEAK_DATA_DIR` (or `CLAUDE_PLUGIN_DATA`) — with neither set the toggle is reported "unavailable" rather than silently writing a dir the hook never reads. |

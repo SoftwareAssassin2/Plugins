@@ -101,7 +101,7 @@ check "names 'unsupported local TTS backend' (not generic missing-say)" \
 
 echo "== speak_port (C9: 1..65535) =="
 out="$( unset SPEAK_PORT; speak_port )"; rc=$?
-check "unset -> default 8765"       '[ $rc -eq 0 ] && [ "$out" = "8765" ]'
+check "unset -> default 47837"       '[ $rc -eq 0 ] && [ "$out" = "47837" ]'
 out="$( export SPEAK_PORT=1; speak_port )"; rc=$?
 check "1 valid"                     '[ $rc -eq 0 ] && [ "$out" = "1" ]'
 out="$( export SPEAK_PORT=65535; speak_port )"; rc=$?
@@ -114,8 +114,8 @@ check "65536 -> rc 6"               '[ $rc -eq 6 ]'
 check "negative -> rc 6"            '[ $rc -eq 6 ]'
 ( export SPEAK_PORT=abc; speak_port >/dev/null ); rc=$?
 check "non-numeric -> rc 6"         '[ $rc -eq 6 ]'
-out="$( export SPEAK_PORT=08765; speak_port )"; rc=$?
-check "leading zeros normalized"    '[ $rc -eq 0 ] && [ "$out" = "8765" ]'
+out="$( export SPEAK_PORT=047837; speak_port )"; rc=$?
+check "leading zeros normalized"    '[ $rc -eq 0 ] && [ "$out" = "47837" ]'
 
 echo "== sanitize_session_id (C8) =="
 out="$(sanitize_session_id 'abc-DEF_1.2')"
@@ -340,6 +340,19 @@ check "'on' without newline (2 bytes) -> OFF (C3 exact on\\n)" '[ $rc -eq 1 ]'
 printf 'on\n\n' >"$WORK/toggle2/auto-speak"
 ( export SPEAK_DATA_DIR="$WORK/toggle2"; auto_speak_enabled ); rc=$?
 check "'on\\n\\n' (4 bytes) -> OFF (C3 exact on\\n)" '[ $rc -eq 1 ]'
+
+echo "== agent subcommand (LaunchAgent management) =="
+out="$(agent_plist "/abs/path/bin/speak" "/tmp/agent.log")"
+check "agent_plist embeds the script path + --serve" \
+  'printf "%s" "$out" | grep -q "<string>/abs/path/bin/speak</string>" && printf "%s" "$out" | grep -q "<string>--serve</string>"'
+check "agent_plist: RunAtLoad + KeepAlive on SuccessfulExit=false" \
+  'printf "%s" "$out" | grep -q "<key>RunAtLoad</key><true/>" && printf "%s" "$out" | grep -qA1 "SuccessfulExit"'
+check "agent_plist routes stdout+stderr to the log" \
+  '[ "$(printf "%s" "$out" | grep -c "<string>/tmp/agent.log</string>")" = "2" ]'
+out="$(printf '%s' "" | "$SPEAK" agent 2>&1)"; rc=$?
+check "bare 'speak agent' -> usage, rc 1, never spoken" '[ $rc -eq 1 ] && printf "%s" "$out" | grep -q "usage: speak agent"'
+out="$(echo agent | PATH="$SHIM_SAY:$PATH" "$SPEAK")"; rc=$?
+check "literal word 'agent' still speakable via stdin" '[ $rc -eq 0 ]'
 
 echo "== plugin_state_dir cache-derivation fallback (C3 amendment) =="
 FAKEHOME="$WORK/fakehome"

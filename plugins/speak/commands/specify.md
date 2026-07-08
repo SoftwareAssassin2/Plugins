@@ -38,5 +38,5 @@ Never invent or use a `--last`-style flag: the terminal command surface is fixed
 ## 3. Report the outcome
 
 - **Exit 0:** briefly confirm the chosen response is being spoken.
-- **Non-zero with an unreachable-listener error** (stderr says "could not reach the host listener"): tell the user **immediately and clearly** — the user asked explicitly, so this message is never softened, suppressed, or debounced. Include the fix verbatim: open a terminal ON THE HOST at the workspace root and run `./plugins/speak/bin/speak --serve`.
+- **Non-zero with an unreachable-listener error** (stderr says "could not reach the host listener"): tell the user **immediately and clearly** — the user asked explicitly, so this message is never softened, suppressed, or debounced. Include the fix verbatim — recommended (one-time, on the Mac host): from the Plugins repo run `./plugins/speak/bin/speak agent install` (installs a LaunchAgent: starts the listener now, at every login, and restarts it if it dies); one-off alternative: `./plugins/speak/bin/speak --serve` in a Mac terminal.
 - **Any other failure** (missing dependency, invalid `SPEAK_PORT`/`SPEAK_MODE`, unsupported host): relay the CLI's stderr message to the user as-is, and suggest `/speak:status` for the full diagnostic.
