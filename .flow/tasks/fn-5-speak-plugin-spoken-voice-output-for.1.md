@@ -42,7 +42,8 @@ Stand up the plugin skeleton and the `speak` CLI foundation: a subcommand dispat
 - [ ] `plugins/speak/bin/speak` is committed executable (`test -x`)
 
 ## Done summary
-_(filled on completion)_
-
+Stood up the speak plugin skeleton: plugins/speak/bin/speak (bash-3.2, source-guarded strict mode) with reserved-word dispatcher + stubs, pure stdin->stdout markdown cleaning, C1 mode detection with distinct probe return codes, the isolated play_local macOS `say` backend (stdin-fed, injection-safe), and SPEAK_MAX_CHARS truncation with stderr-only notices. Added the five-field plugin manifest and registered speak in .claude-plugin/marketplace.json at ./plugins/speak; Codex review verdict SHIP on first pass.
 ## Evidence
-_(filled on completion)_
+- Commits: 839501e004163426d978c4624f756e6b58aca640
+- Tests: /bin/bash scratchpad/smoke.sh (40-check bash-3.2 smoke suite: dispatcher, cleaning, C1 mode detection, SPEAK_MAX_CHARS, stdin-to-say injection safety, source-guard) — 40 passed, 0 failed, /bin/bash -n plugins/speak/bin/speak (bash 3.2.57 syntax check), jq -e . on plugin.json and marketplace.json
+- PRs:
