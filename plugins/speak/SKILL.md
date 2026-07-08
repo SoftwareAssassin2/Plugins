@@ -1,5 +1,5 @@
 ---
-name: speak
+name: voice
 description: Speak Claude's responses aloud through the native OS voice (macOS `say`) — on demand via /speak:speak (last response) or /speak:specify (pick one), or automatically on every response via a toggleable Stop hook. Works locally on a Mac and, through a manually started host listener, from inside a Dev Container. Use when the user wants responses read aloud / spoken / voice output, wants auto-speak turned on or off, or asks whether the speak install is healthy.
 argument-hint: "[optional: text to speak]"
 ---
