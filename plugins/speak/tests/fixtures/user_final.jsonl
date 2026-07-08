@@ -1,0 +1,4 @@
+{"type":"assistant","uuid":"a1","message":{"id":"msg_A","role":"assistant","content":[{"type":"text","text":"Stale answer that must never be spoken."}]}}
+{"type":"user","uuid":"u1","message":{"role":"user","content":"a follow-up question arrived after"}}
+{"type":"attachment","uuid":"t1","attachment":{"type":"x"}}
+{"type":"ai-title","uuid":"t2","title":"t"}

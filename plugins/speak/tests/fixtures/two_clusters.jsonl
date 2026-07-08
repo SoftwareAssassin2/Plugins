@@ -1,0 +1,6 @@
+{"type":"user","uuid":"u1","message":{"role":"user","content":"first question"}}
+{"type":"assistant","uuid":"a1","message":{"id":"msg_OLD","role":"assistant","content":[{"type":"text","text":"Old response."}]}}
+{"type":"user","uuid":"u2","message":{"role":"user","content":"second question"}}
+{"type":"assistant","uuid":"a2","message":{"id":"msg_NEW","role":"assistant","content":[{"type":"thinking","thinking":"hmm"}]}}
+{"type":"assistant","uuid":"a3","message":{"id":"msg_NEW","role":"assistant","content":[{"type":"text","text":"New response."}]}}
+{"type":"attachment","uuid":"t1","attachment":{"type":"x"}}

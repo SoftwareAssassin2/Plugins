@@ -1,0 +1,3 @@
+{"type":"user","uuid":"u1","message":{"role":"user","content":"think about it"}}
+{"type":"assistant","uuid":"a1","message":{"id":"msg_TH","role":"assistant","content":[{"type":"thinking","thinking":"only internal deliberation, never spoken"}]}}
+{"type":"queue-operation","uuid":"t1","operation":"dequeue"}

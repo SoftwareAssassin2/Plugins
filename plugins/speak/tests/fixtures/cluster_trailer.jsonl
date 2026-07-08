@@ -1,0 +1,7 @@
+{"type":"user","uuid":"u1","sessionId":"s1","message":{"role":"user","content":"please do the thing"}}
+{"type":"assistant","uuid":"a1","sessionId":"s1","isSidechain":false,"message":{"id":"msg_A","role":"assistant","content":[{"type":"thinking","thinking":"pondering the request..."}]}}
+{"type":"assistant","uuid":"a2","sessionId":"s1","isSidechain":false,"message":{"id":"msg_A","role":"assistant","content":[{"type":"text","text":"First part."}]}}
+{"type":"assistant","uuid":"a3","sessionId":"s1","isSidechain":false,"message":{"id":"msg_A","role":"assistant","content":[{"type":"text","text":"Second part."}]}}
+{"type":"attachment","uuid":"t1","attachment":{"type":"queued_command","prompt":"x"}}
+{"type":"ai-title","uuid":"t2","title":"Session title"}
+{"type":"queue-operation","uuid":"t3","operation":"dequeue"}

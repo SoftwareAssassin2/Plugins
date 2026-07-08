@@ -1,0 +1,3 @@
+{"type":"user","uuid":"u1","message":{"role":"user","content":"short one please"}}
+{"type":"assistant","uuid":"a1","message":{"id":"msg_S","role":"assistant","content":"A plain string response."}}
+{"type":"attachment","uuid":"t1","attachment":{"type":"x"}}

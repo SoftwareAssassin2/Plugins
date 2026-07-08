@@ -1,0 +1,5 @@
+{"type":"assistant","uuid":"a1","message":{"id":"msg_M","role":"assistant","content":[{"type":"text","text":"Main-chain answer."}]}}
+{"type":"user","uuid":"u1","message":{"role":"user","content":"kick off a subagent"}}
+{"type":"assistant","uuid":"s1","isSidechain":true,"message":{"id":"msg_SIDE","role":"assistant","content":[{"type":"text","text":"Sidechain subagent traffic, never spoken."}]}}
+{"type":"assistant","uuid":"s2","isSidechain":true,"message":{"id":"msg_SIDE","role":"assistant","content":[{"type":"text","text":"More sidechain text."}]}}
+{"type":"attachment","uuid":"t1","attachment":{"type":"x"}}

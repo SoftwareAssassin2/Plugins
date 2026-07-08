@@ -1,0 +1,4 @@
+{"type":"user","uuid":"u1","message":{"role":"user","content":"do it"}}
+{"type":"assistant","uuid":"a1","message":{"id":"msg_TORN","role":"assistant","content":[{"type":"text","text":"Answer before the torn write."}]}}
+{"type":"attachment","uuid":"t1","attachment":{"type":"x"}}
+{"type":"assistant","uuid":"a2","message":{"id":"msg_HALF","role":"assist

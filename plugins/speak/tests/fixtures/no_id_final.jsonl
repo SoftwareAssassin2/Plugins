@@ -1,0 +1,5 @@
+{"type":"user","uuid":"u1","message":{"role":"user","content":"hello"}}
+{"type":"assistant","uuid":"a0","message":{"id":"msg_X","role":"assistant","content":[{"type":"text","text":"Different earlier record."}]}}
+{"type":"user","uuid":"u2","message":{"role":"user","content":"again"}}
+{"type":"assistant","uuid":"a1","message":{"role":"assistant","content":[{"type":"text","text":"Only this record."}]}}
+{"type":"ai-title","uuid":"t1","title":"t"}
