@@ -223,6 +223,15 @@ nc -z -G1 host.docker.internal 8765 && echo reachable || echo unreachable
 
 Task **fn-5-speak-plugin-spoken-voice-output-for.3** (the listener core, exercised against the `.2` forward client) validates the core approach: that a base64 line over `nc` from a Linux dev container actually reaches a loopback-bound listener on the Mac via `host.docker.internal` and produces audio. The original listener task is **pre-split** to keep the proof early and the risk small: `.3` = listener core + PROOF, `.8` = identity/lifetime-lock/double-start, `.9` = watchdog + bounded capture — `.8`/`.9` sit behind the proof like everything else. If the round-trip fails (e.g. `host.docker.internal` doesn't reach a `127.0.0.1`-bound listener, or nc-flavor flag asymmetry hangs the sender), re-evaluate the transport (bind address, `-N`/`-k` flags, or a shared-mount fallback) before building further. `.3` **explicitly STOPS the build sequence on a red proof** — `.4`–`.9` do not proceed until the round-trip is green. If a fallback transport is chosen, the stop rule requires **updating §Canonical Contracts FIRST, then the (short) C-ID references in every affected task spec before `.4`–`.9` resume** — specifically: bind address/security (R15, C2), reachability target (C4), the hook notice (R8), the README setup command (R8), doctor diagnostics (R24, C5), and the tests.
 
+## Post-ship changelog
+
+Changes made AFTER the spec-completion review shipped (2026-07-08). The R-criteria, API-contracts list, and Decision Context above have already been updated to reflect these — **this section is the durable record**: any future revision of this spec must treat the state described here as the baseline, not the originally-shipped surface. Historical task records (`.5`/`.6`) intentionally still describe the original five-command surface they shipped.
+
+1. **`/speak:now` → `/speak:specify` (rename, behavior unchanged).** `commands/now.md` became `commands/specify.md`; the ask-first pick list (AskUserQuestion, most-recent first, up to 4) is identical. Self-references inside the command file and the `off.md` cross-reference were updated.
+2. **New `/speak:speak` (`commands/speak.md`) — speak the very last assistant response immediately, never asks.** Deliberately named `speak.md` so the **unprefixed `/speak` resolves to it** while no other installed command claims the name — recovering the originally-wished bare `/speak`. Same robust temp-file stdin handoff and outcome-reporting rules as `/speak:specify` (explicit unreachable → immediate message, R25 applies to both).
+
+Net effect: the command surface is **six** slash commands (R29 updated): `/speak:speak`, `/speak:specify`, `/speak:on`, `/speak:off`, `/speak:status`, `/speak:test`. Known watch-item: the plugin's SKILL.md also registers under the id `speak:speak` (plugin `speak` + skill name `speak`); slash-command dispatch and the Skill registry coexisted in testing, but if a collision ever surfaces, the intended fix is renaming the SKILL.md frontmatter `name:` (not the command file).
+
 ## Requirement coverage
 
 | Req | Description | Task(s) | Gap justification |
