@@ -6,7 +6,7 @@ satisfies: [R26, R29]
 
 Ship the automated test suite for the pure-logic units, a `coverage.sh` harness mirroring the repo convention, and the `/speak:test` slash command that runs them.
 
-**Prerequisite:** fn-5.3's container→host proof is green (or the fallback transport is recorded) before this task starts.
+**Prerequisite:** fn-5.3's container→host proof is green (or the fallback transport is recorded) before this task starts. Also depends on `.5` (full command surface) and `.9` (bounded-capture helpers under test; `.9` transitively brings `.8`'s identity helpers).
 
 **Size:** M
 **Files:** `plugins/speak/tests/*_test.sh`, `plugins/speak/tests/coverage.sh`, `plugins/speak/commands/test.md`

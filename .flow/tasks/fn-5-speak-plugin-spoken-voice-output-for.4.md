@@ -62,7 +62,7 @@ Wire the `Stop` hook that drives automatic speech, the global auto-speak toggle,
 - [ ] Hook stdout is empty or exactly one JSON object with `systemMessage`; the child `speak` invocation's output is captured, not leaked (R28)
 - [ ] Unreachable listener → `systemMessage` containing `./plugins/speak/bin/speak --serve`, shown at most once per session+reason; the debounce-marker filename is `<sanitized-session-id>.<reason>` (no raw id as a path); distinct reasons aren't mutually suppressed; stale markers pruned (R8, R9)
 - [ ] Per-context deps: local needs `say` (+`jq` for the hook), forward needs `base64`/`nc`; a missing required-in-context dep → one debounced `systemMessage` naming it, never a hard-fail (shared `bin/speak` dep helper); missing-dep/invalid-port exit without dispatch, forward-probe-failure still dispatches (R23, R28)
-- [ ] hooks.json `timeout` uses the Claude hook-config field (seconds), not the external `timeout` binary
+- [ ] hooks.json `timeout` uses the Claude hook-config field set to **10** seconds per C9, not the external `timeout` binary
 - [ ] `plugins/speak/hooks/stop-speak.sh` is committed executable (`test -x`)
 
 ## Done summary

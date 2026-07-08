@@ -6,7 +6,7 @@ satisfies: [R5, R13, R23, R24, R25, R29]
 
 Add four slash commands and the `doctor` diagnostic, plus runtime dependency detection. (The fifth command, `/speak:test`, ships with the test task `.6`.)
 
-**Prerequisite:** fn-5.3's container→host proof is green (or the fallback transport is recorded) before this task starts.
+**Prerequisite:** fn-5.3's container→host proof is green (or the fallback transport is recorded) before this task starts. Also depends on `.4` (shared dep-detection helper) and `.8` (sourceable identity/lock helpers that `doctor --listener` reuses).
 
 **Size:** M
 **Files:** `plugins/speak/commands/now.md`, `plugins/speak/commands/on.md`, `plugins/speak/commands/off.md`, `plugins/speak/commands/status.md`, `plugins/speak/bin/speak` (doctor + dep detection)

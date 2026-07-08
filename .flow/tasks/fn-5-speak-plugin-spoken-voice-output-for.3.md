@@ -11,7 +11,7 @@ Implement the core of `speak --serve` — the host listener that accepts forward
 
 ## Approach
 
-**Contracts (epic §Canonical Contracts is authoritative):** C2 (frame + rejects), C3 (`listener_state_dir`), C4 (reachability targets), C5 (listen never pre-probed), C6 (nc detection — reuse `.2`'s helper), C9 (constants).
+**Contracts (epic §Canonical Contracts is authoritative):** C2 (frame + rejects), C3 (`listener_state_dir` for all listener state), C4 (reachability targets), C5 (listen never pre-probed), C6 (nc detection — reuse `.2`'s helper), C9 (constants).
 
 - Bind `127.0.0.1:${SPEAK_PORT:-8765}` (loopback only — security) via a small **`nc_listen_args` helper** that pins the macOS-first listen form (`nc -l 127.0.0.1 <port>` / BSD positional-port behavior) and documents the BSD/OpenBSD variance. Wrap it in a `while :; do ...; done` respawn loop (BSD `nc -l` serves one connection then exits).
 - **Fast accept→enqueue, separate single playback worker.** The accept loop must NOT block on `say` (a naive `nc -l | say` blocks accepting during playback). Decode each base64 line (**detect the decode flag — BSD `-D` vs GNU `-d`**) and enqueue into the bounded spool — a temp dir of sequentially-named files (atomic enqueue, drop-oldest beyond the C9 cap, logged; NOT a named pipe, which can't drop-oldest and blocks writers). A single playback worker drains the spool to `say` via stdin in order, so utterances never overlap.
