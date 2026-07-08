@@ -8,7 +8,7 @@
 #
 # Reserved first args dispatch as subcommands (never spoken):
 #   --serve   host listener            (.3 core; .8 identity/lifetime lock;
-#                                       watchdog/bounded capture owned by .9)
+#                                       .9 watchdog + bounded capture)
 #   doctor    full diagnostic          (stub here — owned by task .5)
 #   status    alias for doctor         (stub here — owned by task .5)
 #   on / off  auto-speak toggle writes (task .4 — atomic flag under
@@ -492,15 +492,21 @@ play_local() {
 # from those files.
 #
 # Identity/lifetime-lock/double-start classification is task .8 (C7, below).
-# Provisionally unhardened by design: per-connection watchdog + bounded
-# cap+1-byte capture are task .9. The epic does not ship without them.
+# Per-connection hardening is task .9 (listener_accept_lines + its helpers):
+# a bounded cap+1-byte capture of each frame line (C2), a per-read watchdog
+# deadline that kills the CONCRETE one-shot `nc` when an open connection
+# yields no complete frame in time, and a per-connection reject budget —
+# so a stalled, newline-less, or oversized client can never wedge the accept
+# loop, leak a stale `nc` holding the port, or buffer unbounded data.
 #
 # Sourceable-helper contract for the .5 doctor and the .6 unit tests:
 # everything below except cmd_serve's own orchestration (validate_frame,
 # b64_decode_flag/-line, listener_state_dir, listener_init_state,
 # speak_lock_acquire/release, spool_next_seq/enqueue/prune/claim,
 # counter_read/incr, session_log_append, session_active_count,
-# render_status_line, process_frame_line, listener_pidfile_write/read,
+# render_status_line, process_frame_line, listener_accept_lines,
+# listener_nc_pid, listener_conn_open, listener_nc_kill,
+# listener_pidfile_write/read,
 # listener_identity_check, listener_stale_cleanup) works sourced, against
 # paths set by listener_init_state (override via SPEAK_DATA_DIR). The C7
 # identity helpers in particular are reused VERBATIM by `doctor --listener`
@@ -511,6 +517,19 @@ play_local() {
 # rolling window. Plain variables so the .6 tests can shrink them.
 SPEAK_SPOOL_CAP=50
 SPEAK_SESSION_WINDOW_SECS=60
+
+# .9 hardening constants (internal, deliberately NOT env-tunable — C9
+# spirit; plain variables so the .6 tests can shrink them):
+#   * SPEAK_READ_DEADLINE_SECS — per-read watchdog deadline: once a client
+#     connection is OPEN, one complete frame line must arrive within this or
+#     the connection is severed. Idle listening between clients re-arms the
+#     deadline silently, forever — an idle listener is NEVER killed.
+#   * SPEAK_MAX_REJECTS_PER_CONN — a connection that keeps producing
+#     rejected frames (e.g. a NUL flood, which `read` silently discards so
+#     each cap+1-byte gulp surfaces as an "empty line") is severed after
+#     this many, bounding listener.log growth per connection.
+SPEAK_READ_DEADLINE_SECS=30
+SPEAK_MAX_REJECTS_PER_CONN=16
 
 # C7 grace window: a lifetime lock with NO pidfile behind it is only removed
 # as stale once it is older than this — cmd_serve writes the pidfile right
@@ -1001,26 +1020,29 @@ listener_set_state() {
 }
 
 # process_frame_line — handle ONE received line: validate (C2), decode
-# (detected -d/-D), record the session, enqueue. ALWAYS returns 0 — a bad
-# frame is logged + skipped and the listener keeps serving (R18). Malformed/
-# dropped events go to listener.log ONLY, never the playback totals.
-# A zero-byte connection (the `nc -z` probe) never reaches here at all — EOF
-# with no line means the read loop body never runs — so the probe stays
-# silent: neither logged nor counted.
+# (detected -d/-D), record the session, enqueue. rc 0 = accepted (enqueued,
+# or the enqueue was skipped on a lock timeout — not the client's fault);
+# rc 1 = rejected/skipped + logged (the caller's per-connection reject
+# budget counts these). EITHER WAY the listener keeps serving (R18), and
+# malformed/dropped events go to listener.log ONLY, never the playback
+# totals. A zero-byte connection (the `nc -z` probe) never reaches here at
+# all — EOF with no line means the read loop body never runs — so the probe
+# stays silent: neither logged nor counted.
 process_frame_line() {
   local line rc sid text
   line="${1-}"
   line="${line%$'\r'}"
   if [ -z "$line" ]; then
     listener_log "rejected frame: empty line"
-    return 0
+    return 1
   fi
-  # Cheap over-cap guard (C2): a well-formed frame is pure ASCII so the char
-  # count equals bytes. The REAL bounded cap+1-byte read (never buffering an
-  # unbounded newline-less stream) is task .9's bounded-capture work.
+  # Secondary over-cap guard (C2) for direct/sourced callers: during --serve
+  # listener_accept_lines' bounded cap+1-byte read (.9) already dropped any
+  # oversized line and severed its connection before this point. Chars equal
+  # bytes for any frame that could pass validation (pure ASCII).
   if [ "${#line}" -gt "$SPEAK_MAX_FRAME_BYTES" ]; then
     listener_log "rejected frame: over the ${SPEAK_MAX_FRAME_BYTES}-byte encoded frame cap (${#line} chars)"
-    return 0
+    return 1
   fi
   rc=0
   validate_frame "$line" || rc=$?
@@ -1028,30 +1050,30 @@ process_frame_line() {
     0) ;;
     10)
       listener_log "rejected frame: expected exactly one tab"
-      return 0
+      return 1
       ;;
     11)
       listener_log "rejected frame: empty session id"
-      return 0
+      return 1
       ;;
     12)
       listener_log "rejected frame: empty payload"
-      return 0
+      return 1
       ;;
     *)
       listener_log "rejected frame: invalid (rc=$rc)"
-      return 0
+      return 1
       ;;
   esac
   # C8: sanitize BEFORE the sid is used in any log line or state file.
   sid="$(sanitize_session_id "$SPEAK_FRAME_SID")"
   if ! text="$(printf '%s' "$SPEAK_FRAME_B64" | b64_decode_line)"; then
     listener_log "rejected frame from session '$sid': undecodable base64"
-    return 0
+    return 1
   fi
   if [ -z "$text" ]; then
     listener_log "skipped frame from session '$sid': payload decoded to empty text"
-    return 0
+    return 1
   fi
   session_log_append "$sid" || true
   if ! printf '%s' "$text" | spool_enqueue; then
@@ -1060,14 +1082,143 @@ process_frame_line() {
   return 0
 }
 
-# listener_accept_lines — drain one connection's stdout line-by-line. The
-# `|| [ -n "$line" ]` arm also processes a final unterminated line (the .2
-# sender always terminates, but a foreign client may not; .9 hardens this).
-listener_accept_lines() {
-  local line
-  while IFS= read -r line || [ -n "$line" ]; do
-    process_frame_line "$line"
+# --- .9 per-connection hardening helpers (watchdog + bounded capture) ------
+
+# listener_nc_pid — print the pid recorded in nc pidfile $1 IFF that pid is
+# live AND `ps` shows it is exactly OUR one-shot listen invocation
+# (`nc <nc_listen_args $2>`). The cmdline gate means a recycled or foreign
+# pid can never be mistaken for (or killed as) our nc — this process must
+# never kill a process it did not start (the same ownership invariant as
+# the C7 markers and the state.lock mutex). rc 1 = no verified live nc.
+listener_nc_pid() {
+  local pidfile port pid cmdline expected
+  pidfile="${1-}"
+  port="${2-}"
+  [ -n "$pidfile" ] && [ -f "$pidfile" ] || return 1
+  pid="$(cat "$pidfile" 2>/dev/null)"
+  case "$pid" in '' | *[!0-9]*) return 1 ;; esac
+  cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+  cmdline="${cmdline%"${cmdline##*[! ]}"}" # strip ps's trailing padding
+  expected="nc $(nc_listen_args "$port")"
+  case "$cmdline" in
+    *"$expected") ;; # a zombie shows as "(nc)" and correctly fails this
+    *) return 1 ;;
+  esac
+  printf '%s\n' "$pid"
+}
+
+# listener_conn_open — does the verified nc (pid $1) hold an ACCEPTED client
+# socket right now? Distinguishes a STALLED client (kill it) from an IDLE
+# listener waiting for a connection (never kill it). The listener half-closes
+# its write side at accept (stdin is /dev/null), so the accepted socket
+# usually sits in FIN_WAIT_2 rather than ESTABLISHED — hence "any non-LISTEN
+# TCP fd", not a state whitelist. lsof ships with macOS (the only supported
+# listener host, C4/R15); if it is somehow unavailable, report no-connection:
+# the watchdog then never kills (an idle listener must never be shot on a
+# guess), degrading to the pre-.9 behavior instead of misfiring.
+listener_conn_open() {
+  local pid
+  pid="${1-}"
+  [ -n "$pid" ] || return 1
+  command -v lsof >/dev/null 2>&1 || return 1
+  lsof -nP -a -p "$pid" -iTCP -sTCP:^LISTEN >/dev/null 2>&1
+}
+
+# listener_nc_kill — sever the current connection by killing the CONCRETE
+# one-shot `nc -l` pid ($1 = pidfile, $2 = port; verified via
+# listener_nc_pid — never an unverified, recycled, or foreign pid),
+# escalating TERM -> KILL. The dead nc is reaped by the accept loop as its
+# pipeline completes and the respawn loop re-listens — no stale nc keeps
+# holding the port, no zombie remains. rc 0 = killed (or it exited on its
+# own in the meantime); rc 1 = no verified nc to kill.
+listener_nc_kill() {
+  local pid i state
+  pid="$(listener_nc_pid "${1-}" "${2-}")" || return 1
+  kill "$pid" 2>/dev/null || return 0
+  i=0
+  while :; do
+    state="$(ps -p "$pid" -o state= 2>/dev/null || true)"
+    case "$state" in
+      '' | *Z*) break ;; # gone, or a zombie awaiting the accept loop's reap
+    esac
+    i=$((i + 1))
+    if [ "$i" -ge 10 ]; then
+      kill -9 "$pid" 2>/dev/null
+      break
+    fi
+    sleep 0.1 2>/dev/null || sleep 1
   done
+  return 0
+}
+
+# listener_accept_lines — drain one connection's stdout line-by-line under
+# the .9 hardening (R18/C2):
+#
+#   * BOUNDED CAPTURE: each line is read with `read -n` capped at
+#     SPEAK_MAX_FRAME_BYTES+1 bytes (LC_ALL=C so the count is bytes, not
+#     multibyte chars), so an oversized or newline-less stream is never
+#     buffered beyond cap+1 bytes to memory and never touches disk — the
+#     line is dropped + logged BEFORE decode/enqueue and the connection is
+#     severed (there is no way to resync mid-line).
+#   * WATCHDOG: the same read carries the SPEAK_READ_DEADLINE_SECS timeout.
+#     bash 3.2 reports a read timeout as rc 1 with the partial line
+#     DISCARDED — indistinguishable from pipe-EOF by rc alone (bash >= 4.1
+#     returns >128 and preserves the partial line) — so EOF vs deadline is
+#     disambiguated by the nc child itself: the pipe can only hit EOF once
+#     the one-shot `nc -l` exits, so an empty failed read with our nc still
+#     live means the deadline fired. An OPEN connection that produced no
+#     complete frame within the deadline (stalled or newline-less client)
+#     is severed by killing the concrete nc pid; with no open connection
+#     (idle listener between clients) the deadline re-arms silently, forever.
+#   * REJECT BUDGET: SPEAK_MAX_REJECTS_PER_CONN rejected lines on one
+#     connection sever it (see the constant's comment for why — NUL floods).
+#
+# $1 = nc pidfile (written by the accept loop's wrapper; empty when sourced
+# by tests — then there is nothing to kill and deadline decisions degrade
+# to EOF), $2 = the listening port (pins the ps identity match).
+# rc 0 = connection drained to EOF; rc 9 = connection deliberately severed
+# (over-cap, watchdog deadline, or reject budget) — the accept loop must
+# not count rc-9's nc kill as a bind failure.
+listener_accept_lines() {
+  local ncpidfile port line rc nbytes rejects capplus ncpid
+  ncpidfile="${1-}"
+  port="${2-}"
+  rejects=0
+  capplus=$((SPEAK_MAX_FRAME_BYTES + 1))
+  while :; do
+    line=""
+    rc=0
+    LC_ALL=C IFS= read -r -t "$SPEAK_READ_DEADLINE_SECS" -n "$capplus" line || rc=$?
+    if [ "$rc" -gt 128 ] || { [ "$rc" -ne 0 ] && [ -z "$line" ]; }; then
+      # Watchdog deadline (>128) or the bash-3.2 EOF-or-deadline ambiguity:
+      # no live verified nc = EOF (or nothing we may kill) — stop reading.
+      ncpid="$(listener_nc_pid "$ncpidfile" "$port")" || break
+      if listener_conn_open "$ncpid"; then
+        listener_log "watchdog: no complete frame within ${SPEAK_READ_DEADLINE_SECS}s on an open connection — dropped, connection severed"
+        listener_nc_kill "$ncpidfile" "$port"
+        return 9
+      fi
+      continue # idle listener (no client yet): re-arm the deadline silently
+    fi
+    # Byte length via wc -c — ${#line} would count (possibly multibyte)
+    # chars and undercount a hostile frame's bytes.
+    nbytes=$(($(printf '%s' "$line" | wc -c)))
+    if [ "$nbytes" -gt "$SPEAK_MAX_FRAME_BYTES" ]; then
+      listener_log "rejected frame: over the ${SPEAK_MAX_FRAME_BYTES}-byte encoded frame cap (bounded capture stopped at ${nbytes} bytes; dropped before decode, connection severed)"
+      listener_nc_kill "$ncpidfile" "$port"
+      return 9
+    fi
+    process_frame_line "$line" || rejects=$((rejects + 1))
+    if [ "$rejects" -ge "$SPEAK_MAX_REJECTS_PER_CONN" ]; then
+      listener_log "watchdog: ${rejects} rejected frames on one connection — connection severed"
+      listener_nc_kill "$ncpidfile" "$port"
+      return 9
+    fi
+    # A failed read with a non-empty line is the final unterminated line at
+    # EOF (the .2 sender always newline-terminates; a foreign client may not).
+    [ "$rc" -eq 0 ] || break
+  done
+  return 0
 }
 
 # listener_accept_loop — the respawn loop (R15): BSD/OpenBSD `nc -l` serves
@@ -1081,14 +1232,29 @@ listener_accept_lines() {
 # failure here IS the unrelated-process case — never misdiagnosed as ours.
 listener_accept_loop() {
   set +e # background job: a transient failure must not kill the loop
-  local port args ncrc fails
+  local port args ncrc readrc fails ncpidfile
   port="$1"
   args="$(nc_listen_args "$port")"
+  ncpidfile="$SPEAK_SPOOL_DIR/.nc.pid"
   fails=0
   while :; do
+    rm -f "$ncpidfile"
+    # One accept. The tiny sh wrapper records the CONCRETE nc pid (`exec`
+    # keeps the pid) before binding, so the .9 watchdog/bounded capture can
+    # kill precisely that nc — never a wrapper pid, never a guess. A failed
+    # pidfile write aborts the iteration (exit 125): nc must never run
+    # unkillable.
     # shellcheck disable=SC2086  # $args intentionally word-splits (safe tokens)
-    nc $args </dev/null 2>>"$SPEAK_LISTENER_LOG" | listener_accept_lines
-    ncrc="${PIPESTATUS[0]}"
+    sh -c 'printf "%s\n" "$$" >"$1" || exit 125; shift; exec nc "$@"' sh \
+      "$ncpidfile" $args </dev/null 2>>"$SPEAK_LISTENER_LOG" \
+      | listener_accept_lines "$ncpidfile" "$port"
+    ncrc="${PIPESTATUS[0]}" readrc="${PIPESTATUS[1]}"
+    if [ "$readrc" -eq 9 ]; then
+      # The watchdog/bounded capture severed this connection deliberately —
+      # nc's non-zero exit is OUR kill, never a bind failure: serve afresh.
+      fails=0
+      continue
+    fi
     if [ "$ncrc" -ne 0 ]; then
       fails=$((fails + 1))
       listener_log "nc -l exited rc=$ncrc (consecutive failure $fails)"
