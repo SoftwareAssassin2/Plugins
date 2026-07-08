@@ -31,7 +31,7 @@ the first time someone other than the original author tries it.
 
 | Dependency type | Where to add it |
 |---|---|
-| System packages (apt) | `.devcontainer/setup.sh` |
+| System packages (apt) | `.devcontainer/setup.sh` — a project using the `speak` voice plugin must add **`netcat-openbsd`** (the preferred, capability-compatible netcat; generic `netcat` may lack connect-timeout/EOF-shutdown/`-z`) **and `jq`** (Stop-hook transcript parsing) here — the plugin does not auto-provision them |
 | Pre-built CLI / runtime features | `features` block in `.devcontainer/devcontainer.json` |
 | Claude Code marketplaces | `extraKnownMarketplaces` in `.claude/settings.json` |
 | Claude Code plugins | provisioned in `.devcontainer/setup.sh` (best-effort install) |
