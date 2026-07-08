@@ -9,8 +9,10 @@
 # Reserved first args dispatch as subcommands (never spoken):
 #   --serve   host listener            (.3 core; .8 identity/lifetime lock;
 #                                       .9 watchdog + bounded capture)
-#   doctor    full diagnostic          (stub here — owned by task .5)
-#   status    alias for doctor         (stub here — owned by task .5)
+#   doctor    full diagnostic per C5   (task .5 — options --hook = Stop-hook
+#             readiness-if-enabled, --listener = host-only four-way listener
+#             classification; both are options UNDER doctor, not new surface)
+#   status    alias for doctor         (task .5)
 #   on / off  auto-speak toggle writes (task .4 — atomic flag under
 #             plugin_state_dir; the Stop hook reads the same flag)
 #
@@ -405,6 +407,30 @@ listener_reachable() {
     return 0
   fi
   return 1
+}
+
+# listener_reachable_retry — C4: the DOCTOR/HEALTH-strength reachability
+# check — bounded retry/backoff (3 attempts) layered on listener_reachable so
+# the listener's one-shot `nc -l` respawn gap cannot false-fail a diagnostic.
+# NEVER used as a send gate (C4 — the send has its own retry in forward_send)
+# and never replaced by the single fast hook probe in doctor/health paths.
+# Same args and return codes as listener_reachable; only the transport
+# outcome (rc 1, unreachable/refused) is retried — capability/config problems
+# (3 nc missing, 5 flag unsupported, 6 invalid port) return immediately so
+# "flag unsupported" is never conflated with "unreachable" (C6).
+listener_reachable_retry() {
+  local rc attempt
+  attempt=1
+  while :; do
+    rc=0
+    listener_reachable "$@" || rc=$?
+    [ "$rc" -eq 1 ] || return "$rc"
+    if [ "$attempt" -ge 3 ]; then
+      return 1
+    fi
+    sleep "0.$((attempt * 3))" 2>/dev/null || sleep 1
+    attempt=$((attempt + 1))
+  done
 }
 
 # forward_send — C2/C4: frame cleaned text $1 and send it to the host
@@ -1554,13 +1580,18 @@ extract_last() {
 }
 
 # deps_missing — the SHARED dependency-detection helper (owned by .4; the .5
-# doctor reuses it — no divergent re-derivation). $1 = mode (local|forward).
-# Prints one "<tool>\t<guidance>" line per missing/unusable REQUIRED-IN-MODE
-# dependency:
-#   local:   say                       (base64 is NOT a local dep — R23)
-#   forward: base64; nc presence AND capability (connect-timeout -G/-w +
-#            EOF-shutdown -N/-q 0, per C6 — an unusable flag is reported as
-#            missing 'nc', not mere presence)
+# doctor reuses it — no divergent re-derivation). $1 = mode
+# (local|forward|listener). Prints one "<tool>\t<guidance>" line per
+# missing/unusable REQUIRED-IN-MODE dependency:
+#   local:    say                      (base64 is NOT a local dep — R23)
+#   forward:  base64; nc presence AND capability (connect-timeout -G/-w +
+#             EOF-shutdown -N/-q 0, per C6 — an unusable flag is reported as
+#             missing 'nc', not mere presence)
+#   listener: say + base64 (with a working -d/-D decode flag) + nc presence —
+#             the .5 doctor --listener extension, mirroring cmd_serve's
+#             preflight set exactly (C5: listener -> say/base64/nc); listen
+#             (-l) is deliberately NOT probed here or anywhere (C5 — only a
+#             real `--serve` bind proves it)
 # `jq` is a HOOK dependency checked by the hook itself before it can parse
 # anything (and reported by doctor separately) — deliberately not listed
 # here. rc 0 = all present; 1 = at least one line printed.
@@ -1592,6 +1623,23 @@ deps_missing() {
           printf 'nc\tthis nc lacks a usable EOF-shutdown flag (-N or -q 0) so sends would hang — install netcat-openbsd\n'
           missing=1
         fi
+      fi
+      ;;
+    listener)
+      if ! command -v say >/dev/null 2>&1; then
+        printf 'say\tmacOS built-in text-to-speech (expected at /usr/bin/say) — the listener plays forwarded audio on the host; check your PATH\n'
+        missing=1
+      fi
+      if ! command -v base64 >/dev/null 2>&1; then
+        printf 'base64\tinstall coreutils (provides base64; usually preinstalled)\n'
+        missing=1
+      elif ! b64_decode_flag >/dev/null; then
+        printf 'base64\tthis base64 decodes with neither -d nor -D — cannot decode forwarded frames\n'
+        missing=1
+      fi
+      if ! nc_detect; then
+        printf 'nc\tinstall netcat-openbsd (apt-get install netcat-openbsd)\n'
+        missing=1
       fi
       ;;
   esac
@@ -1642,13 +1690,494 @@ auto_speak_write() {
 }
 
 # ---------------------------------------------------------------------------
-# Subcommands. doctor/status remain stubs — final behavior owned by task .5;
-# the point is that reserved first args dispatch here and are never spoken.
+# Doctor (task .5): `speak doctor [--hook|--listener]`, aliased by
+# `speak status` and surfaced as /speak:status. Epic C5 is the authoritative
+# contract for classifications + exit codes:
+#   * exit non-zero ONLY on a tool/capability required for the current mode
+#     (plus configs with no usable mode at all: invalid SPEAK_MODE,
+#     unsupported host OS, forced-local on non-Darwin — C1);
+#   * local -> `say` (the listener is "not needed" and never fails; `jq` is
+#     reported "required for the Stop hook" but not fatal);
+#   * forward -> base64 / usable nc / a reachable listener — a CAPABILITY
+#     failure (C6 rc 5) is never conflated with refused/unreachable (rc 1);
+#   * --hook -> readiness-if-enabled: jq + the detected-mode playback path;
+#     the toggle state (incl. OFF) is shown but never gates;
+#   * --listener -> host-only four-way classification (C5/C7) reusing .8's
+#     identity helpers VERBATIM (listener_identity_check rcs 0-6,
+#     listener_stale_cleanup rc 10/11) — never re-derived; container/forward
+#     context degrades to TCP reachability only (C3: the host pidfile is not
+#     visible from a container).
+# All reachability below is the C4 retry/backoff strength
+# (listener_reachable_retry) with the per-context target — 127.0.0.1
+# host-side, host.docker.internal forward-side. doctor NEVER binds, and
+# listen (-l) is never pre-probed — reported "not checked; proven by --serve"
+# (C5). Dependency PASS/FAIL decisions come from .4's shared deps_missing;
+# presence/capability rendering reuses .2's C6 cache (no re-derivation).
 # ---------------------------------------------------------------------------
 
-cmd_doctor() {
-  echo "speak: doctor/status diagnostics are not yet implemented" >&2
+# doctor_dep_hint — print the first guidance hint for tool $1 from a
+# deps_missing report on stdin (empty when that tool is not reported).
+doctor_dep_hint() {
+  awk -F '\t' -v t="$1" '$1 == t { print $2; exit }'
+}
+
+# doctor_toggle_line — the auto-speak toggle row (C3): an empty
+# plugin_state_dir resolve is "unavailable" — reported, never a crash, and
+# never fatal (the toggle state gates nothing in any doctor variant).
+doctor_toggle_line() {
+  local dir
+  if ! dir="$(plugin_state_dir)"; then
+    echo "auto-speak toggle : unavailable — neither SPEAK_DATA_DIR nor CLAUDE_PLUGIN_DATA is set (inside Claude Code the plugin data dir provides this; outside, set SPEAK_DATA_DIR)"
+    return 0
+  fi
+  if auto_speak_enabled; then
+    echo "auto-speak toggle : on  (flag: $dir/auto-speak)"
+  else
+    echo "auto-speak toggle : off (flag: $dir/auto-speak; absent/other content reads as off)"
+  fi
+}
+
+# doctor_nc_caps — one-line nc capability summary straight from the C6 cache
+# (never re-derived): detected connect-timeout flag, EOF-shutdown flag, and
+# -z zero-I/O probe. Listen (-l) is reported "not checked" per C5/R23 — only
+# a real `speak --serve` bind proves it. Callers ensure nc is present.
+doctor_nc_caps() {
+  local tf ef z
+  tf="$(nc_connect_timeout_flag 2>/dev/null)" || tf="NONE"
+  ef="$(nc_eof_flags 2>/dev/null)" || ef="NONE"
+  z="-z ok"
+  nc_probe_supported || z="-z UNSUPPORTED"
+  printf 'connect-timeout %s, EOF-shutdown %s, %s; listen -l: not checked in this context — proven by --serve' "$tf" "$ef" "$z"
+}
+
+# doctor_jq_line — the informational jq row: reported "required for the Stop
+# hook" but NOT fatal in a default local/forward doctor (C5 — only --hook
+# gates on jq).
+doctor_jq_line() {
+  if command -v jq >/dev/null 2>&1; then
+    echo "  jq      [required for the Stop hook — not fatal here]  : OK"
+  else
+    echo "  jq      [required for the Stop hook — not fatal here]  : missing — install jq (macOS: brew install jq; Debian/Ubuntu: apt-get install jq); auto-speak's Stop hook needs it"
+  fi
+}
+
+# doctor_mode_row — resolve + print the C1 mode row. Sets DOCTOR_MODE on
+# success. rc 1 = fatal config, row already printed: invalid SPEAK_MODE,
+# unsupported host OS, or forced-local on a non-Darwin host — which is the
+# C1 "unsupported local TTS backend" diagnosis, deliberately NOT a generic
+# missing-say and NOT a silent switch to forward.
+DOCTOR_MODE=""
+doctor_mode_row() {
+  local rc src os
+  DOCTOR_MODE=""
+  src="auto-detected"
+  [ -n "${SPEAK_MODE:-}" ] && src="SPEAK_MODE override"
+  rc=0
+  DOCTOR_MODE="$(speak_mode)" || rc=$?
+  case "$rc" in
+    0) ;;
+    2)
+      echo "detected mode     : INVALID — SPEAK_MODE='${SPEAK_MODE:-}' (expected exactly 'local' or 'forward'; unset it to auto-detect)"
+      return 1
+      ;;
+    *)
+      echo "detected mode     : UNSUPPORTED host OS '$(uname -s)' — not macOS and no container marker; refusing to guess a forward target"
+      return 1
+      ;;
+  esac
+  os="$(uname -s)"
+  if [ "$DOCTOR_MODE" = "local" ] && [ "$os" != "Darwin" ]; then
+    echo "detected mode     : local ($src) — unsupported local TTS backend on $os: only macOS 'say' is implemented"
+    return 1
+  fi
+  echo "detected mode     : $DOCTOR_MODE ($src)"
+  return 0
+}
+
+# doctor_port_row — validate + print the C9 SPEAK_PORT row. Sets DOCTOR_PORT
+# (empty when invalid). rc 1 = invalid; FATALITY is the caller's per-mode
+# call — the port gates nothing in local mode, everything in forward /
+# --listener / forward --hook (C9: doctor reports it; users of the port fail
+# on it).
+DOCTOR_PORT=""
+doctor_port_row() {
+  local rc
+  DOCTOR_PORT=""
+  rc=0
+  DOCTOR_PORT="$(speak_port)" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "SPEAK_PORT        : INVALID — '${SPEAK_PORT:-}' (expected an integer 1..65535)"
+    return 1
+  fi
+  if [ -n "${SPEAK_PORT:-}" ]; then
+    echo "SPEAK_PORT        : $DOCTOR_PORT"
+  else
+    echo "SPEAK_PORT        : $DOCTOR_PORT (default)"
+  fi
+}
+
+# doctor_listener_info_row — the DEFAULT doctor's local-mode listener line.
+# Per C5 the listener is "not needed" in local mode and NEVER fails the
+# diagnostic; per R24 the report is still honest host-side — a reachable port
+# is only called OUR listener when the C7 identity holds (READ-ONLY here: no
+# stale cleanup — that mutation belongs to --serve and --listener only).
+doctor_listener_info_row() {
+  local rc
+  if [ -z "$DOCTOR_PORT" ]; then
+    echo "listener          : not needed in local mode (reachability not checked — SPEAK_PORT is invalid)"
+    return 0
+  fi
+  rc=0
+  listener_reachable_retry 127.0.0.1 "$DOCTOR_PORT" || rc=$?
+  case "$rc" in
+    0)
+      if listener_init_state && listener_identity_check "$DOCTOR_PORT"; then
+        echo "listener          : running on 127.0.0.1:$DOCTOR_PORT (pid $SPEAK_PIDFILE_PID, ours) — not needed in local mode"
+      else
+        echo "listener          : port 127.0.0.1:$DOCTOR_PORT in use but not recognized as our listener — informational only; not needed in local mode"
+      fi
+      ;;
+    1)
+      echo "listener          : not running — fine: not needed in local mode (forward clients in a container would need it: ./plugins/speak/bin/speak --serve)"
+      ;;
+    *)
+      echo "listener          : reachability not checked (nc missing or lacks the -z probe — see dependencies) — not needed in local mode"
+      ;;
+  esac
+  return 0
+}
+
+# doctor_default — the default full diagnostic (R13/R24): toggle, mode, port,
+# listener reachability, and every dependency labelled required-for-the-
+# detected-mode vs optional/other-feature, with install guidance. Exit per C5.
+doctor_default() {
+  local fail dep_report hint rc
+  fail=0
+  echo "speak doctor — full diagnostic"
+  doctor_toggle_line
+  if ! doctor_mode_row; then
+    echo "result: FAIL — no usable mode (fix the configuration above)"
+    return 1
+  fi
+  doctor_port_row || true # invalid -> DOCTOR_PORT empty; fatality is per-mode below
+  dep_report="$(deps_missing "$DOCTOR_MODE" || true)"
+
+  if [ "$DOCTOR_MODE" = "local" ]; then
+    doctor_listener_info_row
+    if [ -z "$DOCTOR_PORT" ]; then
+      echo "                    (an invalid SPEAK_PORT is not fatal in local mode — nothing here uses the port — but fix it before forward mode or the listener)"
+    fi
+    echo "dependencies (labelled for the detected mode — local):"
+    hint="$(printf '%s\n' "$dep_report" | doctor_dep_hint say)"
+    if [ -n "$hint" ]; then
+      echo "  say     [required — local playback]                    : MISSING — $hint"
+      fail=1
+    else
+      echo "  say     [required — local playback]                    : OK ($(command -v say))"
+    fi
+    doctor_jq_line
+    if command -v base64 >/dev/null 2>&1; then
+      echo "  base64  [other feature — forward transport only]       : present (not needed for local playback)"
+    else
+      echo "  base64  [other feature — forward transport only]       : not found — only needed for forward mode / the listener (install coreutils)"
+    fi
+    if command -v nc >/dev/null 2>&1; then
+      echo "  nc      [other feature — forward transport only]       : present ($(doctor_nc_caps))"
+    else
+      echo "  nc      [other feature — forward transport only]       : not found — only needed for forward mode / the listener (install netcat-openbsd)"
+    fi
+  else
+    echo "dependencies (labelled for the detected mode — forward):"
+    hint="$(printf '%s\n' "$dep_report" | doctor_dep_hint base64)"
+    if [ -n "$hint" ]; then
+      echo "  base64  [required — forward transport]                 : MISSING — $hint"
+      fail=1
+    else
+      echo "  base64  [required — forward transport]                 : OK"
+    fi
+    hint="$(printf '%s\n' "$dep_report" | doctor_dep_hint nc)"
+    if [ -n "$hint" ]; then
+      echo "  nc      [required — forward transport]                 : UNUSABLE — $hint"
+      fail=1
+    elif ! nc_probe_supported; then
+      # R23: in the forward/diagnostic context a usable nc includes the -z
+      # zero-I/O probe. Failing it is a CAPABILITY failure — worded so it can
+      # never be read as listener unreachability (C6).
+      echo "  nc      [required — forward transport]                 : UNUSABLE — this nc lacks the -z zero-I/O probe (capability failure, NOT listener unreachability) — install netcat-openbsd"
+      fail=1
+    else
+      echo "  nc      [required — forward transport]                 : OK ($(doctor_nc_caps))"
+    fi
+    if command -v say >/dev/null 2>&1; then
+      echo "  say     [other feature — host-side playback]           : present here, but forwarded audio plays via the HOST listener's own say"
+    else
+      echo "  say     [other feature — host-side playback]           : not needed in this container — the HOST listener plays audio with the host's say"
+    fi
+    doctor_jq_line
+    if [ -z "$DOCTOR_PORT" ]; then
+      echo "listener          : NOT CHECKED — SPEAK_PORT is invalid (forward mode cannot reach a listener without a valid port)"
+      fail=1
+    else
+      rc=0
+      listener_reachable_retry host.docker.internal "$DOCTOR_PORT" || rc=$?
+      case "$rc" in
+        0)
+          echo "listener          : reachable at host.docker.internal:$DOCTOR_PORT (retry/backoff probe)"
+          ;;
+        1)
+          echo "listener          : UNREACHABLE at host.docker.internal:$DOCTOR_PORT after retries — start it on the HOST from the workspace root: ./plugins/speak/bin/speak --serve"
+          fail=1
+          ;;
+        *)
+          echo "listener          : NOT CHECKED — nc capability problem (see the nc row; a capability failure is NOT listener unreachability)"
+          ;;
+      esac
+    fi
+  fi
+
+  if [ "$fail" -eq 0 ]; then
+    echo "result: healthy ($DOCTOR_MODE mode)"
+    return 0
+  fi
+  echo "result: FAIL — fix the item(s) marked above"
   return 1
+}
+
+# doctor_hook — `speak doctor --hook`: READINESS-IF-ENABLED (C5): would
+# auto-speak work if the toggle were ON? Gates on jq + the detected-mode
+# playback path (local -> say; forward -> base64 + usable nc + a reachable
+# listener). The toggle state (incl. OFF) is shown but NEVER gates.
+doctor_hook() {
+  local fail dep_report hint rc nc_bad
+  fail=0
+  echo "speak doctor --hook — Stop-hook readiness (readiness-if-enabled: would auto-speak work if ON?)"
+  doctor_toggle_line
+  echo "                    (shown for information only — the toggle never gates this check)"
+  if command -v jq >/dev/null 2>&1; then
+    echo "jq                : OK (required — the Stop hook parses its stdin and the transcript with jq)"
+  else
+    echo "jq                : MISSING — install jq (macOS: brew install jq; Debian/Ubuntu: apt-get install jq); without it the Stop hook cannot read its input"
+    fail=1
+  fi
+  if ! doctor_mode_row; then
+    echo "result: NOT READY — auto-speak cannot work without a usable mode"
+    return 1
+  fi
+  dep_report="$(deps_missing "$DOCTOR_MODE" || true)"
+  if [ "$DOCTOR_MODE" = "local" ]; then
+    hint="$(printf '%s\n' "$dep_report" | doctor_dep_hint say)"
+    if [ -n "$hint" ]; then
+      echo "say               : MISSING — $hint"
+      fail=1
+    else
+      echo "say               : OK — the local playback path is ready"
+    fi
+  else
+    hint="$(printf '%s\n' "$dep_report" | doctor_dep_hint base64)"
+    if [ -n "$hint" ]; then
+      echo "base64            : MISSING — $hint"
+      fail=1
+    else
+      echo "base64            : OK"
+    fi
+    nc_bad="$(printf '%s\n' "$dep_report" | doctor_dep_hint nc)"
+    if [ -n "$nc_bad" ]; then
+      echo "nc                : UNUSABLE — $nc_bad"
+      fail=1
+    else
+      echo "nc                : OK ($(doctor_nc_caps))"
+    fi
+    if ! doctor_port_row; then
+      echo "                    (the hook would emit an invalid-port notice and skip dispatch — fix SPEAK_PORT)"
+      fail=1
+    elif [ -n "$nc_bad" ]; then
+      echo "listener          : NOT CHECKED — nc is unusable (capability failure, NOT listener unreachability)"
+    else
+      rc=0
+      listener_reachable_retry host.docker.internal "$DOCTOR_PORT" || rc=$?
+      case "$rc" in
+        0)
+          echo "listener          : reachable at host.docker.internal:$DOCTOR_PORT (retry/backoff probe)"
+          ;;
+        1)
+          echo "listener          : UNREACHABLE at host.docker.internal:$DOCTOR_PORT after retries — start it on the HOST: ./plugins/speak/bin/speak --serve"
+          fail=1
+          ;;
+        *)
+          echo "listener          : NOT CHECKED — this nc lacks the -z zero-I/O probe (capability failure, NOT listener unreachability) — install netcat-openbsd"
+          fail=1
+          ;;
+      esac
+    fi
+  fi
+  if [ "$fail" -eq 0 ]; then
+    echo "result: READY — auto-speak would work if enabled"
+    return 0
+  fi
+  echo "result: NOT READY — auto-speak would fail if enabled (fix the item(s) above)"
+  return 1
+}
+
+# doctor_listener — `speak doctor --listener`: HOST-ONLY four-way listener
+# classification per C5/C7:
+#   reachable + identity                  -> healthy (0)
+#   reachable + no identity (post stale-cleanup)
+#                                         -> "port reachable but not
+#                                            recognized as this listener"
+#   unreachable + no valid pidfile/lock   -> "unrelated process / nothing on
+#                                            port"
+#   LIVE our-listener on a DIFFERENT port (C7 rc 11)
+#                                         -> "listener running on :recorded,
+#                                            not :checked" (markers PRESERVED)
+# Identity comes from .8's helpers verbatim; reachability is C4 retry/backoff
+# against 127.0.0.1 and NEVER folds into identity (a valid-but-unreachable
+# listener keeps its markers). Never binds; listen (-l) stays "not checked;
+# proven by --serve". In a container/forward context this degrades to TCP
+# reachability only against host.docker.internal (C3 — the host pidfile is
+# not visible here) with NO listener-dep or identity checks.
+doctor_listener() {
+  local fail rc idrc clrc dep_report tool hint
+  fail=0
+  echo "speak doctor --listener — listener diagnostic"
+  if ! doctor_mode_row; then
+    echo "result: FAIL — no usable context (fix the configuration above)"
+    return 1
+  fi
+  if ! doctor_port_row; then
+    echo "result: FAIL — cannot check a listener against an invalid SPEAK_PORT"
+    return 1
+  fi
+
+  if [ "$DOCTOR_MODE" = "forward" ]; then
+    echo "context           : forward/container — the host pidfile is not visible here (C3); degrading to TCP reachability only"
+    rc=0
+    listener_reachable_retry host.docker.internal "$DOCTOR_PORT" || rc=$?
+    case "$rc" in
+      0)
+        echo "listener          : reachable at host.docker.internal:$DOCTOR_PORT (TCP only — identity is not checkable from a container)"
+        echo "result: reachable"
+        return 0
+        ;;
+      1)
+        echo "listener          : UNREACHABLE at host.docker.internal:$DOCTOR_PORT after retries — start it on the HOST from the workspace root: ./plugins/speak/bin/speak --serve"
+        ;;
+      3)
+        echo "listener          : NOT CHECKED — 'nc' is missing (install netcat-openbsd); capability failure, NOT listener unreachability"
+        ;;
+      *)
+        echo "listener          : NOT CHECKED — this nc lacks a required probe capability (-z / connect-timeout); capability failure, NOT listener unreachability — install netcat-openbsd"
+        ;;
+    esac
+    echo "result: FAIL"
+    return 1
+  fi
+
+  # Host context — listener-mode dependencies first (C5: say/base64/nc).
+  dep_report="$(deps_missing listener || true)"
+  if [ -n "$dep_report" ]; then
+    while IFS=$'\t' read -r tool hint; do
+      [ -n "$tool" ] || continue
+      echo "dependency        : $tool MISSING/UNUSABLE — $hint"
+      fail=1
+    done <<EOF
+$dep_report
+EOF
+  else
+    echo "dependencies      : OK — say, base64 (decode flag $(b64_decode_flag 2>/dev/null || echo '?')), nc present"
+  fi
+  echo "listen capability : not checked; proven by --serve (C5 — this diagnostic never binds)"
+
+  if ! listener_init_state; then
+    echo "state dir         : cannot create '$(listener_state_dir)'"
+    echo "result: FAIL"
+    return 1
+  fi
+  echo "state dir         : $(listener_state_dir)"
+
+  idrc=0
+  listener_identity_check "$DOCTOR_PORT" || idrc=$?
+  if [ "$idrc" -eq 0 ]; then
+    # Identity holds this port — reachability is reported SEPARATELY (C4) and
+    # a momentary respawn-gap unreachable never stales or deletes the markers.
+    rc=0
+    listener_reachable_retry 127.0.0.1 "$DOCTOR_PORT" || rc=$?
+    case "$rc" in
+      0)
+        echo "listener          : HEALTHY — our listener (pid $SPEAK_PIDFILE_PID) on 127.0.0.1:$DOCTOR_PORT, identity valid and reachable"
+        ;;
+      1)
+        echo "listener          : identity valid (pid $SPEAK_PIDFILE_PID) but 127.0.0.1:$DOCTOR_PORT did not answer after retries — it may be stuck; markers preserved (a momentary unreachable never stales identity, C4)"
+        fail=1
+        ;;
+      *)
+        echo "listener          : identity valid (pid $SPEAK_PIDFILE_PID) but reachability NOT CHECKED — nc missing or lacks the -z probe (capability failure, NOT unreachability)"
+        fail=1
+        ;;
+    esac
+  else
+    clrc=0
+    listener_stale_cleanup "$DOCTOR_PORT" || clrc=$?
+    if [ "$clrc" -eq 11 ]; then
+      # C7 rc 11: a LIVE our-listener is recorded on a different port — NOT
+      # stale; markers preserved, the actual port named.
+      echo "listener          : listener running on :$SPEAK_PIDFILE_PORT, not :$DOCTOR_PORT — a live listener from this state dir (pid $SPEAK_PIDFILE_PID) serves 127.0.0.1:$SPEAK_PIDFILE_PORT; markers preserved. Stop it first, or re-check with SPEAK_PORT=$SPEAK_PIDFILE_PORT"
+      fail=1
+    else
+      # No valid marker remains (stale ones were just cleaned) — classify by
+      # reachability alone.
+      rc=0
+      listener_reachable_retry 127.0.0.1 "$DOCTOR_PORT" || rc=$?
+      case "$rc" in
+        0)
+          echo "listener          : port reachable but not recognized as this listener — 127.0.0.1:$DOCTOR_PORT answers, but no valid identity remains after stale cleanup (port in use by another process?)"
+          fail=1
+          ;;
+        1)
+          echo "listener          : unrelated process / nothing on port — 127.0.0.1:$DOCTOR_PORT is unreachable and no valid pidfile/lock exists; start it from the workspace root: ./plugins/speak/bin/speak --serve"
+          fail=1
+          ;;
+        *)
+          echo "listener          : no valid pidfile/lock, and reachability NOT CHECKED — nc missing or lacks the -z probe (capability failure, NOT unreachability)"
+          fail=1
+          ;;
+      esac
+    fi
+  fi
+
+  if [ "$fail" -eq 0 ]; then
+    echo "result: healthy"
+    return 0
+  fi
+  echo "result: FAIL"
+  return 1
+}
+
+# cmd_doctor — parse `doctor` options (--hook / --listener are options UNDER
+# doctor, not extra command surface — R29) and dispatch.
+cmd_doctor() {
+  local flag
+  flag=""
+  while [ "$#" -ge 1 ]; do
+    case "$1" in
+      --hook | --listener)
+        if [ -n "$flag" ] && [ "$flag" != "$1" ]; then
+          echo "speak: doctor takes at most one of --hook / --listener" >&2
+          return 1
+        fi
+        flag="$1"
+        ;;
+      *)
+        echo "speak: unknown doctor option '$1' (usage: speak doctor [--hook|--listener])" >&2
+        return 1
+        ;;
+    esac
+    shift
+  done
+  case "$flag" in
+    --hook) doctor_hook ;;
+    --listener) doctor_listener ;;
+    *) doctor_default ;;
+  esac
 }
 
 cmd_on() {
