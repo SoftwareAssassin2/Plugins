@@ -34,7 +34,8 @@ Author the plugin's documentation — `SKILL.md`, a human-facing `README.md` (th
 - [ ] The README's setup steps match the self-contained command the `.4` hook notice emits (`./plugins/speak/bin/speak --serve`); the notice does not hard-depend on the README (R8)
 
 ## Done summary
-_(filled on completion)_
-
+Authored the speak plugin docs: SKILL.md (frontmatter matching repo style; five /speak:* commands, local/forward modes, manual listener, toggle + debounced notice, Windows-later seam) and README.md (host listener setup matching the hook notice's exact `./plugins/speak/bin/speak --serve` command, per-context dependency table, netcat-openbsd/jq install + devcontainer provisioning guidance, env vars incl. SPEAK_DATA_DIR's dual role, doctor/--hook/--listener four-way diagnostics, macOS firewall caveat, remote-OOS). Added the netcat-openbsd + jq speak-plugin note to the init-project dev-container.md system-packages guidance. Review: SHIP (triage_skip — docs-only diff).
 ## Evidence
-_(filled on completion)_
+- Commits: 94e8b829541d06c11e1f5bdafccb63442c82044d
+- Tests: ./plugins/speak/tests/coverage.sh --plain (baseline + post-change: cli_test 0 failed, listener_test 0 failed, hook_test 46 passed 0 failed)
+- PRs:
