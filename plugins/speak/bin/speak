@@ -1039,9 +1039,11 @@ process_frame_line() {
   # Secondary over-cap guard (C2) for direct/sourced callers: during --serve
   # listener_accept_lines' bounded cap+1-byte read (.9) already dropped any
   # oversized line and severed its connection before this point. Chars equal
-  # bytes for any frame that could pass validation (pure ASCII).
-  if [ "${#line}" -gt "$SPEAK_MAX_FRAME_BYTES" ]; then
-    listener_log "rejected frame: over the ${SPEAK_MAX_FRAME_BYTES}-byte encoded frame cap (${#line} chars)"
+  # bytes for any frame that could pass validation (pure ASCII). The C2 cap
+  # includes the trailing newline, so a line BODY of the cap is one over —
+  # >= mirrors build_frame's sid+tab+b64+newline pre-check.
+  if [ "${#line}" -ge "$SPEAK_MAX_FRAME_BYTES" ]; then
+    listener_log "rejected frame: encoded frame over the ${SPEAK_MAX_FRAME_BYTES}-byte cap incl. newline (${#line} line chars)"
     return 1
   fi
   rc=0
@@ -1201,12 +1203,25 @@ listener_accept_lines() {
       continue # idle listener (no client yet): re-arm the deadline silently
     fi
     # Byte length via wc -c — ${#line} would count (possibly multibyte)
-    # chars and undercount a hostile frame's bytes.
+    # chars and undercount a hostile frame's bytes. The C2 cap is on the
+    # WHOLE encoded frame INCLUDING the trailing newline (the sender counts
+    # sid + tab + b64 + newline), so a line BODY of SPEAK_MAX_FRAME_BYTES
+    # bytes is already one over — reject at >= cap, exactly mirroring
+    # build_frame's pre-check.
     nbytes=$(($(printf '%s' "$line" | wc -c)))
-    if [ "$nbytes" -gt "$SPEAK_MAX_FRAME_BYTES" ]; then
-      listener_log "rejected frame: over the ${SPEAK_MAX_FRAME_BYTES}-byte encoded frame cap (bounded capture stopped at ${nbytes} bytes; dropped before decode, connection severed)"
+    if [ "$nbytes" -ge "$SPEAK_MAX_FRAME_BYTES" ]; then
+      listener_log "rejected frame: encoded frame over the ${SPEAK_MAX_FRAME_BYTES}-byte cap incl. newline (bounded capture stopped at ${nbytes} line bytes; dropped before decode, connection severed)"
       listener_nc_kill "$ncpidfile" "$port"
       return 9
+    fi
+    # A failed read with a non-empty line is a final UNTERMINATED line at
+    # EOF. C2 frames are newline-terminated, so this is malformed however
+    # plausible it looks — drop + log BEFORE decode/enqueue, never process
+    # it (the .2 sender always newline-terminates; a foreign client's
+    # truncated tail must not be spoken).
+    if [ "$rc" -ne 0 ]; then
+      listener_log "rejected frame: newline-less line at EOF (${nbytes} bytes) — dropped before decode"
+      break
     fi
     process_frame_line "$line" || rejects=$((rejects + 1))
     if [ "$rejects" -ge "$SPEAK_MAX_REJECTS_PER_CONN" ]; then
@@ -1214,9 +1229,6 @@ listener_accept_lines() {
       listener_nc_kill "$ncpidfile" "$port"
       return 9
     fi
-    # A failed read with a non-empty line is the final unterminated line at
-    # EOF (the .2 sender always newline-terminates; a foreign client may not).
-    [ "$rc" -eq 0 ] || break
   done
   return 0
 }
