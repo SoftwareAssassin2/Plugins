@@ -17,7 +17,7 @@ Listener identity, lifetime lock, and double-start handling for `speak --serve`:
 
 - On `--serve` startup (after `.3`'s dep/port preflight, BEFORE binding): acquire the lifetime lock and validate any existing pidfile per C7 — the one-shot `nc -l` respawn loop leaves the port briefly unbound between accepts, so a bind-failure-only check would let a second `--serve` win the bind during the gap. A valid live lock/pidfile → friendly "already running on :PORT" + clean exit 0.
 - Bind failure with NO valid marker → "port :PORT in use by another process" + non-zero exit — never misdiagnose an unrelated process as our listener.
-- Write the pidfile (exact C7 schema) after binding. Remove stale markers (dead/mismatched pid, ps shape, port, or lock). Per C4, a momentary respawn-gap unreachable NEVER deletes the pidfile or marks the listener stale — reachability plays no part in identity.
+- Write the pidfile (exact C7 schema) only after bind confirmation. Remove stale markers per amended C7 (pid dead / not a `speak --serve` process / lock-pidfile inconsistent); a LIVE listener recorded on a different port is NOT stale (rc 11 — preserved, `--serve` refuses). Per C4, a momentary respawn-gap unreachable NEVER deletes the pidfile or marks the listener stale — reachability plays no part in identity.
 - Release the lock + remove the pidfile in the same INT/TERM trap `.3` installed.
 - Identity/lock validation lives in **sourceable helpers** — reused verbatim by `.5`'s `doctor --listener` (no re-derivation) and unit-tested by `.6`.
 
@@ -29,7 +29,7 @@ Listener identity, lifetime lock, and double-start handling for `speak --serve`:
 - [ ] Pidfile written with the exact C7 schema (`pid=`/`port=`/`cmd=`/`started=`); identity = pid alive + live `ps` command contains `bin/speak` AND `--serve` + recorded port == checked port + lifetime lock — NO reachability folded in, no opaque token, path-normalization-resilient (not an exact script-path match) (R27)
 - [ ] Lifetime lock (`listener.lock`, atomic `mkdir`, stale-validated against the pidfile) acquired + validated pidfile/lock checked BEFORE binding (closes the respawn-gap double-start race); released on shutdown via the trap (R27)
 - [ ] Valid lock/pidfile → "already running on :PORT" + exit 0; bind-failure + no valid marker → "port :PORT in use by another process" + non-zero (unrelated-process case exercised) (R27)
-- [ ] Stale markers (dead/mismatched pid/ps/port/lock) are removed; a respawn-gap unreachable never deletes or stales anything (C4, C7)
+- [ ] Stale markers (per amended C7: pid dead / not a `speak --serve` process / lock-pidfile inconsistent) are removed; a LIVE listener recorded on a different port is rc 11 — preserved, `--serve` refuses; a respawn-gap unreachable never deletes or stales anything (C4, C7) <!-- C7 amended post-review: live-different-port is NOT stale — removing it would destroy a healthy listener's state -->
 - [ ] Identity/lock validation is exposed as sourceable helpers (reused by `.5` doctor, unit-tested by `.6`)
 
 ## Done summary
