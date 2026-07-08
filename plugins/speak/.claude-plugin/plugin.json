@@ -1,7 +1,7 @@
 {
   "name": "speak",
   "displayName": "Speak",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Spoken voice output for Claude responses via the native OS TTS voice (macOS `say`). Cleans markdown before speaking, works locally on the host and — via a host listener — from inside a Dev Container.",
   "author": { "name": "Chris Green (Software Assassin)" }
 }

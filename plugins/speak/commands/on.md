@@ -7,7 +7,7 @@ description: Turn auto-speak on — every assistant response is spoken aloud unt
 Run this exact command with the Bash tool:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/bin/speak" on
+SPEAK_DATA_DIR="${CLAUDE_PLUGIN_DATA}" "${CLAUDE_PLUGIN_ROOT}/bin/speak" on
 ```
 
 Then report the outcome:

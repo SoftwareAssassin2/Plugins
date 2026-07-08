@@ -7,7 +7,7 @@ description: Full speak diagnostic — toggle state, detected mode, port, listen
 Run this exact command with the Bash tool (a NON-ZERO exit simply means the install is unhealthy — the report is still printed, so show it either way; do not treat the exit code as a tool error):
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/bin/speak" doctor
+SPEAK_DATA_DIR="${CLAUDE_PLUGIN_DATA}" "${CLAUDE_PLUGIN_ROOT}/bin/speak" doctor
 ```
 
 Then report to the user:

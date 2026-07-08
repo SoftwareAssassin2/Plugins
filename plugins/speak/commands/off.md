@@ -7,7 +7,7 @@ description: Turn auto-speak off — assistant responses are no longer spoken au
 Run this exact command with the Bash tool:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/bin/speak" off
+SPEAK_DATA_DIR="${CLAUDE_PLUGIN_DATA}" "${CLAUDE_PLUGIN_ROOT}/bin/speak" off
 ```
 
 Then report the outcome:

@@ -341,6 +341,19 @@ printf 'on\n\n' >"$WORK/toggle2/auto-speak"
 ( export SPEAK_DATA_DIR="$WORK/toggle2"; auto_speak_enabled ); rc=$?
 check "'on\\n\\n' (4 bytes) -> OFF (C3 exact on\\n)" '[ $rc -eq 1 ]'
 
+echo "== plugin_state_dir cache-derivation fallback (C3 amendment) =="
+FAKEHOME="$WORK/fakehome"
+mkdir -p "$FAKEHOME/.claude/plugins/cache/mymarket/speak/1.0/bin" "$FAKEHOME/.claude/plugins/data/speak-mymarket"
+cp "$SPEAK" "$FAKEHOME/.claude/plugins/cache/mymarket/speak/1.0/bin/speak"
+out="$(HOME="$FAKEHOME" bash -c 'source "$HOME/.claude/plugins/cache/mymarket/speak/1.0/bin/speak"; unset SPEAK_DATA_DIR CLAUDE_PLUGIN_DATA; plugin_state_dir')"
+check "cache-resident script derives data/<plugin>-<marketplace>" \
+  '[ "$out" = "$FAKEHOME/.claude/plugins/data/speak-mymarket" ]'
+rm -rf "$FAKEHOME/.claude/plugins/data/speak-mymarket"
+( HOME="$FAKEHOME" bash -c 'source "$HOME/.claude/plugins/cache/mymarket/speak/1.0/bin/speak"; unset SPEAK_DATA_DIR CLAUDE_PLUGIN_DATA; plugin_state_dir' ); rc=$?
+check "derivation refuses a data dir that does not exist (never invents one)" '[ $rc -eq 1 ]'
+( unset SPEAK_DATA_DIR CLAUDE_PLUGIN_DATA; plugin_state_dir ); rc=$?
+check "repo-checkout script (not in cache) -> still unavailable per C3" '[ $rc -eq 1 ]'
+
 echo "== doctor rows (C1/C5 fatal-config classifications) =="
 ( export SPEAK_MODE=bogus; PATH="$SHIM_SAY:$PATH" "$SPEAK" doctor >"$WORK/o" 2>&1 ); rc=$?
 check "doctor: invalid SPEAK_MODE -> rc 1" '[ $rc -eq 1 ]'

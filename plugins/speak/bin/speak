@@ -616,8 +616,32 @@ listener_state_dir() {
 # the toggle "unavailable" instead of writing somewhere useless. Nounset-safe.
 # stdout: the dir. 0 ok; 1 unresolvable (both vars empty/unset).
 plugin_state_dir() {
-  local dir
+  local dir script mp plug cache_root
   dir="${SPEAK_DATA_DIR:-${CLAUDE_PLUGIN_DATA:-}}"
+  if [ -z "$dir" ]; then
+    # Cache-derivation fallback (C3 amendment): slash commands run in the main
+    # session's Bash, which does NOT inherit CLAUDE_PLUGIN_DATA (hooks do).
+    # When this script lives in Claude's plugin cache —
+    #   $HOME/.claude/plugins/cache/<marketplace>/<plugin>/<version>/bin/speak
+    # — the persistent data dir is deterministically
+    #   $HOME/.claude/plugins/data/<plugin>-<marketplace>
+    # (the sanitized "<plugin>@<marketplace>" id). Derive it, but use it ONLY
+    # if the dir already exists (Claude auto-creates it for the hook) — never
+    # invent a dir the hook wouldn't read. A repo-checkout invocation doesn't
+    # match the cache layout and still reports "unavailable" per C3.
+    script="${BASH_SOURCE[0]:-$0}"
+    cache_root="${HOME}/.claude/plugins/cache/"
+    case "$script" in
+      "$cache_root"*/*/*/bin/speak)
+        plug="$(basename "$(dirname "$(dirname "$(dirname "$script")")")")"
+        mp="$(basename "$(dirname "$(dirname "$(dirname "$(dirname "$script")")")")")"
+        plug="$(printf '%s' "$plug" | tr -c 'A-Za-z0-9_-' '-')"
+        mp="$(printf '%s' "$mp" | tr -c 'A-Za-z0-9_-' '-')"
+        dir="${HOME}/.claude/plugins/data/${plug}-${mp}"
+        [ -d "$dir" ] || dir=""
+        ;;
+    esac
+  fi
   [ -n "$dir" ] || return 1
   printf '%s\n' "$dir"
 }
