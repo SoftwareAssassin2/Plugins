@@ -10,7 +10,8 @@
 #   --serve   host listener            (task .3; hardening owned by .8/.9)
 #   doctor    full diagnostic          (stub here — owned by task .5)
 #   status    alias for doctor         (stub here — owned by task .5)
-#   on / off  auto-speak toggle writes (stub here — owned by task .4)
+#   on / off  auto-speak toggle writes (task .4 — atomic flag under
+#             plugin_state_dir; the Stop hook reads the same flag)
 #
 # Contracts (epic fn-5 §Canonical Contracts — C-IDs are authoritative):
 #   C1  mode-detection precedence (implemented below in speak_mode)
@@ -19,7 +20,10 @@
 #       listener rejects malformed/undecodable frames (validate_frame)
 #   C3  listener_state_dir = ${SPEAK_DATA_DIR:-$HOME/.local/state/speak} for
 #       ALL listener state (pid/lock/log/spool) — deliberately no
-#       CLAUDE_PLUGIN_DATA so a terminal listener and doctor agree
+#       CLAUDE_PLUGIN_DATA so a terminal listener and doctor agree;
+#       plugin_state_dir = ${SPEAK_DATA_DIR:-${CLAUDE_PLUGIN_DATA:-}} for the
+#       auto-speak toggle + debounce markers — NO HOME fallback (empty ->
+#       toggle "unavailable"; never write a dir the Stop hook won't read)
 #   C4  reachability: `nc -z` probe is ADVISORY ONLY (listener_reachable);
 #       the send itself uses bounded retry/backoff, never a probe gate
 #   C5  listen (-l) capability is NEVER pre-probed — the real `--serve` bind
@@ -521,6 +525,20 @@ SPEAK_SERVE_ACCEPT_PID=""
 # `doctor --listener` (.5) must agree on the same dir.
 listener_state_dir() {
   printf '%s\n' "${SPEAK_DATA_DIR:-${HOME-}/.local/state/speak}"
+}
+
+# plugin_state_dir — C3: THE resolver for plugin-session state (the auto-speak
+# toggle + the Stop hook's debounce markers). Deliberately
+# `${SPEAK_DATA_DIR:-${CLAUDE_PLUGIN_DATA:-}}` with NO HOME fallback: the Stop
+# hook and `speak on/off` must resolve the SAME dir, and outside Claude with
+# neither var set there is no dir the hook would ever read — callers report
+# the toggle "unavailable" instead of writing somewhere useless. Nounset-safe.
+# stdout: the dir. 0 ok; 1 unresolvable (both vars empty/unset).
+plugin_state_dir() {
+  local dir
+  dir="${SPEAK_DATA_DIR:-${CLAUDE_PLUGIN_DATA:-}}"
+  [ -n "$dir" ] || return 1
+  printf '%s\n' "$dir"
 }
 
 # nc_listen_args — R15: the ONE place the listen invocation is spelled.
@@ -1037,8 +1055,163 @@ cmd_serve() {
 }
 
 # ---------------------------------------------------------------------------
-# Subcommand stubs — final behavior owned by later tasks (.4/.5). The point
-# is only that reserved first args dispatch here and are never spoken as text.
+# Stop-hook support + auto-speak toggle (task .4). Everything here is
+# sourceable (the Stop hook and the .6 unit tests source this file):
+# extract_last, deps_missing, plugin_state_dir (above, C3 section),
+# auto_speak_enabled, auto_speak_write.
+# ---------------------------------------------------------------------------
+
+# extract_last — sourceable transcript extraction for the Stop hook (R3),
+# unit-tested by .6. $1 = transcript JSONL path. Prints the just-finished
+# assistant response's text (text parts only, joined with single spaces) or
+# nothing when there is nothing to speak.
+#
+# REAL transcript schema (VERIFIED 2026-07-08 against Claude Code 2.1.203
+# transcripts captured AT Stop-hook time by a probe hook — see fn-5.4
+# evidence). The epic's assumed schema was WRONG in both suspect halves:
+#   (a) the FINAL line is NOT the assistant message — bookkeeping trailers
+#       (attachment / system / ai-title / file-history-snapshot /
+#       permission-mode ...) follow it, and records from OTHER Stop hooks
+#       can land before this hook reads the file;
+#   (b) ONE assistant response spans MULTIPLE records sharing the SAME
+#       .message.id — one record per content block (thinking, text, ...).
+# So the rule the assumed "inspect only the final record" was protecting —
+# never speak a STALE response — maps onto the real schema as:
+#   * consider only conversation-message records (those bearing a
+#     .message.role), main chain only (.isSidechain != true — sidechain
+#     records are subagent traffic);
+#   * the LAST such record must be an assistant record, else print nothing
+#     (the stop did not end on an assistant response). Bookkeeping trailers
+#     are skipped by construction, but this NEVER skips past a user/other
+#     conversation record to reach an older assistant message;
+#   * join the text parts of ALL assistant records sharing that final
+#     record's .message.id, in file order (tool_use/thinking parts skipped;
+#     a plain-string .message.content is taken as-is).
+# Torn/invalid JSONL lines are tolerated (fromjson? — the file is being
+# appended to around Stop time). Requires jq (the hook checks jq BEFORE
+# calling this). Always returns 0; missing/unreadable file, no messages,
+# non-assistant tail, or no text parts all print nothing.
+extract_last() {
+  local file
+  file="${1-}"
+  if [ -z "$file" ] || [ ! -r "$file" ]; then
+    return 0
+  fi
+  jq -rRs '
+    [ split("\n")[]
+      | fromjson? // empty
+      | select(.isSidechain != true)
+      | select((.message.role? // "") != "")
+    ] as $msgs
+    | ($msgs | last) as $final
+    | if $final == null or $final.type != "assistant" then empty
+      else
+        ($final.message.id // "") as $id
+        | (if $id == "" then [$final]
+           else [ $msgs[] | select(.type == "assistant" and (.message.id // "") == $id) ]
+           end)
+        | [ .[] | .message.content
+            | if type == "string" then [.]
+              elif type == "array" then [ .[]? | select(.type? == "text") | .text ]
+              else [] end
+            | .[] ]
+        | map(select(length > 0))
+        | join(" ")
+      end
+  ' "$file" 2>/dev/null || true
+}
+
+# deps_missing — the SHARED dependency-detection helper (owned by .4; the .5
+# doctor reuses it — no divergent re-derivation). $1 = mode (local|forward).
+# Prints one "<tool>\t<guidance>" line per missing/unusable REQUIRED-IN-MODE
+# dependency:
+#   local:   say                       (base64 is NOT a local dep — R23)
+#   forward: base64; nc presence AND capability (connect-timeout -G/-w +
+#            EOF-shutdown -N/-q 0, per C6 — an unusable flag is reported as
+#            missing 'nc', not mere presence)
+# `jq` is a HOOK dependency checked by the hook itself before it can parse
+# anything (and reported by doctor separately) — deliberately not listed
+# here. rc 0 = all present; 1 = at least one line printed.
+deps_missing() {
+  local mode missing
+  mode="${1-}"
+  missing=0
+  case "$mode" in
+    local)
+      if ! command -v say >/dev/null 2>&1; then
+        printf 'say\tmacOS built-in text-to-speech (expected at /usr/bin/say) — check your PATH, or on non-macOS hosts local mode is unsupported\n'
+        missing=1
+      fi
+      ;;
+    forward)
+      if ! command -v base64 >/dev/null 2>&1; then
+        printf 'base64\tinstall coreutils (provides base64; usually preinstalled)\n'
+        missing=1
+      fi
+      if ! nc_detect; then
+        printf 'nc\tinstall netcat-openbsd (apt-get install netcat-openbsd)\n'
+        missing=1
+      else
+        if ! nc_connect_timeout_flag >/dev/null; then
+          printf 'nc\tthis nc lacks a usable connect-timeout flag (-G or -w) — install netcat-openbsd\n'
+          missing=1
+        fi
+        if ! nc_eof_flags >/dev/null; then
+          printf 'nc\tthis nc lacks a usable EOF-shutdown flag (-N or -q 0) so sends would hang — install netcat-openbsd\n'
+          missing=1
+        fi
+      fi
+      ;;
+  esac
+  return "$missing"
+}
+
+# auto_speak_enabled — R4/R21: read the global auto-speak toggle. ON iff
+# <plugin_state_dir>/auto-speak exists and contains exactly "on" (trailing
+# newline tolerated). EVERYTHING else — unresolvable state dir, missing or
+# unreadable file, any other content — is OFF (the safe default). Plain file
+# read, no jq (the hook calls this before its jq check). 0 = on; 1 = off.
+auto_speak_enabled() {
+  local dir content
+  dir="$(plugin_state_dir)" || return 1
+  content="$(cat "$dir/auto-speak" 2>/dev/null)" || return 1
+  [ "$content" = "on" ]
+}
+
+# auto_speak_write — `speak on` / `speak off` (R4): write the single global
+# flag file <plugin_state_dir>/auto-speak containing exactly "on\n"/"off\n",
+# ATOMICALLY (mktemp in the same dir + rename) so the Stop hook never reads a
+# torn write. Outside Claude with neither SPEAK_DATA_DIR nor
+# CLAUDE_PLUGIN_DATA set, reports the toggle unavailable per C3 — it does NOT
+# invent a HOME-based dir the hook would never read.
+auto_speak_write() {
+  local value dir flag tmp
+  value="$1"
+  if ! dir="$(plugin_state_dir)"; then
+    echo "speak: auto-speak toggle unavailable — neither SPEAK_DATA_DIR nor CLAUDE_PLUGIN_DATA is set (inside Claude Code the plugin data dir provides this; outside, set SPEAK_DATA_DIR)" >&2
+    return 1
+  fi
+  flag="$dir/auto-speak"
+  if ! mkdir -p "$dir" 2>/dev/null; then
+    echo "speak: cannot create state dir '$dir'" >&2
+    return 1
+  fi
+  if ! tmp="$(mktemp "${flag}.XXXXXX" 2>/dev/null)"; then
+    echo "speak: cannot write '$flag' (mktemp failed)" >&2
+    return 1
+  fi
+  printf '%s\n' "$value" >"$tmp"
+  if ! mv -f "$tmp" "$flag"; then
+    rm -f "$tmp"
+    echo "speak: cannot write '$flag'" >&2
+    return 1
+  fi
+  echo "speak: auto-speak is now ${value} (flag: $flag)"
+}
+
+# ---------------------------------------------------------------------------
+# Subcommands. doctor/status remain stubs — final behavior owned by task .5;
+# the point is that reserved first args dispatch here and are never spoken.
 # ---------------------------------------------------------------------------
 
 cmd_doctor() {
@@ -1047,13 +1220,11 @@ cmd_doctor() {
 }
 
 cmd_on() {
-  echo "speak: 'on' (auto-speak toggle) is not yet implemented" >&2
-  return 1
+  auto_speak_write on
 }
 
 cmd_off() {
-  echo "speak: 'off' (auto-speak toggle) is not yet implemented" >&2
-  return 1
+  auto_speak_write off
 }
 
 # ---------------------------------------------------------------------------

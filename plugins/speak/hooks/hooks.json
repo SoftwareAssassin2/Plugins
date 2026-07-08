@@ -1,0 +1,16 @@
+{
+  "description": "speak plugin: Stop hook drives auto-speak (fn-5 R3/R28). `timeout` is the hooks.json field in seconds (C9 = 10) — playback is dispatched detached, so speech duration never counts against it.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/stop-speak.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
