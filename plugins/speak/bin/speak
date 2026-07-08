@@ -1,0 +1,279 @@
+#!/usr/bin/env bash
+# speak — spoken voice output for Claude responses (fn-5, task .1: core CLI).
+#
+# The primitive: clean markdown text and play it aloud via the OS TTS voice.
+#   speak "<text>"          speak argv text (argv wins when stdin is also piped)
+#   echo <text> | speak     speak stdin text
+#   speak -- doctor         speak a literal reserved word
+#
+# Reserved first args dispatch as subcommands (never spoken):
+#   --serve   host listener            (stub here — owned by task .3)
+#   doctor    full diagnostic          (stub here — owned by task .5)
+#   status    alias for doctor         (stub here — owned by task .5)
+#   on / off  auto-speak toggle writes (stub here — owned by task .4)
+#
+# Contracts (epic fn-5 §Canonical Contracts — C-IDs are authoritative):
+#   C1  mode-detection precedence (implemented below in speak_mode)
+#   C9  SPEAK_MAX_CHARS: unset = no cap; invalid = treated unset + stderr note
+#   Exit codes are simple 0 = success / non-zero = failure (R30) — deliberately
+#   NOT this repo's 64/127 dispatcher contract.
+#
+# Compatibility floor: macOS system bash 3.2.57 — no associative arrays, no
+# ${var,,}, no mapfile. Strict mode is enabled ONLY when executed (see the
+# source-guard at the bottom): tests and the Stop hook source this file for its
+# helpers, and leaked `set -euo pipefail` would break the hook's exit-0 contract.
+
+# ---------------------------------------------------------------------------
+# Helpers (sourceable, nounset-safe)
+# ---------------------------------------------------------------------------
+
+# clean_text — pure stdin→stdout markdown cleaner (R19, unit-testable):
+#   * fenced ``` code blocks are dropped entirely
+#   * headers (#), list bullets (-/*/+ and "1."), and */_ emphasis are stripped
+#   * [link text](url) keeps the text; bare URLs are dropped
+#   * inline-code backticks are removed (content kept)
+#   * all whitespace collapses to single spaces, trimmed
+clean_text() {
+  awk '
+    BEGIN { in_fence = 0 }
+    /^[[:space:]]*```/ { in_fence = !in_fence; next }
+    in_fence { next }
+    {
+      line = $0
+      sub(/^[[:space:]]*#+[[:space:]]*/, "", line)          # headers
+      sub(/^[[:space:]]*[-*+][[:space:]]+/, "", line)       # bullet lists
+      sub(/^[[:space:]]*[0-9]+\.[[:space:]]+/, "", line)    # numbered lists
+      # [text](url) -> text (before bare-URL removal so the url in parens goes too)
+      while (match(line, /\[[^]]*\]\([^)]*\)/)) {
+        m = substr(line, RSTART, RLENGTH)
+        sub(/^\[/, "", m); sub(/\]\(.*$/, "", m)
+        line = substr(line, 1, RSTART - 1) m substr(line, RSTART + RLENGTH)
+      }
+      gsub(/https?:\/\/[^[:space:]]+/, "", line)            # bare URLs
+      gsub(/[*_]+/, "", line)                               # emphasis markers
+      gsub(/`+/, "", line)                                  # inline-code ticks
+      printf "%s ", line
+    }
+  ' | tr -s '[:space:]' ' ' | sed -e 's/^ *//' -e 's/ *$//'
+}
+
+# apply_max_chars — pure stdin→stdout truncation (R20).
+# SPEAK_MAX_CHARS unset/empty = no cap. A positive integer truncates, with a
+# brief notice to STDERR ONLY — the notice must never reach `say` or any hook
+# stdout. Zero / negative / non-numeric = treated as unset (no cap) + a stderr
+# diagnostic.
+apply_max_chars() {
+  local text max
+  text="$(cat)"
+  max="${SPEAK_MAX_CHARS:-}"
+  if [ -z "$max" ]; then
+    printf '%s' "$text"
+    return 0
+  fi
+  case "$max" in
+    *[!0-9]*)
+      echo "speak: ignoring invalid SPEAK_MAX_CHARS='$max' (expected a positive integer); no cap applied" >&2
+      printf '%s' "$text"
+      return 0
+      ;;
+  esac
+  if [ "$max" -eq 0 ]; then
+    echo "speak: ignoring invalid SPEAK_MAX_CHARS='0' (expected a positive integer); no cap applied" >&2
+    printf '%s' "$text"
+    return 0
+  fi
+  if [ "${#text}" -gt "$max" ]; then
+    printf '%s' "${text:0:$max}"
+    echo "speak: text truncated to $max chars (SPEAK_MAX_CHARS was set; notice not spoken)" >&2
+  else
+    printf '%s' "$text"
+  fi
+}
+
+# speak_mode — context detection per C1 (context, NOT dependency availability).
+# stdout: "local" or "forward". Return codes (sourceable probe contract):
+#   0  mode printed
+#   2  SPEAK_MODE set to something other than exactly 'local' or 'forward'
+#   4  bare non-Darwin host, no container marker ("unsupported host OS")
+# Precedence: (1) explicit SPEAK_MODE wins (honored even on Darwin);
+# (2) Darwin -> local (a missing/broken `say` is a missing LOCAL dependency,
+# never a switch to forward); (3) Linux + container marker -> forward;
+# (4) anything else -> unsupported host OS (never a silent forward attempt).
+speak_mode() {
+  local m os
+  m="${SPEAK_MODE:-}"
+  if [ -n "$m" ]; then
+    case "$m" in
+      local | forward)
+        printf '%s\n' "$m"
+        return 0
+        ;;
+      *)
+        return 2
+        ;;
+    esac
+  fi
+  os="$(uname -s)"
+  if [ "$os" = "Darwin" ]; then
+    printf 'local\n'
+    return 0
+  fi
+  if [ "$os" = "Linux" ] && { [ -e /.dockerenv ] || [ -e /run/.containerenv ]; }; then
+    printf 'forward\n'
+    return 0
+  fi
+  return 4
+}
+
+# play_local — THE single isolated playback backend function (R10/R11).
+# macOS `say` is the only implemented backend today; Windows later plugs in
+# here without touching callers. Text reaches `say` via STDIN — never
+# interpolated into a shell string (injection + arg-joining safety).
+play_local() {
+  local text="$1"
+  if [ "$(uname -s)" != "Darwin" ]; then
+    echo "speak: unsupported local TTS backend on $(uname -s) — only macOS 'say' is implemented (Windows support is a later seam)" >&2
+    return 1
+  fi
+  if ! command -v say >/dev/null 2>&1; then
+    echo "speak: missing local dependency: 'say' (macOS TTS) not found on PATH" >&2
+    return 1
+  fi
+  printf '%s' "$text" | say
+}
+
+# ---------------------------------------------------------------------------
+# Subcommand stubs — final behavior owned by later tasks (.3/.4/.5). The point
+# in THIS task is only that reserved first args dispatch here and are never
+# spoken as text.
+# ---------------------------------------------------------------------------
+
+cmd_serve() {
+  echo "speak: --serve (host listener) is not yet implemented" >&2
+  return 1
+}
+
+cmd_doctor() {
+  echo "speak: doctor/status diagnostics are not yet implemented" >&2
+  return 1
+}
+
+cmd_on() {
+  echo "speak: 'on' (auto-speak toggle) is not yet implemented" >&2
+  return 1
+}
+
+cmd_off() {
+  echo "speak: 'off' (auto-speak toggle) is not yet implemented" >&2
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# The primitive: speak text
+# ---------------------------------------------------------------------------
+
+# read_input — argv text if any args were given (argv wins over stdin), else
+# piped stdin; returns 1 when neither is available (no args, stdin is a tty).
+read_input() {
+  if [ "$#" -ge 1 ]; then
+    printf '%s' "$*"
+  elif [ ! -t 0 ]; then
+    cat
+  else
+    return 1
+  fi
+}
+
+cmd_speak() {
+  local raw cleaned mode rc
+
+  if ! raw="$(read_input "$@")"; then
+    {
+      echo "usage: speak <text>                    speak argv text"
+      echo "       <cmd> | speak                   speak stdin text (argv wins when both)"
+      echo "       speak -- <word>                 speak a literal reserved word"
+      echo "       speak --serve|doctor|status|on|off   subcommands"
+    } >&2
+    return 1
+  fi
+
+  cleaned="$(printf '%s' "$raw" | clean_text | apply_max_chars)"
+  # Nothing left after cleaning (e.g. pure code block) — speak nothing, succeed.
+  if [ -z "$cleaned" ]; then
+    return 0
+  fi
+
+  rc=0
+  mode="$(speak_mode)" || rc=$?
+  case "$rc" in
+    0) ;;
+    2)
+      echo "speak: invalid SPEAK_MODE='${SPEAK_MODE:-}' — expected exactly 'local' or 'forward'" >&2
+      return 1
+      ;;
+    4)
+      echo "speak: unsupported host OS '$(uname -s)' — not macOS and no container marker; refusing to guess a forward target" >&2
+      return 1
+      ;;
+    *)
+      echo "speak: mode detection failed (code $rc)" >&2
+      return 1
+      ;;
+  esac
+
+  case "$mode" in
+    local)
+      play_local "$cleaned"
+      ;;
+    forward)
+      # Forward transport (base64-over-nc to the host listener) is owned by
+      # task .2; this task owns detection + the local branch only.
+      echo "speak: forward mode (container -> host listener) is not yet implemented" >&2
+      return 1
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# Dispatcher — an EXACT reserved first arg is that subcommand; everything else
+# is text. To speak a literal reserved word: stdin (echo doctor | speak) or
+# `speak -- doctor`.
+# ---------------------------------------------------------------------------
+
+main() {
+  if [ "$#" -ge 1 ]; then
+    case "$1" in
+      --serve)
+        shift
+        cmd_serve "$@"
+        return
+        ;;
+      doctor | status)
+        shift
+        cmd_doctor "$@"
+        return
+        ;;
+      on)
+        shift
+        cmd_on "$@"
+        return
+        ;;
+      off)
+        shift
+        cmd_off "$@"
+        return
+        ;;
+      --)
+        shift
+        ;;
+    esac
+  fi
+  cmd_speak "$@"
+}
+
+# Source-guard: strict mode + main run ONLY when executed. Sourcing this file
+# (tests, the Stop hook) gets the functions with no strict-mode leakage.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  set -euo pipefail
+  main "$@"
+fi

@@ -77,6 +77,12 @@
       "displayName": "Init Project",
       "description": "Scaffold a brand-new opinionated mono-repo with preferred defaults (root layout, CLAUDE.md, dev container, standards docs, system.sh dispatcher, a starter .NET solution + Angular SPAs, Postgres + Keycloak, a pre-wired ParleyAI AI client (OpenAI/Anthropic), net10), then optionally hand off to /dick. Asks only for project name + description.",
       "source": "./plugins/init-project"
+    },
+    {
+      "name": "speak",
+      "displayName": "Speak",
+      "description": "Spoken voice output for Claude responses via the native OS TTS voice (macOS `say`). Cleans markdown before speaking, works locally on the host and — via a host listener — from inside a Dev Container.",
+      "source": "./plugins/speak"
     }
   ]
 }
