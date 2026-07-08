@@ -625,9 +625,11 @@ listener_log() {
 
 # speak_lock_acquire / speak_lock_release — the atomic `mkdir` mutex guarding
 # every enqueue / prune / counter / session-log mutation. $1 overrides the
-# lock dir (default $SPEAK_LOCK_DIR). Acquire is a bounded spin (~2s) so a
-# crashed holder can't wedge the listener forever; callers treat a timeout as
-# "proceed carefully" (single-writer accept loop + single worker in practice).
+# lock dir (default $SPEAK_LOCK_DIR). Acquire is a bounded spin (~2s); on
+# timeout it returns 1 and the caller MUST skip the mutation and MUST NOT
+# release — releasing would rmdir a lock some OTHER process still holds.
+# (cmd_serve clears a stale lock dir at startup; shutdown clears one left by
+# a killed worker.)
 speak_lock_acquire() {
   local lockdir tries
   lockdir="${1:-$SPEAK_LOCK_DIR}"
@@ -655,11 +657,15 @@ counter_read() {
 
 # counter_incr — lock-guarded increment of counter file $1 (temp + rename so
 # the renderer never reads a torn write). Playback outcomes ONLY (R17).
+# Lock timeout -> mutation skipped + logged, rc 1 (never touch a foreign lock).
 counter_incr() {
   local f tmp n
   f="${1-}"
   [ -n "$f" ] || return 1
-  speak_lock_acquire || true
+  if ! speak_lock_acquire; then
+    listener_log "lock timeout: counter update skipped (${f##*/})"
+    return 1
+  fi
   n="$(counter_read "$f")"
   if tmp="$(mktemp "${f}.XXXXXX" 2>/dev/null)"; then
     printf '%s\n' "$((n + 1))" >"$tmp"
@@ -676,7 +682,10 @@ session_log_append() {
   sid="${1-}"
   [ -n "$sid" ] || return 1
   now="$(date +%s)"
-  speak_lock_acquire || true
+  if ! speak_lock_acquire; then
+    listener_log "lock timeout: session-log update skipped (session '$sid')"
+    return 1
+  fi
   if ! tmp="$(mktemp "${SPEAK_SESSIONS_FILE}.XXXXXX" 2>/dev/null)"; then
     speak_lock_release
     return 1
@@ -730,7 +739,11 @@ spool_enqueue() {
   [ -n "${SPEAK_SPOOL_DIR:-}" ] || return 1
   tmp="$(mktemp "$SPEAK_SPOOL_DIR/.in.XXXXXX" 2>/dev/null)" || return 1
   cat >"$tmp"
-  speak_lock_acquire || true
+  if ! speak_lock_acquire; then
+    rm -f "$tmp"
+    listener_log "lock timeout: enqueue skipped"
+    return 1
+  fi
   seq="$(spool_next_seq)"
   mv -f "$tmp" "$SPEAK_SPOOL_DIR/$seq.frame"
   spool_prune
@@ -760,10 +773,14 @@ spool_prune() {
 # spool_claim — worker side: under the lock, move the OLDEST queue entry to a
 # non-queue name and print its path (rc 1 when the queue is empty). The rename
 # removes it from the prunable *.frame namespace before playback starts.
+# Lock timeout -> rc 1 with a log; the worker just retries next tick.
 spool_claim() {
   local f claimed
   claimed=""
-  speak_lock_acquire || true
+  if ! speak_lock_acquire; then
+    listener_log "lock timeout: claim skipped (worker will retry)"
+    return 1
+  fi
   for f in "$SPEAK_SPOOL_DIR"/*.frame; do
     if [ -e "$f" ]; then
       claimed="$SPEAK_SPOOL_DIR/.current.$$"
