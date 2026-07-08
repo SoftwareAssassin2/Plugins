@@ -37,7 +37,8 @@ Ship the automated test suite for the pure-logic units, a `coverage.sh` harness 
 - [ ] `plugins/speak/tests/coverage.sh` (and `*_test.sh`) are committed executable (`test -x`)
 
 ## Done summary
-_(filled on completion)_
-
+Shipped the speak plugin's automated test suite (241 checks across cli_test.sh / listener_test.sh / hook_test.sh + transcript fixtures modeling the fn-5.4 verified real schema), a kcov coverage harness using --include-pattern with a native-Linux-only zero-lines gate and a --plain mode, and the /speak:test command running "${CLAUDE_PLUGIN_ROOT}/tests/coverage.sh" --plain.
 ## Evidence
-_(filled on completion)_
+- Commits: d00e42256bd283eb00fe662246e14f762e07a772
+- Tests: bash plugins/speak/tests/coverage.sh --plain (cli 113 + listener 82 + hook 46 = 241 checks, 0 failed), bash plugins/speak/tests/coverage.sh (kcov mode on macOS: zero-lines WARN + plain fallback, exit 0)
+- PRs:
