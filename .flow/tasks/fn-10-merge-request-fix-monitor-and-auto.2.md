@@ -37,9 +37,8 @@ Add the decision-and-apply half of `merge-request:fix`: decide whether each (uns
 - [ ] Records go through `gather-feedback.sh record` (never a hand-written ledger block), so the fenced `jsonl` stays canonical for the next wakeup's dedupe.
 
 ## Done summary
-TBD
-
+Added the decide-and-apply half of /merge-request:fix: SKILL.md Step 5 now assembles the cumulative spec guardrail (Intent + PR/MR body + linked .flow specs + branch diff), applies the three-criteria implement decision, gates commit/push on discovered tests (no-test-command is a blocker), acknowledges via a new reply-resolve.sh (Fixed + forge-specific resolve, with the non-resolvable-comment fallback), records declined items to ## Declined, and writes every terminal ## Handled record through fn-10.1's canonical gather-feedback.sh record with the correct per-kind dedupe keys.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: ccf366813f438bd09a4fd3628f37df172c9474a1, 0471a3cfb8cb1e5e7374266e4b6c4934217d847c
+- Tests: bash plugins/merge-request/skills/fix/tests/reply-resolve_test.sh (33 passed), bash plugins/merge-request/skills/fix/tests/gather-feedback_test.sh (46 passed), bash plugins/merge-request/skills/create/tests/create_test.sh (31 passed)
 - PRs:
