@@ -1,0 +1,7 @@
+{
+  "name": "merge-request",
+  "displayName": "Merge Request",
+  "version": "0.1.0",
+  "description": "GitHub/GitLab pull/merge-request workflow skills — create, review (as Chris), fix, and post findings. Every skill first runs /detect-source-control and hard-stops when the forge is unsupported.",
+  "author": { "name": "Chris Green (Software Assassin)" }
+}

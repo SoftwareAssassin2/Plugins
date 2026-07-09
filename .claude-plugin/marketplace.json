@@ -83,6 +83,18 @@
       "displayName": "Speak",
       "description": "Spoken voice output for Claude responses via the native OS TTS voice (macOS `say`). Cleans markdown before speaking, works locally on the host and — via a host listener — from inside a Dev Container.",
       "source": "./plugins/speak"
+    },
+    {
+      "name": "detect-source-control",
+      "displayName": "Detect Source Control",
+      "description": "Detect whether the current git repo's forge is GitHub, GitLab, or unsupported and emit a parseable key=value block. The shared, provider-agnostic primitive the merge-request skills branch on.",
+      "source": "./plugins/detect-source-control"
+    },
+    {
+      "name": "merge-request",
+      "displayName": "Merge Request",
+      "description": "GitHub/GitLab pull/merge-request workflow skills — create, review (as Chris), fix, and post findings. Every skill first runs /detect-source-control and hard-stops when the forge is unsupported.",
+      "source": "./plugins/merge-request"
     }
   ]
 }

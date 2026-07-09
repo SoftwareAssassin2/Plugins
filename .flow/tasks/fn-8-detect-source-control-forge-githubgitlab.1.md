@@ -63,9 +63,8 @@ supported=true|false
 - [ ] `tests/detect_test.sh` covers: github.com, gitlab.com, self-hosted host-substring (github + gitlab), precedence (origin=gitlab + upstream=github -> gitlab because origin wins), `.github/` CI fallback, `.gitlab-ci.yml` CI fallback, BOTH CI signals -> unsupported, mocked `gh repo view` probe, mocked `glab repo view` probe, BOTH CLI probes succeed -> unsupported, unauthenticated CLI (`cli_authenticated=false`), "auth exists but repo probe fails" (must NOT classify on auth alone), resolved-forge-CLI-absent-but-other-CLI-present -> `cli=none`, no-remote -> Phase B / unsupported, and exit `0` on `unsupported`.
 
 ## Done summary
-TBD
-
+Built the standalone `detect-source-control` plugin: a strictly read-only, two-phase (precedence-major remotes then repo-global CI/CLI fallbacks) forge-detection ladder that emits the exact ordered `forge/host/cli/cli_authenticated/supported` key=value stdout contract (exit 0 including `unsupported`), plus SKILL.md documenting the contract and a bash-3.2 + shellcheck-clean 62-check test suite.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: 3355ac74b569c58e7d3cb946817f04ab43d441fe
+- Tests: bash plugins/detect-source-control/tests/detect_test.sh (62 passed, 0 failed), shellcheck plugins/detect-source-control/scripts/detect.sh (clean)
 - PRs:
