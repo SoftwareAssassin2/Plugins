@@ -60,7 +60,7 @@ dev-container port forwarding. Override with `SPEAK_PORT` on BOTH ends.
 
 ## Commands
 
-Five slash commands (namespaced by the plugin name — `/speak:*`):
+Six slash commands (namespaced by the plugin name — `/speak:*`):
 
 | Command | What it does |
 |---|---|
