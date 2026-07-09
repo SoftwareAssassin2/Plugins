@@ -140,9 +140,9 @@ check "gh post fail: no RESTAGED line" "! printf '%s' \"$OUT\" | grep -q 'RESTAG
 
 # 6. GitLab inline — discussion with the base/start/head SHA position triple.
 LOG="$ROOT_TMP/log6"
-# The gitlab inline path needs jq plus a SHA-1 tool; sha1sum (Linux) OR shasum
-# (default macOS) satisfies it, so this must NOT skip on a shasum-only host.
-if command -v jq >/dev/null 2>&1 && { command -v sha1sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1; }; then
+# The gitlab inline path needs a SHA-1 tool; sha1sum (Linux) OR shasum (default
+# macOS) satisfies it, so this must NOT skip on a shasum-only host.
+if command -v sha1sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1; then
   run "$LOG" -- bash "$POST" --forge gitlab --id 88 \
     --file src/app.ts --line 42 --head-sha hhh --base-sha bbb --body "$BODY"
   check "glab inline: exit 0"            "[ \"$RC\" = 0 ]" "$RC"
@@ -153,7 +153,7 @@ if command -v jq >/dev/null 2>&1 && { command -v sha1sum >/dev/null 2>&1 || comm
   check "glab inline: new_line"          "grep -qF 'ARG position[new_line]=42' '$LOG'"
   check "glab inline: body verbatim"     "grep -qF 'ARG body=$BODY' '$LOG'"
 else
-  echo "  skip - glab inline path (jq or sha1sum/shasum unavailable)"
+  echo "  skip - glab inline path (sha1sum/shasum unavailable)"
 fi
 
 # 7. GitLab missing base_sha → general note fallback with exact body.
@@ -319,6 +319,18 @@ run "$LOG" -- bash "$APPROVE" --forge github --id 12 --artifact "$MAL"
 check "malformed: exit 1"        "[ \"$RC\" = 1 ]" "$RC"
 check "malformed: no approve"    "[ ! -s '$LOG' ]"
 check "malformed: mentions Findings/malformed" "printf '%s' \"$ERR\" | grep -qiE 'Findings|malformed'"
+
+# 14b. Malformed: clean marker but a non-empty ## Findings holding a record that
+#      is NOT a well-formed F- finding (any `{...}` line blocks) → refuse.
+MALREC="$ROOT_TMP/malrec.md"
+{ echo "# Merge review: 13"; echo; echo "<!-- merge-review-status: clean -->"; echo;
+  echo "## Findings"; echo; echo '```jsonl'; echo '{"garbage":"no F- id here"}'; echo '```';
+  echo; echo "## Build"; echo "pass"; } > "$MALREC"
+LOG="$ROOT_TMP/log14b"
+run "$LOG" -- bash "$APPROVE" --forge github --id 13 --artifact "$MALREC"
+check "malformed record: exit 1"     "[ \"$RC\" = 1 ]" "$RC"
+check "malformed record: no approve" "[ ! -s '$LOG' ]"
+check "malformed record: says not clean" "printf '%s' \"$ERR\" | grep -qi 'NOT clean'"
 
 # 15. Missing artifact file → refuse (no proof of a clean review).
 LOG="$ROOT_TMP/log15"

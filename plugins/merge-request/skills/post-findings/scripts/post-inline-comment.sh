@@ -57,7 +57,7 @@
 #   GITLAB_REPO=group/project   Set when glab can't infer the project from the
 #                               git remote (mirrors the other merge-request scripts).
 #
-# Requires: gh (github) or glab (gitlab); jq + sha1sum-or-shasum for the gitlab inline path.
+# Requires: gh (github) or glab (gitlab); sha1sum-or-shasum for the gitlab inline path.
 #
 # NOTE: strictly `set -uo pipefail` (no `-e`) — every failure is handled
 # explicitly via `die` so the machine-readable trailer stays exact.
@@ -296,7 +296,6 @@ if [ "$forge" = "github" ]; then
 else
   command -v glab >/dev/null 2>&1 || die "glab is required for a gitlab forge but not installed"
   if [ "$want_inline" -eq 1 ]; then
-    command -v jq >/dev/null 2>&1 || die "jq is required for the gitlab inline path"
     command -v sha1sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 \
       || die "sha1sum or shasum is required for the gitlab inline path"
     post_gitlab_inline; posted_mode="inline"

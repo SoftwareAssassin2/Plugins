@@ -97,17 +97,21 @@ if ! grep -qE '^## Findings[[:space:]]*$' "$artifact"; then
   die "artifact has no '## Findings' section — malformed; refusing to approve" 1
 fi
 
-# Count finding records inside the ## Findings section (a record is a JSON line
-# carrying a stable F-<hash> id). `next` on `## ` lines keeps the heading itself
-# out of the count and flips the in-section flag on section boundaries.
+# Count JSON record lines inside the ## Findings section. "Zero entries" means
+# NO record at all — so we count ANY line that opens a JSON object (`{...`), not
+# just well-formed `F-<hash>` records. A clean section is empty/prose only; a
+# malformed or non-`F-` record still blocks approval (the spec: a malformed
+# artifact is NOT clean). `next` on `## ` lines keeps the heading out of the
+# count and flips the in-section flag on section boundaries; fenced-block markers
+# (```jsonl / ```) don't start with `{`, so they never count.
 finding_count="$(awk '
   /^## / { inF = ($0 ~ /^## Findings[[:space:]]*$/) ? 1 : 0; next }
-  inF && /"id"[[:space:]]*:[[:space:]]*"F-/ { c++ }
+  inF && /^[[:space:]]*\{/ { c++ }
   END { print c+0 }
 ' "$artifact")"
 
 if [ "${finding_count:-0}" -ne 0 ]; then
-  die "artifact has ${finding_count} staged finding(s) — NOT clean; refusing to approve (post the findings instead)" 1
+  die "artifact has ${finding_count} record(s) in ## Findings — NOT clean; refusing to approve (post/triage them instead)" 1
 fi
 
 # --- approve + post the exact note -----------------------------------------
