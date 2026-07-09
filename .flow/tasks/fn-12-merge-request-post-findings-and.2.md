@@ -33,9 +33,8 @@ Add the learned-preferences loop: a propose-then-confirm mechanism writing to a 
 - [ ] A skipped finding is appended to the `## Declined` section of `.data/merge/<ID>.md` (id + summary + rationale, append-only, other sections preserved) — fulfilling the ARTIFACT.md shared-`## Declined` contract that fn-12.1 forward-referenced here.
 
 ## Done summary
-TBD
-
+Added the post-findings learned-preferences loop: a new scripts/merge-prefs.sh implementing the keyed merge model (same-key project override replaces global, different keys union), scoped propose-then-confirm upsert with a Don't-raise count confidence, merge/preserve-only Rubric weighting, and the append-only ## Declined record fulfilling the ARTIFACT.md shared contract. Extended post-findings SKILL.md with Step 7 (skip->Don't raise, edit->Wording, approve->Confirmed valued; skip also writes ## Declined) and added merge-prefs_test.sh (68 cases). SOUL.md unchanged.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: 9980409, 7b3b7ea, d2285a5
+- Tests: bash plugins/merge-request/skills/post-findings/tests/merge-prefs_test.sh (68 passed), bash plugins/merge-request/skills/post-findings/tests/post-findings_test.sh (83 passed), bash plugins/merge-request/skills/review/tests/*.sh (96 passed), shellcheck merge-prefs.sh + merge-prefs_test.sh (clean), codex impl-review: SHIP
 - PRs:
