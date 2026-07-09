@@ -1,0 +1,7 @@
+{
+  "name": "detect-source-control",
+  "displayName": "Detect Source Control",
+  "version": "0.1.0",
+  "description": "Detect whether the current git repo's forge is GitHub, GitLab, or unsupported and emit a parseable key=value block. The shared, provider-agnostic primitive the merge-request skills branch on.",
+  "author": { "name": "Chris Green (Software Assassin)" }
+}
