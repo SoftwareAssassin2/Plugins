@@ -32,9 +32,8 @@ Build the review engine: single-ID vs batch scope, the SHA skip/re-review contra
 - [ ] Runs an auto-detected build/test in the documented ecosystem order; within package scripts runs `ci` if present else `build`+`test`/`check` cumulatively (lint-only excluded); records "no build/test command detected" when none matches; a failing build/test is the top blocking finding, logged in `## Build` AND surfaced as the first `## Findings` entry.
 
 ## Done summary
-TBD
-
+Built the /merge-request:review engine under plugins/merge-request/skills/review/: SKILL.md orchestration plus scripts/triage.sh (single-ID vs batch scope; fetches each open PR/MR head SHA and applies the Reviewed-at-commit skip/re-review check BEFORE any checkout, forge-CLI-gated in both scopes, listing failures fatal), scripts/setup-worktree.sh (fork-safe head resolution — forge metadata preferred, PR/MR head-ref transport, SHA + GitHub fork-clone fallbacks — reusing the dedicated worktree when inside it else creating .worktrees/merge-<ID> on branch merge/<ID>; unresolvable head -> CHECKOUT=unresolved), and scripts/build-and-test.sh (auto build/test in the worktree, ecosystem order package-scripts -> Makefile/justfile -> Cargo -> Go -> .NET, cumulative build+test/check within package scripts, lint-only excluded, no-command -> n/a). The engine owns the merge-review-status marker and surfaces a blocking checkout/build failure as the first ## Findings entry; finding selection is left to fn-11.3. 68 test checks pass, shellcheck clean, SOUL.md byte-for-byte unchanged.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: d14e4d0, ae1848f, 5e690b1
+- Tests: bash plugins/merge-request/skills/review/tests/triage_test.sh (22 ok), bash plugins/merge-request/skills/review/tests/build-and-test_test.sh (31 ok), bash plugins/merge-request/skills/review/tests/setup-worktree_test.sh (15 ok), shellcheck -S warning scripts/*.sh (clean), codex impl-review base 64240c1 -> SHIP (after 2 NEEDS_WORK cycles)
 - PRs:
