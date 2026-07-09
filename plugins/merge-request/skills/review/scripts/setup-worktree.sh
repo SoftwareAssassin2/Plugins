@@ -29,10 +29,22 @@
 # Machine-readable stdout the caller parses:
 #   WORKTREE=<path>
 #   HEAD_SHA=<resolved head sha>
+#   BASE_SHA=<PR/MR base sha from forge metadata, or "" if unavailable>
+#   START_SHA=<gitlab only: diff_refs.start_sha; omitted on github>
 #   BRANCH=merge/<ID>
 #   CHECKOUT=ok|unresolved
 #   STATE=created|updated|reused
 #   RESOLUTION=metadata|refs|metadata+refs|sha|fork
+#
+# BASE_SHA is the diff base the changed-files/diff are computed against — once
+# HEAD_SHA + BASE_SHA are known, the review's changed files are
+# `git -C <WORKTREE> diff --name-status -M <BASE_SHA>..<HEAD_SHA>` and the full
+# diff is `git -C <WORKTREE> diff <BASE_SHA>..<HEAD_SHA>`. It is recorded so the
+# selection step can anchor inline findings (file/old_path/line/side/head_sha/
+# base_sha). On GitLab an inline position also needs START_SHA (base_sha +
+# start_sha + head_sha triple); on GitHub inline uses head_sha + line + side and
+# BASE_SHA is recorded for the artifact only. Both degrade to "" when metadata is
+# unavailable.
 #
 # On CHECKOUT=unresolved the script also prints `REASON=<text>` and exits 1.
 #
@@ -113,16 +125,23 @@ meta_sha=""
 head_owner=""
 head_repo=""
 head_ref=""
+# Diff endpoints from forge metadata — the base the changed-files/diff and inline
+# findings are anchored against. base_sha is recorded on both forges; start_sha is
+# GitLab-only (its inline position needs base_sha+start_sha+head_sha). Both stay
+# empty when metadata is unavailable and the trailer degrades gracefully.
+base_sha=""
+start_sha=""
 case "$forge" in
   github)
     command -v gh >/dev/null 2>&1 || die "gh is required for GitHub but not installed"
     meta="$(gh pr view "$id" \
-      --json headRefOid,headRefName,headRepository,headRepositoryOwner 2>/dev/null || true)"
+      --json headRefOid,headRefName,headRepository,headRepositoryOwner,baseRefOid 2>/dev/null || true)"
     if [ -n "$meta" ]; then
       meta_sha="$(jq -r    '.headRefOid // ""'               <<<"$meta" 2>/dev/null)"
       head_ref="$(jq -r    '.headRefName // ""'              <<<"$meta" 2>/dev/null)"
       head_repo="$(jq -r   '.headRepository.name // ""'      <<<"$meta" 2>/dev/null)"
       head_owner="$(jq -r  '.headRepositoryOwner.login // ""' <<<"$meta" 2>/dev/null)"
+      base_sha="$(jq -r    '.baseRefOid // ""'               <<<"$meta" 2>/dev/null)"
     fi
     ref="refs/pull/$id/head"
     ;;
@@ -132,6 +151,8 @@ case "$forge" in
     if [ -n "$meta" ]; then
       meta_sha="$(jq -r '.diff_refs.head_sha // .sha // ""' <<<"$meta" 2>/dev/null)"
       head_ref="$(jq -r '.source_branch // ""'             <<<"$meta" 2>/dev/null)"
+      base_sha="$(jq -r  '.diff_refs.base_sha // ""'        <<<"$meta" 2>/dev/null)"
+      start_sha="$(jq -r '.diff_refs.start_sha // ""'       <<<"$meta" 2>/dev/null)"
     fi
     ref="refs/merge-requests/$id/head"
     ;;
@@ -208,6 +229,10 @@ fi
 
 printf 'WORKTREE=%s\n'   "$wt"
 printf 'HEAD_SHA=%s\n'   "$head_sha"
+printf 'BASE_SHA=%s\n'   "$base_sha"
+# start_sha is meaningful only on GitLab (base+start+head inline position); emit
+# it there (even empty) and omit it entirely on GitHub.
+[ "$forge" = gitlab ] && printf 'START_SHA=%s\n' "$start_sha"
 printf 'BRANCH=%s\n'     "$branch"
 printf 'CHECKOUT=ok\n'
 printf 'STATE=%s\n'      "$state"

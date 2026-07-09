@@ -121,9 +121,17 @@ The script, deterministically:
 Parse its machine tail:
 
 ```
-WORKTREE=<path>   HEAD_SHA=<sha>   BRANCH=merge/<ID>
+WORKTREE=<path>   HEAD_SHA=<sha>   BASE_SHA=<sha|"">   [START_SHA=<sha|"">]
+BRANCH=merge/<ID>
 CHECKOUT=ok|unresolved   STATE=created|updated|reused   RESOLUTION=…
 ```
+
+`HEAD_SHA` and `BASE_SHA` are the **diff endpoints** the review is anchored
+against — they define the changed-files/diff source used in Step 6 (below) and
+populate a finding's `head_sha`/`base_sha`. `START_SHA` is emitted **only on
+GitLab** (its inline position needs the `base_sha`+`start_sha`+`head_sha` triple);
+on GitHub it is omitted. `BASE_SHA`/`START_SHA` may be empty when forge metadata
+was unavailable — the diff then falls back to the merge-base (see Step 6c).
 
 - **`CHECKOUT=ok`** → continue to Step 4, using `WORKTREE`.
 - **`CHECKOUT=unresolved`** (exit 1) → the head could **not** be resolved. Do
@@ -234,8 +242,24 @@ valued* as you select.
 
 ### 6c — select findings as Chris
 
-Read the change against a **real checkout** (the `WORKTREE` from Step 3 + its
-diff), and run `../../RUBRIC.md` over it as Chris. Raise only what passes the
+**Changed-files / diff source (defined).** The diff endpoints are the `HEAD_SHA`
+and `BASE_SHA` parsed in Step 3. Against the `WORKTREE` from Step 3, the review's
+changed files and diff are:
+
+```bash
+# changed files (with rename detection -> old_path for renames)
+git -C "<WORKTREE>" diff --name-status -M "<BASE_SHA>..<HEAD_SHA>"
+# full unified diff the findings are read from
+git -C "<WORKTREE>" diff "<BASE_SHA>..<HEAD_SHA>"
+```
+
+When `BASE_SHA` is empty (forge metadata was unavailable), fall back to the
+merge-base: `base="$(git -C "<WORKTREE>" merge-base HEAD_SHA <default-branch>)"`
+and use `"$base..<HEAD_SHA>"`. This is the single, defined base the selection uses
+— there is no other "PR/MR base".
+
+Read the change against this **real checkout** + diff, and run `../../RUBRIC.md`
+over it as Chris. Raise only what passes the
 one-line test — *can I name the concrete thing that breaks, and would a good
 engineer nod?* Lead with the highest-ranked defensible finding. Stay silent on
 everything on the rubric's silence list. **Every finding stands on universal
@@ -255,7 +279,7 @@ Give each finding:
 
 - a **Conventional Comments prefix** (`issue:`/`suggestion:`/`question:`/`todo:`/`nitpick:`) — the honest one;
 - a **`kind`** — `inline` (anchored to a changed diff line) or `general` (no file/line);
-- for `kind: inline`, the **inline-location fields** `file` (new-side path), `old_path` (only if renamed), `line` or `line_range`, `side` (`LEFT`/`RIGHT`), and `head_sha`/`base_sha` (the diff endpoints — the `HEAD_SHA` from Step 3 and the PR/MR base), so fn-12 can post it inline;
+- for `kind: inline`, the **inline-location fields** `file` (new-side path), `old_path` (only if renamed — from the `git diff --name-status -M` in 6c), `line` or `line_range`, `side` (`LEFT`/`RIGHT`), and `head_sha`/`base_sha` (the diff endpoints from Step 3 — `HEAD_SHA` and `BASE_SHA`, i.e. the same base the 6c diff was taken against; on GitLab also carry `START_SHA` for the position triple), so fn-12 can post it inline;
 - a **deterministic `F-<hash>` id**, computed with the **same** serialization the engine pinned in Step 5 — do **not** invent your own:
 
 ```bash
