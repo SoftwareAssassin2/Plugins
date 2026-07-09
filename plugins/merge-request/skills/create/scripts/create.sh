@@ -141,15 +141,27 @@ target_branch="$(default_branch)"
   die "current branch '$source_branch' is the default branch — nothing to open a PR/MR from"
 
 # --- ensure HEAD is on the remote -----------------------------------------
-# No upstream            -> push -u (publish the branch).
-# Upstream, local ahead  -> push the unpushed commits (avoid a stale remote).
+# No upstream            -> push -u to origin (publish the branch).
+# Upstream, local ahead  -> push the unpushed commits to the CONFIGURED
+#                           upstream remote/ref (not origin — the branch may
+#                           track a fork), so the upstream is never left stale.
 # Upstream, up to date   -> nothing to push.
 
 if upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
   ahead="$(git rev-list --count '@{u}..HEAD' 2>/dev/null || printf '0')"
   if [ "${ahead:-0}" -gt 0 ] 2>/dev/null; then
+    # Resolve the upstream's own remote + branch from branch config so the push
+    # lands on the tracked ref even when it isn't origin.
+    up_remote="$(git config --get "branch.${source_branch}.remote" 2>/dev/null)"
+    up_ref="$(git config --get "branch.${source_branch}.merge" 2>/dev/null)"
+    up_ref="${up_ref#refs/heads/}"
     warn "pushing ${ahead} unpushed commit(s) to '${upstream}'"
-    git push "$remote" HEAD || die "git push failed"
+    if [ -n "$up_remote" ] && [ -n "$up_ref" ]; then
+      git push "$up_remote" "HEAD:${up_ref}" || die "git push failed"
+    else
+      # Fall back to git's own upstream resolution rather than guessing origin.
+      git push || die "git push failed"
+    fi
   fi
 else
   warn "no upstream for '${source_branch}' — publishing with 'git push -u ${remote}'"

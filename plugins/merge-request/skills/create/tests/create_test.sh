@@ -46,6 +46,12 @@ case "$cmd" in
       *) exit 0 ;;
     esac ;;
   rev-list) echo "${MOCK_AHEAD:-0}" ;;
+  config)
+    case "$*" in
+      *.remote) echo "${MOCK_UP_REMOTE:-origin}" ;;
+      *.merge)  echo "refs/heads/${MOCK_UP_REF:-${MOCK_BRANCH:-feature}}" ;;
+      *) exit 1 ;;
+    esac ;;
   symbolic-ref)
     if [ -n "${MOCK_DEFAULT:-}" ]; then echo "origin/${MOCK_DEFAULT}"; exit 0; fi
     exit 1 ;;
@@ -137,13 +143,24 @@ run_create github
 check "no upstream: push -u issued" "grep -q 'push -u origin HEAD' '$PUSHLOG'" "$(cat "$PUSHLOG")"
 unset MOCK_VIEW_ID
 
-# 3. upstream behind (ahead>0) -> plain push of unpushed commits.
+# 3. upstream behind (ahead>0) -> push unpushed commits to the CONFIGURED
+#    upstream remote/ref (origin/feature here).
 PUSHLOG="$ROOT_TMP/push3.log"; : > "$PUSHLOG"
 export MOCK_UPSTREAM=1 MOCK_AHEAD=3 MOCK_BRANCH=feature MOCK_DEFAULT=main MOCK_VIEW_ID=102
 PUSHLOG="$PUSHLOG" run_create github
-check "behind upstream: push issued" "grep -qE 'push origin HEAD' '$PUSHLOG'" "$(cat "$PUSHLOG")"
+check "behind upstream: push to origin HEAD:feature" "grep -qE 'push origin HEAD:feature' '$PUSHLOG'" "$(cat "$PUSHLOG")"
 check "behind upstream: not push -u" "! grep -q 'push -u' '$PUSHLOG'"
 unset MOCK_AHEAD
+
+# 3b. upstream tracks a FORK remote -> push must land on the fork, not origin
+#     (regression guard: don't leave the tracked upstream stale).
+PUSHLOG="$ROOT_TMP/push3b.log"; : > "$PUSHLOG"
+export MOCK_UPSTREAM=1 MOCK_AHEAD=2 MOCK_BRANCH=feature MOCK_DEFAULT=main \
+       MOCK_UP_REMOTE=fork MOCK_UP_REF=feature MOCK_VIEW_ID=104
+PUSHLOG="$PUSHLOG" run_create github
+check "fork upstream: push to fork remote" "grep -qE 'push fork HEAD:feature' '$PUSHLOG'" "$(cat "$PUSHLOG")"
+check "fork upstream: not pushed to origin" "! grep -qE 'push origin' '$PUSHLOG'" "$(cat "$PUSHLOG")"
+unset MOCK_AHEAD MOCK_UP_REMOTE MOCK_UP_REF
 
 # 4. upstream up to date (ahead=0) -> no push.
 PUSHLOG="$ROOT_TMP/push4.log"; : > "$PUSHLOG"
