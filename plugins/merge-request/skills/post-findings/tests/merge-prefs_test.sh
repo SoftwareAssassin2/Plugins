@@ -144,6 +144,16 @@ check "scope global: project untouched" "[ \"\$(cat '$NEWP')\" = \"\$BEFORE\" ]"
 # Wording entries carry NO count marker.
 check "wording: no count marker"        "! grep -qF 'count:' '$NEWG'"
 
+# --increment is a Don't-raise-only concept (only it carries a count). Applying
+# it to Wording/Confirmed-valued would corrupt an entry into a counted one, so
+# it is refused at validation and NOTHING is written.
+INCW="$ROOT_TMP/increment-wording.md"
+run bash "$MP" upsert --scope global --file "$INCW" \
+  --section wording --key "voice/x" --text "y" --increment --confirm
+check "increment on wording: refused exit 2" "[ \"$RC\" = 2 ]" "$RC"
+check "increment on wording: says dont-raise only" "printf '%s' \"\$ERR\" | grep -qi 'dont-raise'"
+check "increment on wording: nothing written" "[ ! -e '$INCW' ]"
+
 # Confirmed valued is a keyed inferred section too.
 run bash "$MP" upsert --scope global --file "$NEWG" \
   --section confirmed-valued --key "correctness/off-by-one" --text "keep surfacing" --confirm

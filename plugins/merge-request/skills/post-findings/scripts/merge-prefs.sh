@@ -311,6 +311,10 @@ cmd_upsert() {
     || die "--section must be one of: dont-raise, wording, confirmed-valued (got '$section')" 2
   [ "$section" != "rubric-weighting" ] \
     || die "rubric-weighting is merge/preserve-only — it is hand-edited, never inferred; refusing to write it" 2
+  # Only Don't-raise carries a count, so --increment is meaningless (and would
+  # corrupt a Wording/Confirmed-valued entry into a counted one) anywhere else.
+  [ "$increment" -eq 0 ] || [ "$section" = "dont-raise" ] \
+    || die "--increment applies only to --section dont-raise (only Don't-raise entries carry a count)" 2
   [ -n "$key" ] || die "--key is required" 2
   case "$key" in *[[:space:]]*) die "--key must be a normalized, space-free token (got '$key')" 2 ;; esac
   [ "$have_text" -eq 1 ] || die "--text is required (the entry description)" 2
