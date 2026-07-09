@@ -32,9 +32,8 @@ Author the shared review persona and the artifacts it drives: the "Chris" `SOUL.
 - [ ] `.gitignore` ignores all of `.data/merge/` (project prefs default-ignored per fn-12; shared only via opt-in `git add -f`).
 
 ## Done summary
-TBD
-
+Authored plugins/merge-request/RUBRIC.md (Chris's invariant review checklist in lockstep with SOUL.md — objectivity-ordered flags with the local-only-secrets carve-out, suggestion-level self-containment, radar, silence list incl. stack/framework choice, universal-merit hard rule, Conventional Comments prefixes, clean Looks good. sign-off, and the global→project learned-preferences lookup contract) and plugins/merge-request/ARTIFACT.md (the .data/merge/<ID>.md contract — header metadata + merge-review-status marker, per-section allowed-writer map, deterministic F-<hash> finding ids, kind:inline|general with inline-location fields required only for inline, blocking-failure-as-first-Findings rule, edit-only-your-section invariant). Added .data/merge/ to .gitignore (project prefs shared only via opt-in git add -f). Verified the pre-existing hand-authored SOUL.md encodes every invariant and left it byte-for-byte unchanged.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: 9402414, 1a9086d
+- Tests: codex impl-review (base 44b1141) → SHIP, git check-ignore .data/merge/{123.md,preferences.md} → both ignored, md5 SOUL.md == e4dd396e6aa99e6fbce5003f8572da53 (unchanged)
 - PRs:
