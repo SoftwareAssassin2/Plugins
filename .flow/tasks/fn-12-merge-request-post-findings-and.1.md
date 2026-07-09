@@ -37,9 +37,8 @@ Build `merge-request:post-findings`: walk the staged findings interactively, pos
 - [ ] A clean PR/MR — requiring BOTH the `<!-- merge-review-status: clean -->` marker AND zero findings — gets a formal approval + a note that is exactly `Looks good.` with nothing else; a missing marker / malformed artifact / skipping-everything does NOT trigger approval.
 
 ## Done summary
-TBD
-
+Built the merge-request:post-findings skill (SKILL.md + post-inline-comment.sh + approve-and-lgtm.sh): an interactive per-finding approve/edit/skip gate that posts approved findings as gh/glab inline comments (preserving the CC prefix + exact body), falls back to a general comment with the exact approved text when inline-location fields are absent (never dropped), rewrites an edited finding on disk by its stable F-<hash> id after a successful post, and formally signs off a clean PR/MR with exactly "Looks good." only when both the clean marker and a zero-record ## Findings section are present. 83 scoped tests with mocked gh/glab; codex impl-review SHIP.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: 6f20b51, ddaf74a, 61b3c9b, 0ec9118, 17516e4, 773b5e1
+- Tests: bash plugins/merge-request/skills/post-findings/tests/post-findings_test.sh (83 passed), full merge-request + detect-source-control suite: 9 suites, 0 failed
 - PRs:
