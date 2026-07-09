@@ -26,9 +26,8 @@ Select high-signal findings and stage them to disk without posting: fetch and no
 - [ ] Never posts to the forge; applies the learned-preferences file (global then project override) when present.
 
 ## Done summary
-TBD
-
+Built finding selection + staging for /merge-request:review: added scripts/fetch-threads.sh (fetch + normalize existing GitHub review-threads+issue-comments and GitLab discussions+notes to {author, body, file?, line?, resolved?, kind}, resolved threads included for dedup; plus a finding-id subcommand emitting the deterministic F-<hash> byte-identical to the engine's Step-5 serialization). Extended review/SKILL.md Step 6 into the full be-Chris selection procedure — thread dedup on substance, RUBRIC.md/SOUL.md selection, Conventional Comments prefixes, kind + inline-location tagging, staging to ## Findings as fenced jsonl, and the clean|findings marker (clean iff zero findings). Never posts to the forge.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: 4ce6d47c37df9bdbf34304a60e0c0178bce0a76a
+- Tests: bash plugins/merge-request/skills/review/tests/fetch-threads_test.sh (22 passed), bash plugins/merge-request/skills/review/tests/{triage,setup-worktree,build-and-test}_test.sh (regression: all pass)
 - PRs:
