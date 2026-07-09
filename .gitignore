@@ -2,5 +2,10 @@
 .flow/bin/
 .worktrees/
 
+# Per-PR/MR review artifacts (merge-request:* skills). Includes the project
+# learned-preferences override, which is shared only via opt-in `git add -f
+# .data/merge/preferences.md` — deliberately no `!` unignore line here.
+.data/merge/
+
 # NuGet pack output (dotnet pack -o ./artifacts). Regenerated; never committed.
 /artifacts/
