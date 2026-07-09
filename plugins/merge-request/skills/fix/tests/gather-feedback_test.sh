@@ -61,10 +61,18 @@ if [[ "$args" == *"pr view"* && "$args" == *"statusCheckRollup"* ]]; then
   ]}'
   exit 0
 fi
+if [[ "$args" == *"check-runs"* ]]; then
+  # Emulates `gh api ... check-runs --paginate -q '.check_runs[]'` (inner objects).
+  jq -cn --arg s "${MOCK_CI_SUMMARY:-FAILED spec/x_spec.rb:9 expected 3 got 4}" \
+    '{name:"unit-tests", conclusion:"failure", output:{title:"tests failed", summary:$s}}'
+  exit 0
+fi
 if [[ "$args" == *"api graphql"* ]]; then
-  echo '{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[
-    {"id":"RT_1","isResolved":false,"comments":{"nodes":[{"author":{"login":"bob"},"body":"extract this into a helper","path":"src/a.ts","line":12,"url":"http://x/t1"}]}},
-    {"id":"RT_2","isResolved":true,"comments":{"nodes":[{"author":{"login":"bob"},"body":"done already","path":"src/b.ts","line":3,"url":"http://x/t2"}]}}
+  echo '{"data":{"repository":{"pullRequest":{"reviewThreads":{
+    "pageInfo":{"hasNextPage":false,"endCursor":null},
+    "nodes":[
+      {"id":"RT_1","isResolved":false,"comments":{"nodes":[{"author":{"login":"bob"},"body":"extract this into a helper","path":"src/a.ts","line":12,"url":"http://x/t1"}]}},
+      {"id":"RT_2","isResolved":true,"comments":{"nodes":[{"author":{"login":"bob"},"body":"done already","path":"src/b.ts","line":3,"url":"http://x/t2"}]}}
   ]}}}}}'
   exit 0
 fi
@@ -129,6 +137,12 @@ check "gh gather: failing ci-job unit-tests" "items | jq -e 'select(.kind==\"ci-
 check "gh gather: passing check excluded" "! items | jq -e 'select(.job_name==\"lint\")' >/dev/null"
 check "gh gather: comment carries content_hash" "items | jq -e 'select(.source_id==\"IC_1\") | .content_hash|length>0' >/dev/null"
 check "gh gather: ci-job carries fingerprint" "items | jq -e 'select(.kind==\"ci-job\") | .fingerprint|length>0' >/dev/null"
+# finding-2 fix: the fingerprint incorporates a real (non-empty) error signature
+# derived from the check-run output, not a hardcoded empty string.
+check "gh gather: ci-job carries non-empty signature" "items | jq -e 'select(.kind==\"ci-job\") | .signature|length>0' >/dev/null"
+FP_A="$(items | jq -r 'select(.kind=="ci-job") | .fingerprint')"
+FP_B="$(PATH="$BIN:$PATH" MOCK_CI_SUMMARY='OOM killed: runner ran out of memory' bash "$GATHER" gather --forge github --id 77 --data-dir "$D1" | grep '^{' | jq -r 'select(.kind=="ci-job") | .fingerprint')"
+check "gh gather: different failure summary => different fingerprint" "[ -n \"$FP_A\" ] && [ \"$FP_A\" != \"$FP_B\" ]" "$FP_A vs $FP_B"
 
 # --- record the CI item non-actionable, then confirm it is suppressed ------
 CI_FP="$(items | jq -r 'select(.kind=="ci-job") | .fingerprint')"

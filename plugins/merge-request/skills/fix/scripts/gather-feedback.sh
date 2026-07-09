@@ -120,6 +120,24 @@ _ci_sig() {
     | _sha1
 }
 
+# _text_sig — read arbitrary failure text on stdin (e.g. a GitHub check run's
+# output title/summary/annotations) and emit a stable hash with volatile noise
+# normalized: ANSI stripped, timestamps/addresses removed, every digit run
+# collapsed to `N` (so counts/durations don't churn the hash while test/error
+# names still discriminate). Empty in -> empty out (caller falls back to
+# job+commit alone).
+_text_sig() {
+  local t; t="$(cat)"
+  [ -n "$(printf '%s' "$t" | tr -d '[:space:]')" ] || return 0
+  printf '%s' "$t" \
+    | sed -e 's/\x1b\[[0-9;]*m//g' \
+          -e 's/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}[T ][0-9:.]*Z\{0,1\}//g' \
+          -e 's/0x[0-9a-fA-F]\{1,\}/0xADDR/g' \
+          -e 's/[0-9]\{1,\}/N/g' 2>/dev/null \
+    | tr -s '[:space:]' ' ' \
+    | _sha1
+}
+
 # _is_bot <login> -> "true" if the account looks like a bot / AI reviewer.
 _is_bot() {
   case "$1" in
@@ -328,18 +346,25 @@ gather_github() {
       done
 
   # Review threads (resolvable; source_id is the thread node id fn-10.2 resolves).
+  # `--paginate` walks the reviewThreads connection via pageInfo/$endCursor so a
+  # PR with >100 unresolved threads never silently drops feedback. gh emits one
+  # JSON document per page; the jq filter runs across the concatenated stream.
+  # (Nested comments are capped at first:100 — a single thread with >100 replies
+  # is a bounded edge; its content_hash then omits the tail.)
   local nwo owner repo
   nwo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
   owner="${nwo%%/*}"; repo="${nwo##*/}"
   if [ -n "$owner" ] && [ -n "$repo" ]; then
-    gh api graphql -F owner="$owner" -F repo="$repo" -F num="$id" -f query='
-      query($owner:String!,$repo:String!,$num:Int!){
+    gh api graphql --paginate -F owner="$owner" -F repo="$repo" -F num="$id" -f query='
+      query($owner:String!,$repo:String!,$num:Int!,$endCursor:String){
         repository(owner:$owner,name:$repo){
           pullRequest(number:$num){
-            reviewThreads(first:100){nodes{
-              id isResolved
-              comments(first:50){nodes{author{login} body path line url}}
-            }}
+            reviewThreads(first:100, after:$endCursor){
+              pageInfo{hasNextPage endCursor}
+              nodes{
+                id isResolved
+                comments(first:100){nodes{author{login} body path line url}}
+              }}
           }}}' 2>/dev/null \
       | jq -c --arg commit "$head" '.data.repository.pullRequest.reviewThreads.nodes[]?
           | select(.isResolved|not)
@@ -364,8 +389,20 @@ gather_github() {
       done
   fi
 
-  # Failing CI checks (statusCheckRollup). Fingerprint on job+commit (+empty sig;
-  # GitHub check logs are pulled by the assistant during attribution).
+  # Failing CI checks (statusCheckRollup covers both CheckRuns and external
+  # status contexts). The logical fingerprint includes a normalized ERROR
+  # SIGNATURE (spec: {job, failing test/file, error signature, commit}) so a
+  # same-commit rerun that fails for a DIFFERENT reason is not suppressed by a
+  # prior ledger record. The signature is derived from each check run's
+  # output.title/summary (fetched once for the head commit); external status
+  # contexts without a check-run body fall back to job+commit.
+  local runs=""
+  if [ -n "$owner" ] && [ -n "$repo" ] && [ -n "$head" ]; then
+    runs="$(gh api "repos/$owner/$repo/commits/$head/check-runs" --paginate \
+              -q '.check_runs[]' 2>/dev/null | jq -s '.' 2>/dev/null || true)"
+  fi
+  [ -n "$runs" ] || runs='[]'
+
   gh pr view "$id" --json statusCheckRollup 2>/dev/null \
     | jq -c '.statusCheckRollup[]? | select(
           ((.conclusion // "") | ascii_downcase) as $c
@@ -377,13 +414,15 @@ gather_github() {
           web_url:(.detailsUrl // .targetUrl // "")
         }' 2>/dev/null | while IFS= read -r j; do
       [ -n "$j" ] || continue
-      local name fp
+      local name sigtext sig fp
       name="$(jq -r '.job_name' <<<"$j")"
-      # GitHub fingerprint = {forge, job, commit}; the error signature stays empty
-      # here (check logs are pulled by the assistant during attribution).
-      fp="$(printf '%s|%s|%s|%s' github "$name" "$head" "" | _sha1)"
-      add_item "$(jq -c --arg fp "$fp" --arg commit "$head" \
-        '{kind:"ci-job", source_id:.job_name, job_name:.job_name, status:.status, web_url:.web_url, fingerprint:$fp, signature:"", commit:$commit, is_bot:true}' <<<"$j")"
+      sigtext="$(jq -r --arg n "$name" '
+        [ .[] | select(.name==$n) | ((.output.title // "")+"\n"+(.output.summary // "")) ]
+        | first // ""' <<<"$runs" 2>/dev/null)"
+      sig="$(printf '%s' "$sigtext" | _text_sig)"
+      fp="$(printf '%s|%s|%s|%s' github "$name" "$head" "$sig" | _sha1)"
+      add_item "$(jq -c --arg fp "$fp" --arg sig "$sig" --arg commit "$head" \
+        '{kind:"ci-job", source_id:.job_name, job_name:.job_name, status:.status, web_url:.web_url, fingerprint:$fp, signature:$sig, commit:$commit, is_bot:true}' <<<"$j")"
     done
 }
 
