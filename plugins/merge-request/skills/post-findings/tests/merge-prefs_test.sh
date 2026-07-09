@@ -127,11 +127,21 @@ check "increment: count bumped in file" "grep -qF '\`style/x\` (count: 2)' '$NEW
 check "increment: original text kept"   "grep -qF 'don'\''t raise x' '$NEWP'"
 check "increment: no duplicate entry"   "[ \"\$(grep -cF '\`style/x\`' '$NEWP')\" = 1 ]"
 
-# Propose on an existing key reflects the count the confirmed write WOULD land.
+# Propose on an existing key reflects the count the confirmed write WOULD land,
+# AND previews the EXISTING text (the increment write keeps it) — not the passed
+# --text. The PROPOSED must be byte-identical to what --confirm lands.
 run bash "$MP" upsert --scope project --file "$NEWP" \
-  --section dont-raise --key "style/x" --text "x" --increment
+  --section dont-raise --key "style/x" --text "NEW TEXT IGNORED" --increment
 check "propose existing: reflects next count 3" "printf '%s' \"\$OUT\" | grep -q '^PROPOSED=- .style/x. (count: 3)'"
+check "propose existing: previews EXISTING text, not --text" "printf '%s' \"\$OUT\" | grep -qF \"(count: 3) — don't raise x\""
+check "propose existing: does NOT preview the passed --text" "! printf '%s' \"\$OUT\" | grep -qF 'NEW TEXT IGNORED'"
 check "propose existing: still no write (count stays 2)" "grep -qF '(count: 2)' '$NEWP'"
+# Prove the preview equals the eventual write: confirm now; the written ENTRY
+# carries the SAME count+text the propose previewed, and ignores the new --text.
+run bash "$MP" upsert --scope project --file "$NEWP" \
+  --section dont-raise --key "style/x" --text "NEW TEXT IGNORED" --increment --confirm
+check "confirm after propose: ENTRY has previewed count+text" "printf '%s' \"\$OUT\" | grep -qF \"ENTRY=\" && printf '%s' \"\$OUT\" | grep -qF \"(count: 3) — don't raise x\""
+check "confirm after propose: ignores the passed --text"      "! printf '%s' \"\$OUT\" | grep -qF 'NEW TEXT IGNORED'"
 
 # Scope the other way: write to GLOBAL, prove the project file is untouched.
 # shellcheck disable=SC2034

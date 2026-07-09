@@ -321,25 +321,41 @@ cmd_upsert() {
   [ -n "$text" ] || die "--text must not be empty" 2
 
   # Propose-only path: compute nothing on disk, print the proposal, write nothing.
+  # The PROPOSED entry MUST be byte-identical to what --confirm would land, so
+  # the user confirms exactly what gets written. For a Don't-raise --increment on
+  # an existing key the write keeps the EXISTING text and only bumps the count —
+  # so the preview must reuse that existing text, not the passed --text.
   if [ "$confirm" -ne 1 ]; then
     local proposed
     if [ "$section" = "dont-raise" ]; then
-      # Reflect the count the confirmed write WOULD land: existing+1, or 1 if new.
-      local cur=0
+      local cur=0 found=""
       if [ -f "$file" ]; then
-        cur="$(K="$key" awk '
-          BEGIN { k=ENVIRON["K"] }
+        found="$(K="$key" awk '
+          BEGIN { k=ENVIRON["K"]; SEP=" \xe2\x80\x94 " }
           $0 ~ /^- `/ {
-            s=substr($0,index($0,"`")+1); kk=substr(s,1,index(s,"`")-1)
-            if (kk==k && match($0,/\(count:[[:space:]]*[0-9]+\)/)) {
-              c=substr($0,RSTART,RLENGTH); gsub(/[^0-9]/,"",c); print c+0; exit
+            s=substr($0, index($0,"`")+1); if (index(s,"`")==0) next
+            kk=substr(s, 1, index(s,"`")-1)
+            if (kk==k) {
+              c=1
+              if (match($0, /\(count:[[:space:]]*[0-9]+\)/)) {
+                cc=substr($0, RSTART, RLENGTH); gsub(/[^0-9]/,"",cc); c=cc+0
+              }
+              p=index($0, SEP); t=(p>0) ? substr($0, p+length(SEP)) : ""
+              printf "%d\t%s", c, t; exit
             }
           }' "$file")"
-        [ -n "$cur" ] || cur=0
       fi
-      local nxt=1
-      [ "$increment" -eq 1 ] && [ "$cur" -gt 0 ] && nxt=$((cur+1))
-      proposed="- \`${key}\` (count: ${nxt}) — ${text}"
+      local nxt=1 ptext="$text"
+      if [ -n "$found" ]; then
+        cur="${found%%$'\t'*}"
+        # An existing key with --increment keeps its text and bumps the count;
+        # without --increment the write resets to count 1 with the new --text.
+        if [ "$increment" -eq 1 ]; then
+          nxt=$((cur+1))
+          ptext="${found#*$'\t'}"
+        fi
+      fi
+      proposed="- \`${key}\` (count: ${nxt}) — ${ptext}"
     else
       proposed="- \`${key}\` — ${text}"
     fi
