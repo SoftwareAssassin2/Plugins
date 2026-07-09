@@ -58,10 +58,12 @@ has zero entries — the marker and the section must agree.
 
 ## Section ownership map
 
-Exactly one owner per section. A skill edits only the section(s) it owns and
-leaves every other section byte-for-byte intact.
+Each section has an explicit set of allowed writers, and a skill edits only the
+section(s) it is allowed to write — leaving every other section byte-for-byte
+intact. Most sections have a single owner; **`## Declined` is the one shared,
+append-only section**, written by both `fix` (fn-10) and `post-findings` (fn-12).
 
-| Section        | Owner (skill)                    | Write mode                          | Contents                                             |
+| Section        | Allowed writer(s)                | Write mode                          | Contents                                             |
 |----------------|----------------------------------|-------------------------------------|------------------------------------------------------|
 | `## Intent`    | create (fn-9)                    | write once / preserve               | pre-MR intent + change scope                         |
 | `## Handled`   | fix (fn-10)                      | append-only ledger (JSONL)          | idempotency records (dedupe keys) for handled items  |
@@ -129,7 +131,9 @@ failure is visible to `post-findings`, which posts from `## Findings`, not from
 
 ## The invariant, restated
 
-- One owner per section; **edit only your section(s), preserve the rest.**
+- Explicit allowed writers per section; **edit only the section(s) you may write,
+  preserve the rest.** `## Declined` is the one shared append-only section (`fix`
+  + `post-findings`); every other section has a single owner.
 - `review` replaces `## Findings` + `## Build`, rewrites `merge-review-status`,
   re-stamps `Reviewed at commit`; never touches `## Intent`/`## Handled`/
   `## Declined`.
