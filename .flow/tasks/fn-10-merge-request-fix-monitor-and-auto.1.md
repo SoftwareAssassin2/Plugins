@@ -43,9 +43,8 @@ Build the monitoring core of `merge-request:fix`: required `<ID>`, a session-bou
 - [ ] Ambiguous items are asked once and recorded as `pending-user`; wakeups suppress re-asking until the user answers or the source changes.
 
 ## Done summary
-TBD
-
+Built the monitoring core of `/merge-request:fix` (fn-10.1): an assistant-executed `SKILL.md` (required `<ID>` no-op guard, detect-source-control hard-stop, `## Intent` reload, adaptive scheduled-wakeup poll loop with a stateless payload, CI attribution, pending-user handling, and the reported/non-actionable CI write-back) plus a deterministic `gather-feedback.sh` that fetches human + bot/AI comments, review threads (fully paginated, nested comments included), and failing CI (gh/glab), computes a stable per-item dedupe key (content_hash for thread/comment; logical fingerprint incl. normalized error signature for ci-job), diffs against the durable `## Handled` jsonl ledger, and is the canonical ledger writer. 46 mocked-forge tests; codex review SHIP.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: af21218, 5786c52, f429e25, 9d867f2
+- Tests: bash plugins/merge-request/skills/fix/tests/gather-feedback_test.sh (46 passed), bash plugins/merge-request/skills/create/tests/create_test.sh (31 passed, baseline unaffected), shellcheck -S warning plugins/merge-request/skills/fix/scripts/gather-feedback.sh (clean)
 - PRs:
