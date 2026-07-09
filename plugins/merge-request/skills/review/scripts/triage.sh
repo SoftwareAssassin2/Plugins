@@ -113,19 +113,32 @@ glab_repo_args=()
 
 # --- list candidate ids ----------------------------------------------------
 
+# list_ids — print the candidate PR/MR ids, one per line. A listing FAILURE is an
+# operational failure (`die`, exit 1) — NOT an empty result: swallowing it would
+# make an auth/network/API error look like "nothing open" and silently skip every
+# PR/MR. Only the per-PR metadata probe (resolve_meta) is allowed to degrade.
+# Must run in the CURRENT shell (redirected to a file, never `$(...)`) so `die`
+# exits the whole script rather than just a command-substitution subshell.
 list_ids() {
   if [ -n "$id" ]; then
     printf '%s\n' "$id"
     return 0
   fi
+  local out json
   case "$forge" in
     github)
       command -v gh >/dev/null 2>&1 || die "gh is required for GitHub but not installed"
-      gh pr list --state open --json number --jq '.[].number' 2>/dev/null || true
+      out="$(gh pr list --state open --json number --jq '.[].number' 2>/dev/null)" \
+        || die "could not list open PRs (gh pr list failed — check auth/network)"
+      [ -n "$out" ] && printf '%s\n' "$out"
       ;;
     gitlab)
       command -v glab >/dev/null 2>&1 || die "glab is required for GitLab but not installed"
-      glab mr list "${glab_repo_args[@]+"${glab_repo_args[@]}"}" --output json 2>/dev/null | jq -r '.[].iid' 2>/dev/null || true
+      json="$(glab mr list "${glab_repo_args[@]+"${glab_repo_args[@]}"}" --output json 2>/dev/null)" \
+        || die "could not list open MRs (glab mr list failed — check auth/network)"
+      out="$(printf '%s\n' "$json" | jq -r '.[].iid' 2>/dev/null)" \
+        || die "could not parse the open MR list from glab"
+      [ -n "$out" ] && printf '%s\n' "$out"
       ;;
   esac
 }
@@ -180,10 +193,14 @@ emit() {
       stash_file:$stash_file}'
 }
 
-ids="$(list_ids)"
+# Redirect (not `$(list_ids)`) so a `die` inside list_ids exits the whole script
+# instead of a command-substitution subshell that the parent would ignore.
+ids_tmp="$(mktemp "${TMPDIR:-/tmp}/mr-triage.XXXXXX")" || die "mktemp failed"
+trap 'rm -f "$ids_tmp"' EXIT
+list_ids > "$ids_tmp"
 
 results=()
-for one in $ids; do
+while IFS= read -r one; do
   case "$one" in ''|*[!0-9]*) continue ;; esac   # ignore any stray non-numeric token
   resolve_meta "$one"
 
@@ -213,7 +230,7 @@ for one in $ids; do
 
   results+=("$(emit "$one" "$title" "$web_url" "$current_sha" "$recorded_sha" \
                     "$action" "$head_ref" "$head_owner" "$head_repo" "$file")")
-done
+done < "$ids_tmp"
 
 if [ ${#results[@]} -eq 0 ]; then
   printf '[]\n'

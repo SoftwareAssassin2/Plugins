@@ -42,6 +42,7 @@ chmod +x "$BIN/git"
 cat > "$BIN/gh" <<'EOF'
 #!/usr/bin/env bash
 if [ "$1" = pr ] && [ "$2" = list ]; then
+  [ -n "${MOCK_LIST_FAIL:-}" ] && { echo "gh: auth error" >&2; exit 1; }
   for n in ${MOCK_LIST:-}; do echo "$n"; done
   exit 0
 fi
@@ -60,6 +61,7 @@ chmod +x "$BIN/gh"
 cat > "$BIN/glab" <<'EOF'
 #!/usr/bin/env bash
 if [ "$1" = mr ] && [ "$2" = list ]; then
+  [ -n "${MOCK_LIST_FAIL:-}" ] && { echo "glab: auth error" >&2; exit 1; }
   printf '['; first=1
   for n in ${MOCK_LIST:-}; do [ $first = 1 ] || printf ','; printf '{"iid":%s}' "$n"; first=0; done
   printf ']\n'; exit 0
@@ -147,6 +149,16 @@ export MOCK_LIST=""
 run_triage github
 check "empty batch: []" "[ \"$(len)\" = 0 ]" "$OUT"
 unset MOCK_LIST
+
+# 8b. batch listing FAILURE (auth/network) must be fatal, NOT an empty success —
+#     otherwise every PR/MR would be silently skipped.
+export MOCK_LIST_FAIL=1
+( PATH="$BIN:$PATH" MOCK_LIST_FAIL=1 bash "$TRIAGE" --forge github --data-dir "$DATA" ) >/dev/null 2>"$ROOT_TMP/err"; RC=$?
+check "list failure: exit 1"        "[ \"$RC\" = 1 ]" "$RC"
+check "list failure: names it"      "grep -qi 'could not list open PRs' '$ROOT_TMP/err'" "$(cat "$ROOT_TMP/err")"
+( PATH="$BIN:$PATH" MOCK_LIST_FAIL=1 bash "$TRIAGE" --forge gitlab --data-dir "$DATA" ) >/dev/null 2>"$ROOT_TMP/err"; RC=$?
+check "gitlab list failure: exit 1" "[ \"$RC\" = 1 ]" "$RC"
+unset MOCK_LIST_FAIL
 
 # 9. gitlab single-ID skip works via the glab metadata shape.
 cat > "$DATA/20.md" <<MD
