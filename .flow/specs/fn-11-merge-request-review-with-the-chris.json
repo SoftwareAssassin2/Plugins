@@ -1,6 +1,11 @@
 {
   "branch_name": "fn-11-merge-request-review-with-the-chris",
+  "completion_review_status": "ship",
+  "completion_reviewed_at": "2026-07-09T21:00:47.463035Z",
   "created_at": "2026-07-08T15:49:30.231500Z",
+  "default_impl": null,
+  "default_review": null,
+  "default_sync": null,
   "depends_on_epics": [
     "fn-8-detect-source-control-forge-githubgitlab"
   ],
@@ -22,5 +27,5 @@
     "mergeBaseTracker": null,
     "url": null
   },
-  "updated_at": "2026-07-08T20:54:00.527259Z"
+  "updated_at": "2026-07-09T21:00:47.463169Z"
 }
