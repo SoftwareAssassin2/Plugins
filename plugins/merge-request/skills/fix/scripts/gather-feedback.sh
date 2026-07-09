@@ -138,6 +138,33 @@ _text_sig() {
     | _sha1
 }
 
+# _gh_rest_comments <thread-node-id> <after-cursor> -> the bodies of a GitHub
+# review thread's comments PAST the first page, joined with the same separator
+# the inline body uses, so a thread with >100 replies is fully captured (its
+# content_hash then reflects every reply). Walks the nested comments connection
+# by node id until hasNextPage=false. Empty when there is nothing more.
+_gh_rest_comments() {
+  local tid="$1" cursor="$2" resp bodies="" hasnext
+  while [ -n "$cursor" ] && [ "$cursor" != "null" ]; do
+    resp="$(gh api graphql -F id="$tid" -F after="$cursor" -f query='
+      query($id:ID!,$after:String){
+        node(id:$id){ ... on PullRequestReviewThread {
+          comments(first:100, after:$after){
+            pageInfo{hasNextPage endCursor}
+            nodes{body}
+          }}}}' 2>/dev/null)" || break
+    [ -n "$resp" ] || break
+    bodies="${bodies}$(jq -r '.data.node.comments.nodes[]?.body' <<<"$resp" 2>/dev/null | sed 's/$/\'$'\n''---/')"
+    hasnext="$(jq -r '.data.node.comments.pageInfo.hasNextPage // false' <<<"$resp" 2>/dev/null)"
+    if [ "$hasnext" = "true" ]; then
+      cursor="$(jq -r '.data.node.comments.pageInfo.endCursor // ""' <<<"$resp" 2>/dev/null)"
+    else
+      cursor=""
+    fi
+  done
+  printf '%s' "$bodies"
+}
+
 # _is_bot <login> -> "true" if the account looks like a bot / AI reviewer.
 _is_bot() {
   case "$1" in
@@ -207,6 +234,9 @@ done
 
 command -v jq  >/dev/null 2>&1 || die "jq is required but not installed"
 [ -n "$id" ] || die "--id is required" 2
+# PR/MR ids are numeric. Enforce it so a malformed id (e.g. `../../etc`) can never
+# make `stash_path` escape the data dir when record/ledger write to it.
+case "$id" in ''|*[!0-9]*) die "--id must be a numeric PR/MR id (got '$id')" 2 ;; esac
 
 stash_path="${data_dir}/${id}.md"
 
@@ -349,8 +379,10 @@ gather_github() {
   # `--paginate` walks the reviewThreads connection via pageInfo/$endCursor so a
   # PR with >100 unresolved threads never silently drops feedback. gh emits one
   # JSON document per page; the jq filter runs across the concatenated stream.
-  # (Nested comments are capped at first:100 — a single thread with >100 replies
-  # is a bounded edge; its content_hash then omits the tail.)
+  # Nested comments are FULLY paginated too: the first page (with its pageInfo)
+  # comes back inline, and any thread reporting `has_more` gets its remaining
+  # replies fetched via _gh_rest_comments before the content_hash is computed, so
+  # an edited/new reply beyond the first 100 still re-surfaces the thread.
   local nwo owner repo
   nwo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
   owner="${nwo%%/*}"; repo="${nwo##*/}"
@@ -363,7 +395,10 @@ gather_github() {
               pageInfo{hasNextPage endCursor}
               nodes{
                 id isResolved
-                comments(first:100){nodes{author{login} body path line url}}
+                comments(first:100){
+                  pageInfo{hasNextPage endCursor}
+                  nodes{author{login} body path line url}
+                }
               }}
           }}}' 2>/dev/null \
       | jq -c --arg commit "$head" '.data.repository.pullRequest.reviewThreads.nodes[]?
@@ -376,16 +411,26 @@ gather_github() {
               line:(.comments.nodes[0].line // null),
               web_url:(.comments.nodes[0].url // ""),
               body:([.comments.nodes[].body] | join("\n---\n")),
+              has_more:(.comments.pageInfo.hasNextPage // false),
+              cursor:(.comments.pageInfo.endCursor // null),
               resolved:false,
               commit:$commit
             }' 2>/dev/null | while IFS= read -r t; do
         [ -n "$t" ] || continue
-        local body author ch bot
+        local body author ch bot tid more cursor
         body="$(jq -r '.body' <<<"$t")"
         author="$(jq -r '.author' <<<"$t")"
+        more="$(jq -r '.has_more' <<<"$t")"
+        if [ "$more" = "true" ]; then
+          tid="$(jq -r '.source_id' <<<"$t")"
+          cursor="$(jq -r '.cursor' <<<"$t")"
+          body="$body"$'\n---\n'"$(_gh_rest_comments "$tid" "$cursor")"
+        fi
         ch="$(printf '%s' "$body" | _sha1)"
         bot="$(_is_bot "$author")"
-        add_item "$(jq -c --arg ch "$ch" --argjson bot "$bot" '. + {content_hash:$ch, is_bot:$bot}' <<<"$t")"
+        # Drop the pagination scaffolding from the emitted item; carry the FULL body.
+        add_item "$(jq -c --arg ch "$ch" --arg body "$body" --argjson bot "$bot" \
+          'del(.has_more,.cursor) + {content_hash:$ch, is_bot:$bot, body:$body}' <<<"$t")"
       done
   fi
 

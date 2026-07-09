@@ -67,13 +67,22 @@ if [[ "$args" == *"check-runs"* ]]; then
     '{name:"unit-tests", conclusion:"failure", output:{title:"tests failed", summary:$s}}'
   exit 0
 fi
-if [[ "$args" == *"api graphql"* ]]; then
-  echo '{"data":{"repository":{"pullRequest":{"reviewThreads":{
-    "pageInfo":{"hasNextPage":false,"endCursor":null},
-    "nodes":[
-      {"id":"RT_1","isResolved":false,"comments":{"nodes":[{"author":{"login":"bob"},"body":"extract this into a helper","path":"src/a.ts","line":12,"url":"http://x/t1"}]}},
-      {"id":"RT_2","isResolved":true,"comments":{"nodes":[{"author":{"login":"bob"},"body":"done already","path":"src/b.ts","line":3,"url":"http://x/t2"}]}}
-  ]}}}}}'
+if [[ "$args" == *"api graphql"* && "$args" == *"on PullRequestReviewThread"* ]]; then
+  # Nested node query: the REST of a thread's comments past the first page.
+  echo '{"data":{"node":{"comments":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"body":"and please add a test for the edge case"}]}}}}'
+  exit 0
+fi
+if [[ "$args" == *"api graphql"* && "$args" == *"reviewThreads"* ]]; then
+  hn=false; ec=null
+  if [ -n "${MOCK_THREAD_MORE:-}" ]; then hn=true; ec='"C1"'; fi
+  cat <<JSON
+{"data":{"repository":{"pullRequest":{"reviewThreads":{
+  "pageInfo":{"hasNextPage":false,"endCursor":null},
+  "nodes":[
+    {"id":"RT_1","isResolved":false,"comments":{"pageInfo":{"hasNextPage":$hn,"endCursor":$ec},"nodes":[{"author":{"login":"bob"},"body":"extract this into a helper","path":"src/a.ts","line":12,"url":"http://x/t1"}]}},
+    {"id":"RT_2","isResolved":true,"comments":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"author":{"login":"bob"},"body":"done already","path":"src/b.ts","line":3,"url":"http://x/t2"}]}}
+]}}}}}
+JSON
   exit 0
 fi
 exit 0
@@ -118,6 +127,10 @@ run; check "no subcommand: exit 2" "[ \"$RC\" = 2 ]" "$RC"
 run bogus --id 1; check "bad subcommand: exit 2" "[ \"$RC\" = 2 ]" "$RC"
 run gather --forge github; check "gather without --id: exit 2" "[ \"$RC\" = 2 ]" "$RC"
 run gather --id 1 --forge bitbucket; check "gather bad forge: exit 2" "[ \"$RC\" = 2 ]" "$RC"
+# path-traversal guard: a non-numeric id is rejected before any stash path is built.
+run record --id '../../evil' --kind ci-job --decision reported --fingerprint z
+check "record non-numeric id: exit 2" "[ \"$RC\" = 2 ]" "$RC"
+check "record non-numeric id: message" "printf '%s' \"$ERR\" | grep -qi 'numeric'"
 
 # --- github: first fetch on an empty ledger --------------------------------
 D1="$ROOT_TMP/d1"; mkdir -p "$D1"
@@ -175,6 +188,14 @@ MOCK_COMMENT_BODY="please rename foo to baz (edited)" run gather --forge github 
 check "edited comment: IC_1 re-surfaces with new body" \
   "PATH=\"$BIN:$PATH\" MOCK_COMMENT_BODY='rename foo to baz (edited)' bash '$GATHER' gather --forge github --id 77 --data-dir '$D1' | grep '^{' | jq -e 'select(.source_id==\"IC_1\" and (.body|test(\"baz\")))' >/dev/null"
 
+# --- nested comment pagination: a thread with >100 replies pulls the rest ---
+# (jq a file, not "$OUT" in eval — multiline JSON would break the eval quoting.)
+DN="$ROOT_TMP/dnest"; mkdir -p "$DN"
+PATH="$BIN:$PATH" MOCK_THREAD_MORE=1 bash "$GATHER" gather --forge github --id 77 --data-dir "$DN" 2>/dev/null \
+  | grep '^{' > "$ROOT_TMP/nested.jsonl"
+check "nested pages: RT_1 body includes the paginated reply" \
+  "jq -e 'select(.source_id==\"RT_1\") | (.body|test(\"add a test for the edge case\"))' '$ROOT_TMP/nested.jsonl' >/dev/null"
+
 # --- record validation -----------------------------------------------------
 run record --id 77 --data-dir "$D1" --kind ci-job --decision non-actionable
 check "record ci without fingerprint: exit 2" "[ \"$RC\" = 2 ]" "$RC"
@@ -191,9 +212,8 @@ check "ledger: has the ci-job record" "jq -e 'select(.kind==\"ci-job\" and .deci
 check "ledger: has the pending-user record" "jq -e 'select(.decision==\"pending-user\")' '$ROOT_TMP/ledger.jsonl' >/dev/null"
 
 # --- terminal state stops the loop (closed) --------------------------------
-MOCK_STATE=CLOSED run gather --forge github --id 77 --data-dir "$D1"
-check "closed PR: MR_STATE closed" \
-  "PATH=\"$BIN:$PATH\" MOCK_STATE=CLOSED bash '$GATHER' gather --forge github --id 77 --data-dir '$D1' | grep -q '^MR_STATE=closed'"
+PATH="$BIN:$PATH" MOCK_STATE=CLOSED bash "$GATHER" gather --forge github --id 77 --data-dir "$D1" >"$ROOT_TMP/closed.out" 2>/dev/null
+check "closed PR: MR_STATE closed" "grep -q '^MR_STATE=closed' '$ROOT_TMP/closed.out'"
 
 # --- gitlab: discussions + attributable CI ---------------------------------
 D2="$ROOT_TMP/d2"; mkdir -p "$D2"
