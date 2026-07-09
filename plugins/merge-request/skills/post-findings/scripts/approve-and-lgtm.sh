@@ -19,23 +19,32 @@
 # carries findings + the `findings` marker, so this guard refuses it. Approval is
 # never a side effect of "nothing got posted".
 #
-# The note is exactly `Looks good.` The --message override exists ONLY for tests;
-# production callers pass nothing and get the canonical wording.
+# The note is exactly `Looks good.` — hardcoded, NOT overridable. Since every
+# approval write goes through this one script, the exact wording is an invariant
+# enforced here, not a convention callers must remember.
+#
+# Failure-safety (no approval ever lands without its note):
+#   * GitHub — approval and note are ONE atomic call: `gh pr review --approve
+#     --body "Looks good."`. The note IS the approving review's body, so there is
+#     no window where the PR is approved but the note is missing.
+#   * GitLab — approval and the note are two separate API calls (glab has no
+#     atomic form). We post the note FIRST, then approve. So a failure can at
+#     worst leave a stray `Looks good.` note on an already-clean MR (harmless and
+#     accurate) — it can NEVER leave a formal approval without the note.
 #
 # Usage:
-#   approve-and-lgtm.sh --forge <github|gitlab> --id <ID> --artifact <path> \
-#                       [--message <text>]     # default: "Looks good."
+#   approve-and-lgtm.sh --forge <github|gitlab> --id <ID> --artifact <path>
 #
 # Machine-readable stdout:
 #   APPROVED=1
-#   NOTE=<the exact note posted>
+#   NOTE=Looks good.
 #
 # Exit codes:
 #   0  approved and the note posted.
 #   2  usage / bad arguments (nothing was changed).
 #   1  NOT clean (guard refused), or an operational failure (missing CLI, forge
-#      rejected the approval/note). In every non-zero case NOTHING is approved
-#      and NOTHING is posted.
+#      rejected the approval/note). On any failure the MR/PR is NOT left formally
+#      approved (GitHub: atomic; GitLab: note precedes approval).
 #
 # Env:
 #   GITLAB_REPO=group/project   Set when glab can't infer the project from the remote.
@@ -55,14 +64,14 @@ die()  { printf '%s: %s\n' "$PROG" "$*" >&2; exit "${2:-1}"; }
 forge=""
 id=""
 artifact=""
-message="Looks good."
+# The clean-path note wording is an invariant, not a caller choice.
+readonly MESSAGE="Looks good."
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --forge)    forge="${2:-}"; shift 2 || die "usage: --forge needs a value" 2 ;;
     --id)       id="${2:-}"; shift 2 || die "usage: --id needs a value" 2 ;;
     --artifact) artifact="${2:-}"; shift 2 || die "usage: --artifact needs a value" 2 ;;
-    --message)  message="${2-}"; shift 2 || die "usage: --message needs a value" 2 ;;
     -h|--help)  grep -E '^#( |$)' "$0" | sed -E 's/^# ?//'; exit 0 ;;
     *) die "unknown argument: $1" 2 ;;
   esac
@@ -77,7 +86,6 @@ esac
 case "$id" in ''|*[!0-9]*) die "--id must be a numeric PR/MR id (got '$id')" 2 ;; esac
 [ -n "$artifact" ] || die "--artifact is required (the staged .data/merge/<ID>.md)" 2
 [ -f "$artifact" ] || die "artifact '$artifact' does not exist — refusing to approve without proof of a clean review" 1
-[ -n "$message" ] || die "--message must not be empty" 2
 
 # --- clean guard: BOTH the clean marker AND a zero-entry ## Findings --------
 
@@ -106,22 +114,24 @@ fi
 
 if [ "$forge" = "github" ]; then
   command -v gh >/dev/null 2>&1 || die "gh is required for a github forge but not installed"
-  if ! err="$(gh pr review "$id" --approve 2>&1 >/dev/null)"; then
+  # Atomic: the approving review CARRIES the note as its body, so approval and
+  # `Looks good.` land together or not at all — no partial state.
+  if ! err="$(gh pr review "$id" --approve --body "$MESSAGE" 2>&1 >/dev/null)"; then
     die "failed to approve PR $id: $err (already approved, or your role can't approve it?)" 1
-  fi
-  if ! err="$(gh pr comment "$id" --body "$message" 2>&1 >/dev/null)"; then
-    die "approved PR $id, but failed to post the \"$message\" comment: $err" 1
   fi
 else
   command -v glab >/dev/null 2>&1 || die "glab is required for a gitlab forge but not installed"
   if [ -n "${GITLAB_REPO:-}" ]; then proj="${GITLAB_REPO//\//%2F}"; else proj=":id"; fi
-  if ! err="$(glab mr approve "$id" 2>&1 >/dev/null)"; then
-    die "failed to approve MR $id: $err (already approved, or your role can't approve it?)" 1
+  # glab has no atomic approve+note, so post the note FIRST: a failure here means
+  # the MR is NOT approved. Only after the note lands do we cast the approval, so
+  # an approval can never exist without its note (at worst a stray note remains).
+  if ! err="$(glab api "projects/$proj/merge_requests/$id/notes" --method POST -f "body=$MESSAGE" 2>&1 >/dev/null)"; then
+    die "failed to post the \"$MESSAGE\" note on MR $id: $err — MR was NOT approved" 1
   fi
-  if ! err="$(glab api "projects/$proj/merge_requests/$id/notes" --method POST -f "body=$message" 2>&1 >/dev/null)"; then
-    die "approved MR $id, but failed to post the \"$message\" note: $err" 1
+  if ! err="$(glab mr approve "$id" 2>&1 >/dev/null)"; then
+    die "posted the \"$MESSAGE\" note but FAILED to approve MR $id: $err (already approved, or your role can't approve it?)" 1
   fi
 fi
 
 printf 'APPROVED=1\n'
-printf 'NOTE=%s\n' "$message"
+printf 'NOTE=%s\n' "$MESSAGE"

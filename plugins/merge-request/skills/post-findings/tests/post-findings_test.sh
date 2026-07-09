@@ -259,23 +259,37 @@ EOF
 }
 
 # 10. Clean (marker + zero findings) → approve + EXACTLY "Looks good." (GitHub).
+#     The note is the approving review's body — ONE atomic gh call, no partial state.
 CLEAN="$ROOT_TMP/90.md"; mk_clean "$CLEAN"
 LOG="$ROOT_TMP/log10"
 run "$LOG" -- bash "$APPROVE" --forge github --id 90 --artifact "$CLEAN"
 check "clean gh: exit 0"            "[ \"$RC\" = 0 ]" "$RC"
 check "clean gh: approved"          "grep -q 'ARG --approve' '$LOG'"
 check "clean gh: note is exactly Looks good." "grep -qxF 'ARG Looks good.' '$LOG'"
+check "clean gh: note carried by the approve call" "grep -q 'ARG --body' '$LOG'"
 check "clean gh: APPROVED=1"        "printf '%s' \"$OUT\" | grep -q '^APPROVED=1$'"
-check "clean gh: no extra note"     "[ \"\$(grep -c 'CMD gh' '$LOG')\" = 2 ]"
+check "clean gh: single atomic gh call" "[ \"\$(grep -c 'CMD gh' '$LOG')\" = 1 ]"
 
-# 11. Clean (GitLab) → glab mr approve + note exactly "Looks good."
+# 11. Clean (GitLab) → note posted FIRST, then glab mr approve; note exactly "Looks good."
 CLEANL="$ROOT_TMP/90l.md"; mk_clean "$CLEANL"
-# switch forge field for realism (guard reads marker, not forge)
 LOG="$ROOT_TMP/log11"
 run "$LOG" -- bash "$APPROVE" --forge gitlab --id 90 --artifact "$CLEANL"
 check "clean glab: exit 0"          "[ \"$RC\" = 0 ]" "$RC"
 check "clean glab: mr approve"      "grep -q 'ARG approve' '$LOG'"
 check "clean glab: note body"       "grep -qxF 'ARG body=Looks good.' '$LOG'"
+# Failure-safety: the note must precede the approval, so a failed approve can
+# never leave an MR approved without its note.
+check "clean glab: note precedes approve" \
+  "[ \"\$(grep -n 'merge_requests/90/notes' '$LOG' | head -1 | cut -d: -f1)\" -lt \"\$(grep -n 'CMD glab' '$LOG' | tail -1 | cut -d: -f1)\" ]"
+
+# 11b. GitLab note fails → MR is NOT approved (note-first ordering).
+CLEANL2="$ROOT_TMP/90l2.md"; mk_clean "$CLEANL2"
+LOG="$ROOT_TMP/log11b"
+MOCK_POST_FAIL=1 run "$LOG" -- bash "$APPROVE" --forge gitlab --id 90 --artifact "$CLEANL2"
+unset MOCK_POST_FAIL
+check "glab note-fail: exit 1"        "[ \"$RC\" = 1 ]" "$RC"
+check "glab note-fail: not approved"  "! grep -q 'ARG approve' '$LOG'"
+check "glab note-fail: says not approved" "printf '%s' \"$ERR\" | grep -qi 'NOT approved'"
 
 # 12. Marker present but FINDINGS staged → refuse, approve nothing.
 ART3="$ROOT_TMP/hasfind.md"; mk_artifact "$ART3"
