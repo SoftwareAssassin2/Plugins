@@ -39,9 +39,8 @@ Scaffold the second plugin **shell** and register both plugins so the package in
 - [ ] The `supported=false` hard-stop contract is documented as the shared reference the four skills follow (documentation only in this task; per-skill enforcement lands in fn-9..fn-12).
 
 ## Done summary
-TBD
-
+Created the merge-request plugin shell (plugin.json name `merge-request`, structured for the skills/ subdir), registered both detect-source-control and merge-request in .claude-plugin/marketplace.json (local-source shape), and documented the shared supported=false hard-stop contract in plugins/merge-request/README.md. The hand-authored SOUL.md was left byte-for-byte intact.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: c649046260d7337d73d9eec75d1b538476268cd8
+- Tests: python3 -m json.tool .claude-plugin/marketplace.json (valid), python3 -m json.tool plugins/merge-request/.claude-plugin/plugin.json (valid), md5 plugins/merge-request/SOUL.md == e4dd396e6aa99e6fbce5003f8572da53 (byte-for-byte preserved)
 - PRs:
