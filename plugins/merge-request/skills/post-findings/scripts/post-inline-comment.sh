@@ -57,7 +57,7 @@
 #   GITLAB_REPO=group/project   Set when glab can't infer the project from the
 #                               git remote (mirrors the other merge-request scripts).
 #
-# Requires: gh (github) or glab (gitlab); jq + sha1sum for the gitlab inline path.
+# Requires: gh (github) or glab (gitlab); jq + sha1sum-or-shasum for the gitlab inline path.
 #
 # NOTE: strictly `set -uo pipefail` (no `-e`) — every failure is handled
 # explicitly via `die` so the machine-readable trailer stays exact.
@@ -218,6 +218,15 @@ post_github_general() {
 # ---------------------------------------------------------------------------
 gl_proj() { if [ -n "${GITLAB_REPO:-}" ]; then printf '%s' "${GITLAB_REPO//\//%2F}"; else printf ':id'; fi; }
 
+# sha1 <string> -> its SHA-1 hex. Prefers sha1sum (Linux) and falls back to
+# shasum (default macOS, SHA-1 by default) — the same portability shim the
+# review engine uses for the F-<hash> id.
+sha1() {
+  if command -v sha1sum >/dev/null 2>&1; then printf '%s' "$1" | sha1sum | cut -d' ' -f1
+  else printf '%s' "$1" | shasum | cut -d' ' -f1
+  fi
+}
+
 post_gitlab_inline() {
   # GitLab discussion "position" needs the diff SHAs the finding was resolved
   # against: base + start + head. start defaults to base when the review didn't
@@ -228,7 +237,7 @@ post_gitlab_inline() {
   opath="${old_path:-$file}"
   st="${start_sha:-$base_sha}"
   # GitLab line_code = SHA1(path) + "_" + <old-line-or-0> + "_" + <new-line>.
-  sha1="$(printf '%s' "$new_path" | sha1sum | cut -d' ' -f1)"
+  sha1="$(sha1 "$new_path")"
 
   local fields=(
     -f "body=$body"
@@ -288,7 +297,8 @@ else
   command -v glab >/dev/null 2>&1 || die "glab is required for a gitlab forge but not installed"
   if [ "$want_inline" -eq 1 ]; then
     command -v jq >/dev/null 2>&1 || die "jq is required for the gitlab inline path"
-    command -v sha1sum >/dev/null 2>&1 || die "sha1sum is required for the gitlab inline path"
+    command -v sha1sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 \
+      || die "sha1sum or shasum is required for the gitlab inline path"
     post_gitlab_inline; posted_mode="inline"
   else
     post_gitlab_general; posted_mode="general"

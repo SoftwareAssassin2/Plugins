@@ -140,7 +140,9 @@ check "gh post fail: no RESTAGED line" "! printf '%s' \"$OUT\" | grep -q 'RESTAG
 
 # 6. GitLab inline — discussion with the base/start/head SHA position triple.
 LOG="$ROOT_TMP/log6"
-if command -v jq >/dev/null 2>&1 && command -v sha1sum >/dev/null 2>&1; then
+# The gitlab inline path needs jq plus a SHA-1 tool; sha1sum (Linux) OR shasum
+# (default macOS) satisfies it, so this must NOT skip on a shasum-only host.
+if command -v jq >/dev/null 2>&1 && { command -v sha1sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1; }; then
   run "$LOG" -- bash "$POST" --forge gitlab --id 88 \
     --file src/app.ts --line 42 --head-sha hhh --base-sha bbb --body "$BODY"
   check "glab inline: exit 0"            "[ \"$RC\" = 0 ]" "$RC"
@@ -151,7 +153,7 @@ if command -v jq >/dev/null 2>&1 && command -v sha1sum >/dev/null 2>&1; then
   check "glab inline: new_line"          "grep -qF 'ARG position[new_line]=42' '$LOG'"
   check "glab inline: body verbatim"     "grep -qF 'ARG body=$BODY' '$LOG'"
 else
-  echo "  skip - glab inline path (jq/sha1sum unavailable)"
+  echo "  skip - glab inline path (jq or sha1sum/shasum unavailable)"
 fi
 
 # 7. GitLab missing base_sha → general note fallback with exact body.
