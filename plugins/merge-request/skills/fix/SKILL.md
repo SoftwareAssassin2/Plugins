@@ -19,12 +19,11 @@ records — lives in `scripts/gather-feedback.sh`. The poll loop itself is *your
 continuation driven by the harness `ScheduleWakeup` tool; a script cannot
 schedule its own next wake.
 
-> **Scope note (fn-10.1):** this file delivers the **monitoring core** — the
-> `<ID>` gate, the wakeup loop, intent reload, feedback gathering + dedupe, CI
-> attribution, and the reported/non-actionable CI write-back. The
-> **decide-and-apply** behaviour (implement criteria, spec guardrail,
-> test-before-push, `Fixed`+resolve, `## Declined`) is added by **fn-10.2** and
-> plugs in at Step 5.
+> **Scope note:** the **monitoring core** (fn-10.1) is the `<ID>` gate, the
+> wakeup loop, intent reload, feedback gathering + dedupe, CI attribution, and
+> the reported/non-actionable CI write-back (Steps 0–4, 6, 7). The
+> **decide-and-apply** loop (fn-10.2) — implement criteria, the spec guardrail,
+> test-before-push, `Fixed`+resolve, and `## Declined` — is **Step 5** below.
 
 ## Step 0 — require the `<ID>` argument
 
@@ -64,12 +63,12 @@ session — load it so your later judgement is anchored to what the change was
   use it as the primary intent.
 - If it is **absent or a placeholder**, fall back to the change scope: the
   flow-next epic when one is discoverable, plus the PR/MR title/body and the
-  branch diff (`## Change scope` is already stashed in the file). fn-10.2 formalises
-  this cumulative-guardrail resolution; for the core, just make sure you have the
-  best-available intent loaded before acting.
+  branch diff (`## Change scope` is already stashed in the file). Just make sure
+  you have the best-available intent loaded before acting.
 
-(The full three-layer spec guardrail — Intent + PR/MR body + linked `.flow`
-specs + branch diff, asking on conflict — is a **fn-10.2** concern.)
+(The full **cumulative** spec guardrail — Intent + PR/MR body + linked `.flow`
+specs + branch diff, asking on conflict — is assembled in **Step 5a** before you
+decide anything.)
 
 ## Step 3 — gather feedback and dedupe against the ledger
 
@@ -145,17 +144,140 @@ The `--fingerprint` **must** be the item's own `fingerprint` (that is the CI
 dedupe key). Only the **MR-attributable** failures go on to Step 5; fn-10.2 writes
 their terminal `## Handled` records when it implements or declines them.
 
-## Step 5 — hand the actionable, MR-attributable items downstream
+## Step 5 — decide and apply (the fn-10.2 loop)
 
-Pass the remaining unseen items — human comments, bot/AI comments, and
-**MR-attributable** CI failures — to the **decide-and-apply loop (fn-10.2)**:
-decide per the implement criteria against the spec guardrail and the repo's
-published standards, implement worthy ones (tests first), post `Fixed` + resolve,
-record declined items, and write each item's terminal `## Handled` record.
+You now hold the unseen items Step 3/4 handed you: human comments, bot/AI
+comments, and **MR-attributable** CI failures. For each one, decide whether it
+warrants a change, implement the worthy ones (tests first), acknowledge +
+resolve, record the declined ones, and write a terminal `## Handled` record.
+**Every** item you touch here ends with exactly one `## Handled` record written
+through `gather-feedback.sh record` — never hand-edit the ledger.
 
-Until fn-10.2 lands, the core still does the right thing: it has already gathered,
-deduped, attributed, and recorded the non-actionable CI items — so re-running is
-idempotent and no feedback is lost.
+### Step 5a — assemble the spec guardrail (cumulative, not a chain)
+
+Before judging anything, load **all** available guardrail sources and treat them
+together — none replaces another:
+
+1. `## Intent` in `.data/merge/<ID>.md` (loaded in Step 2) — the author's pre-MR intent.
+2. The **PR/MR title and body** (`gh pr view <ID>` / `glab mr view <ID>`).
+3. Any **linked `.flow/specs`/tasks** discoverable by id in the branch name, the
+   PR/MR body, or commit messages (e.g. `fn-10`, `fn-10.2`) — read the epic/task
+   with `flowctl cat <id>` when one is discoverable.
+4. The **branch diff / commit range** `<default>..HEAD` (the `## Change scope`
+   stash already holds this) — it describes *scope* only.
+
+The diff **never overrides a discoverable epic**: it tells you what this change
+touches, not what the change is allowed to be. When the sources **conflict or are
+incomplete** — or when a feedback item's spec-impact is genuinely ambiguous —
+**ask the user once** and record `pending-user` (Step 6) rather than guessing.
+
+### Step 5b — resolve the repo's published standards
+
+Read the repo's technical standards in this precedence: **`CLAUDE.md` /
+`AGENTS.md` first, then `docs/`.** These are what "consistent with repo
+standards" (criterion 2 below) is measured against. Absence of any standard is
+not license to invent one — fall back to the surrounding code's conventions.
+
+### Step 5c — the three-criteria implement decision
+
+Implement a feedback item **only when all three hold**:
+
+1. **It does not change the spec** — the change stays inside the Step-5a
+   guardrail (fixes/clarifies the existing scope; never adds or redefines it).
+2. **It is consistent with the repo's published standards** (Step 5b).
+3. **It flags a legitimate shortcoming** in the MR/PR code (a real bug, gap, or
+   quality issue — not taste/preference, not already-correct code).
+
+Outcomes:
+
+- **All three hold → implement** (Step 5d), then acknowledge + record (Step 5e).
+- **Any one fails → decline** (Step 5f).
+- **Spec-impact ambiguous** (you cannot tell whether it would change the spec) →
+  **ask once**, record `pending-user` (Step 6); do not implement or decline yet.
+
+### Step 5d — implement, then the test-before-push gate
+
+For each worthy item, make the change following the surrounding code + Step-5b
+standards. Then, **before committing**:
+
+1. **Discover the test command** — in this order: `CLAUDE.md`/`AGENTS.md`,
+   package scripts (`package.json`, `pyproject.toml`, …), a `Makefile`/`justfile`
+   target, or the CI config. Run the **relevant** automated tests for what you
+   changed.
+2. **Commit + push only on pass.** On a green run, commit the change and push to
+   the PR/MR branch. Capture the commit SHA — you record it in Step 5e.
+3. **No test command found → BLOCKER, not a warning.** Stop, tell the user no
+   automated test command could be found, and do **not** commit or push without
+   their explicit approval — never an untested push. Record the item as
+   `pending-user` with rationale `"no automated test command found"` (via the
+   Step 6 command) so wakeups stop re-processing it until the user answers or the
+   source changes.
+4. **Tests fail** → the change isn't ready: fix it and re-run, or (if the item
+   can't be satisfied within the guardrail) decline it (Step 5f). Never push red.
+
+### Step 5e — acknowledge, resolve, and record an implemented item
+
+Once the change is committed + pushed, post exactly `Fixed` and resolve the
+originating thread through the forge-specific helper:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/skills/fix/scripts/reply-resolve.sh" \
+  --forge <github|gitlab> --id <ID> \
+  --kind <thread|comment> --source-id <item.source_id>
+```
+
+- `kind=thread` → it replies `Fixed` **and** resolves (GitLab resolve-discussion /
+  GitHub `resolveReviewThread`). A `RESOLVED=0` in its output / a non-zero exit
+  means the thread stayed open — surface it.
+- `kind=comment` → non-resolvable plain comment: it posts `Fixed` as a general
+  note and reports `RESOLVED=skipped` (the documented fallback).
+- **`kind=ci-job` has no thread** — do **not** call `reply-resolve.sh`; the pushed
+  commit *is* the acknowledgement. Go straight to the ledger record.
+
+Then write the terminal `## Handled` record — carrying the item's dedupe key
+**unchanged** from the gather JSONL (`--content-hash` + `--source-id` for
+thread/comment, `--fingerprint` for ci-job):
+
+```bash
+# thread / comment:
+bash "${CLAUDE_PLUGIN_ROOT}/skills/fix/scripts/gather-feedback.sh" record \
+  --id <ID> --kind <thread|comment> --decision implemented \
+  --source-id <item.source_id> --content-hash <item.content_hash> \
+  --commit <commit-sha>
+
+# ci-job:
+bash "${CLAUDE_PLUGIN_ROOT}/skills/fix/scripts/gather-feedback.sh" record \
+  --id <ID> --kind ci-job --decision implemented \
+  --fingerprint <item.fingerprint> --commit <commit-sha>
+```
+
+### Step 5f — record a declined item
+
+When an item fails any of the three criteria, **do not change code**. Append the
+item and a short rationale to the `## Declined` section of `.data/merge/<ID>.md`
+(create the heading if absent; it is append-only prose), e.g.:
+
+```markdown
+## Declined
+
+- **<thread/comment/CI ref>** — <one-line why>: <declined because it would change
+  the spec / conflicts with <standard> / isn't a legitimate shortcoming>.
+```
+
+Then write the terminal `## Handled` record with `--decision declined` and the
+rationale, carrying the same per-kind dedupe key:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/skills/fix/scripts/gather-feedback.sh" record \
+  --id <ID> --kind <thread|comment> --decision declined \
+  --source-id <item.source_id> --content-hash <item.content_hash> \
+  --rationale "<why it was declined>"
+# (ci-job declines use --fingerprint <item.fingerprint> instead of --source-id/--content-hash)
+```
+
+The `## Declined` prose is the human-readable record (per the user's request);
+the `## Handled` record is the machine dedupe key so the next wakeup never
+re-surfaces the same declined item.
 
 ## Step 6 — ambiguous items: ask once, record `pending-user`
 
