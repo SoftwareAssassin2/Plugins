@@ -7,7 +7,7 @@
     "enabled": true
   },
   "review": {
-    "backend": null
+    "backend": "codex"
   },
   "scouts": {
     "github": false
