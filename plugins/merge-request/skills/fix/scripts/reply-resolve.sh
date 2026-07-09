@@ -54,7 +54,7 @@
 #                               from the remote (mirrors the other merge-request
 #                               scripts / the gitlab-mr-* skills).
 #
-# Requires: jq; gh (github) or glab (gitlab).
+# Requires: gh (github) or glab (gitlab).
 #
 # NOTE: strictly `set -uo pipefail` (no `-e`) — every failure is handled
 # explicitly via `die` so the machine-readable trailer semantics stay exact
@@ -104,8 +104,6 @@ esac
 case "$id" in ''|*[!0-9]*) die "--id must be a numeric PR/MR id (got '$id')" 2 ;; esac
 [ -n "$source_id" ] || die "--source-id is required" 2
 [ -n "$message" ] || die "--message must not be empty" 2
-
-command -v jq >/dev/null 2>&1 || die "jq is required but not installed"
 
 reply_posted=0
 resolved="skipped"
