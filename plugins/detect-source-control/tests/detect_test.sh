@@ -243,11 +243,18 @@ check "no remote: supported false"   '[ "$(val supported)" = false ]'
 check "no remote: exit 0"            '[ "$RC" = 0 ]'
 assert_block "no remote"
 
-# 16. bitbucket remote -> unsupported (host substring never matches)
+# 16. bitbucket remote -> unsupported (host substring never matches), but the
+#     parsed host is preserved (host=unknown is only for un-parseable/no remote).
 REPO="$(new_repo)"; BIN="$ROOT_TMP/bin16"; make_bin "$BIN"
 ( cd "$REPO" && git remote add origin git@bitbucket.org:o/r.git ) >/dev/null 2>&1
 run_detect "$REPO" "$BIN"
 check "bitbucket: forge unsupported" '[ "$(val forge)" = unsupported ]'
+check "bitbucket: host preserved"    '[ "$(val host)" = bitbucket.org ]'
+
+# 16b. no-remote unsupported still reports host=unknown (nothing parseable).
+REPO="$(new_repo)"; BIN="$ROOT_TMP/bin16b"; make_bin "$BIN"
+run_detect "$REPO" "$BIN"
+check "no-remote: host unknown"      '[ "$(val host)" = unknown ]'
 
 # 17. operational error: not a git repo -> non-zero, no block
 NOGIT="$(mktemp -d "$ROOT_TMP/nogit.XXXXXX")"; BIN="$ROOT_TMP/bin17"; make_bin "$BIN"

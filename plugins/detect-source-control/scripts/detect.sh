@@ -118,6 +118,11 @@ main() {
     [ -z "$url" ] && continue
     h="$(normalize_host "$url")"
     [ -z "$h" ] && continue
+    # Preserve the first parseable host (precedence-major). host=unknown is
+    # reserved for "no remote host could be parsed"; an unsupported-but-parseable
+    # remote (e.g. bitbucket.org) must still report its host so the hard-stop
+    # message can name it. A confident remote below overrides with its own host.
+    [ "$host" = "unknown" ] && host="$h"
     f="$(classify_host "$h")"
     if [ -n "$f" ]; then
       forge="$f"
