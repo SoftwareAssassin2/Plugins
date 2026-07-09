@@ -87,6 +87,15 @@ command -v jq  >/dev/null 2>&1 || die "jq is required but not installed"
 command -v git >/dev/null 2>&1 || die "git is not installed"
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "not inside a git repository"
 
+# The forge CLI is a hard dependency in BOTH single-ID and batch scope — enforce
+# it once, up front, so a missing CLI is an operational failure (`die`) rather
+# than degrading resolve_meta to empty metadata and silently skipping the
+# fetch-head-SHA-before-checkout gate.
+case "$forge" in
+  github) command -v gh   >/dev/null 2>&1 || die "gh is required for GitHub but not installed" ;;
+  gitlab) command -v glab >/dev/null 2>&1 || die "glab is required for GitLab but not installed" ;;
+esac
+
 # A single-ID scope must be a numeric PR/MR id — so a malformed id (e.g.
 # `../../etc`) can never make `stash_file` escape the data dir.
 if [ -n "$id" ]; then
@@ -127,13 +136,11 @@ list_ids() {
   local out json
   case "$forge" in
     github)
-      command -v gh >/dev/null 2>&1 || die "gh is required for GitHub but not installed"
       out="$(gh pr list --state open --json number --jq '.[].number' 2>/dev/null)" \
         || die "could not list open PRs (gh pr list failed — check auth/network)"
       [ -n "$out" ] && printf '%s\n' "$out"
       ;;
     gitlab)
-      command -v glab >/dev/null 2>&1 || die "glab is required for GitLab but not installed"
       json="$(glab mr list "${glab_repo_args[@]+"${glab_repo_args[@]}"}" --output json 2>/dev/null)" \
         || die "could not list open MRs (glab mr list failed — check auth/network)"
       out="$(printf '%s\n' "$json" | jq -r '.[].iid' 2>/dev/null)" \

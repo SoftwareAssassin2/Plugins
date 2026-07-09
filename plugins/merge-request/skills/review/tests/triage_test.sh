@@ -98,6 +98,18 @@ check "missing forge: exit 2" "[ \"$RC\" = 2 ]" "$RC"
 ( PATH="$BIN:$PATH" bash "$TRIAGE" --forge github --id ../../etc ) >/dev/null 2>&1; RC=$?
 check "non-numeric id: exit 2" "[ \"$RC\" = 2 ]" "$RC"
 
+# 2b. missing forge CLI is fatal in SINGLE-ID mode too (not just batch) — a
+#     missing gh must not degrade to empty metadata and skip the head-SHA gate.
+#     Isolated PATH: the git mock + real coreutils, but NO gh.
+BIN2="$ROOT_TMP/bin2"; mkdir -p "$BIN2"
+cp "$BIN/git" "$BIN2/git"
+for t in bash jq grep sed awk mktemp head cut tr cat rm; do
+  p="$(command -v "$t" 2>/dev/null)" && ln -sf "$p" "$BIN2/$t"
+done
+( PATH="$BIN2" bash "$TRIAGE" --forge github --id 5 ) >/dev/null 2>"$ROOT_TMP/err"; RC=$?
+check "single-ID missing gh: exit 1"   "[ \"$RC\" = 1 ]" "$RC"
+check "single-ID missing gh: names it" "grep -qi 'gh is required' '$ROOT_TMP/err'" "$(cat "$ROOT_TMP/err")"
+
 # 3. single-ID, no artifact yet -> action=new, current_sha resolved.
 export MOCK_SHA=aaaa111
 run_triage github --id 5
