@@ -143,6 +143,35 @@ run bash "$MP" upsert --scope project --file "$NEWP" \
 check "confirm after propose: ENTRY has previewed count+text" "printf '%s' \"\$OUT\" | grep -qF \"ENTRY=\" && printf '%s' \"\$OUT\" | grep -qF \"(count: 3) — don't raise x\""
 check "confirm after propose: ignores the passed --text"      "! printf '%s' \"\$OUT\" | grep -qF 'NEW TEXT IGNORED'"
 
+# Propose is SECTION-AWARE, exactly like the confirmed write. A key that exists
+# only under ## Wording must NOT bleed into a dont-raise propose: the preview
+# must be a FRESH dont-raise entry (count: 1 + the passed --text), byte-identical
+# to what --confirm then lands under ## Don't raise. (Regression: the propose
+# lookup used to scan every `- ` entry regardless of section, so it previewed the
+# Wording entry's count/text while confirm correctly wrote a new dont-raise one.)
+SECT="$ROOT_TMP/section-aware.md"
+mk_prefs "$SECT" \
+  "- \`some/other\` (count: 4) — unrelated dont-raise" \
+  "- \`x\` — wording entry for key x"   # key `x` lives ONLY under ## Wording
+run bash "$MP" upsert --scope project --file "$SECT" \
+  --section dont-raise --key "x" --text "dont raise x now" --increment
+check "section-aware propose: exit 0" "[ \"$RC\" = 0 ]" "$RC"
+check "section-aware propose: previews FRESH (count: 1) + passed text" \
+  "printf '%s' \"\$OUT\" | grep -qxF 'PROPOSED=- \`x\` (count: 1) — dont raise x now'"
+check "section-aware propose: does NOT borrow the Wording entry's text" \
+  "! printf '%s' \"\$OUT\" | grep -qF 'wording entry for key x'"
+# The write must be BYTE-IDENTICAL to the preview: confirm and compare ENTRY.
+run bash "$MP" upsert --scope project --file "$SECT" \
+  --section dont-raise --key "x" --text "dont raise x now" --increment --confirm
+check "section-aware confirm: ACTION=appended (fresh dont-raise entry)" \
+  "printf '%s' \"\$OUT\" | grep -q '^ACTION=appended$'"
+check "section-aware confirm: ENTRY byte-identical to the preview" \
+  "printf '%s' \"\$OUT\" | grep -qxF 'ENTRY=- \`x\` (count: 1) — dont raise x now'"
+check "section-aware confirm: landed under ## Don't raise" \
+  "grep -qF '\`x\` (count: 1) — dont raise x now' '$SECT'"
+check "section-aware confirm: Wording x untouched" \
+  "grep -qF '\`x\` — wording entry for key x' '$SECT'"
+
 # Scope the other way: write to GLOBAL, prove the project file is untouched.
 # shellcheck disable=SC2034
 BEFORE="$(cat "$NEWP")"

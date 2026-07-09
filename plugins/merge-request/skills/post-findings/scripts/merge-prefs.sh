@@ -330,9 +330,18 @@ cmd_upsert() {
     if [ "$section" = "dont-raise" ]; then
       local cur=0 found=""
       if [ -f "$file" ]; then
-        found="$(K="$key" awk '
-          BEGIN { k=ENVIRON["K"]; SEP=" \xe2\x80\x94 " }
-          $0 ~ /^- `/ {
+        # SECTION-AWARE, exactly like UPSERT_AWK's scoping: only an entry under
+        # the SAME target heading ("## $heading") counts. An identical key living
+        # under a DIFFERENT section (e.g. ## Wording) must NOT be previewed here —
+        # the confirmed write ignores it too and lands a fresh dont-raise entry,
+        # so the preview must match that (a brand-new key → count 1, passed text).
+        found="$(K="$key" H="$heading" awk '
+          BEGIN { k=ENVIRON["K"]; SEP=" \xe2\x80\x94 "; TH="## " ENVIRON["H"]; inSec=0 }
+          {
+            h=$0; sub(/[[:space:]]+$/,"",h)
+            if (h ~ /^## /) { inSec=(h==TH)?1:0; next }
+          }
+          inSec && $0 ~ /^- `/ {
             s=substr($0, index($0,"`")+1); if (index(s,"`")==0) next
             kk=substr(s, 1, index(s,"`")-1)
             if (kk==k) {
