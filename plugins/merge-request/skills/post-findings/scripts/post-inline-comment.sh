@@ -127,11 +127,18 @@ if [ -n "$stage_file" ] || [ -n "$stage_id" ] || [ -n "$stage_record" ]; then
   [ -n "$stage_file" ] && [ -n "$stage_id" ] && [ -n "$stage_record" ] \
     || die "--stage-file, --stage-id, and --stage-record must be given together" 2
   [ -f "$stage_file" ] || die "--stage-file '$stage_file' does not exist" 2
-  # Verify the id is present in a `## Findings` record BEFORE posting, so an edit
-  # against a stale/wrong id fails early rather than posting then failing to
-  # keep disk consistent.
-  grep -qE "\"id\"[[:space:]]*:[[:space:]]*\"${stage_id}\"" "$stage_file" \
-    || die "restage id '$stage_id' not found in $stage_file — refusing to post an edit that can't be re-staged" 1
+  # Verify the id is present as a `## Findings` RECORD before posting, using the
+  # SAME record-boundary match the restage awk uses (in-section + a `{...` line +
+  # the id). A bare grep would pass on an id that appears elsewhere (e.g. in
+  # `## Declined` or prose) and then post-but-fail-restage, splitting disk from
+  # the forge. This preflight guarantees: if we post, the restage will land.
+  FID="$stage_id" awk '
+    BEGIN { fid=ENVIRON["FID"]; found=0; inF=0 }
+    /^## / { inF = ($0 ~ /^## Findings[[:space:]]*$/) ? 1 : 0; next }
+    inF && /^[[:space:]]*\{/ && $0 ~ ("\"id\"[[:space:]]*:[[:space:]]*\"" fid "\"") { found=1 }
+    END { exit found ? 0 : 1 }
+  ' "$stage_file" \
+    || die "restage id '$stage_id' is not a ## Findings record in $stage_file — refusing to post an edit that can't be re-staged" 1
 fi
 
 # --- line target: single line or a start-end range -------------------------

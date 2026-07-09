@@ -232,6 +232,38 @@ check "unknown id: exit 1"        "[ \"$RC\" = 1 ]" "$RC"
 check "unknown id: nothing posted" "[ ! -s '$LOG' ]"
 check "unknown id: artifact untouched" "grep -qF 'second original' '$ART2'"
 
+# 9b. Id exists ONLY outside ## Findings (in ## Declined) → preflight refuses,
+#     nothing posted (the restage awk would find nothing, so posting first would
+#     split disk from forge). Preflight must use the same record-boundary match.
+ART2b="$ROOT_TMP/77c.md"
+cat > "$ART2b" <<'EOF'
+# Merge review: 77
+
+id: 77
+forge: github
+<!-- merge-review-status: findings -->
+
+## Declined
+
+{"id":"F-out","prefix":"issue:","kind":"general","body":"declined earlier"}
+
+## Findings
+
+```jsonl
+{"id":"F-aaa","prefix":"issue:","kind":"general","file":null,"body":"only real finding"}
+```
+
+## Build
+
+pass
+EOF
+LOG="$ROOT_TMP/log9b"
+run "$LOG" -- bash "$POST" --forge github --id 77 --general \
+  --body 'issue: y' --stage-file "$ART2b" --stage-id F-out --stage-record "$NEWREC"
+check "id outside Findings: exit 1"        "[ \"$RC\" = 1 ]" "$RC"
+check "id outside Findings: nothing posted" "[ ! -s '$LOG' ]"
+check "id outside Findings: artifact untouched" "grep -qF 'declined earlier' '$ART2b'"
+
 # ===========================================================================
 # approve-and-lgtm.sh (R2)
 # ===========================================================================
@@ -331,6 +363,27 @@ run "$LOG" -- bash "$APPROVE" --forge github --id 13 --artifact "$MALREC"
 check "malformed record: exit 1"     "[ \"$RC\" = 1 ]" "$RC"
 check "malformed record: no approve" "[ ! -s '$LOG' ]"
 check "malformed record: says not clean" "printf '%s' \"$ERR\" | grep -qi 'NOT clean'"
+
+# 14c. Malformed: clean marker but the fenced block holds a NON-object garbage
+#      line ("not-json", no leading `{`) → still refuse (fence-aware count).
+MALFENCE="$ROOT_TMP/malfence.md"
+{ echo "# Merge review: 14"; echo; echo "<!-- merge-review-status: clean -->"; echo;
+  echo "## Findings"; echo; echo '```jsonl'; echo 'not-json truncated garbage'; echo '```';
+  echo; echo "## Build"; echo "pass"; } > "$MALFENCE"
+LOG="$ROOT_TMP/log14c"
+run "$LOG" -- bash "$APPROVE" --forge github --id 14 --artifact "$MALFENCE"
+check "fenced garbage: exit 1"     "[ \"$RC\" = 1 ]" "$RC"
+check "fenced garbage: no approve" "[ ! -s '$LOG' ]"
+
+# 14d. Truly clean with an EMPTY fenced jsonl block (review's real clean shape)
+#      → approves. Confirms the fence-aware count doesn't over-refuse.
+EMPTYFENCE="$ROOT_TMP/emptyfence.md"
+{ echo "# Merge review: 15"; echo; echo "<!-- merge-review-status: clean -->"; echo;
+  echo "## Findings"; echo; echo '```jsonl'; echo '```'; echo; echo "## Build"; echo "pass"; } > "$EMPTYFENCE"
+LOG="$ROOT_TMP/log14d"
+run "$LOG" -- bash "$APPROVE" --forge github --id 15 --artifact "$EMPTYFENCE"
+check "empty fence: exit 0"   "[ \"$RC\" = 0 ]" "$RC"
+check "empty fence: approved" "grep -q 'ARG --approve' '$LOG'"
 
 # 15. Missing artifact file → refuse (no proof of a clean review).
 LOG="$ROOT_TMP/log15"

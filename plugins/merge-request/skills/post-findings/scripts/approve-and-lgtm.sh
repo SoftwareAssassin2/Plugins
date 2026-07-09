@@ -97,21 +97,28 @@ if ! grep -qE '^## Findings[[:space:]]*$' "$artifact"; then
   die "artifact has no '## Findings' section — malformed; refusing to approve" 1
 fi
 
-# Count JSON record lines inside the ## Findings section. "Zero entries" means
-# NO record at all — so we count ANY line that opens a JSON object (`{...`), not
-# just well-formed `F-<hash>` records. A clean section is empty/prose only; a
-# malformed or non-`F-` record still blocks approval (the spec: a malformed
-# artifact is NOT clean). `next` on `## ` lines keeps the heading out of the
-# count and flips the in-section flag on section boundaries; fenced-block markers
-# (```jsonl / ```) don't start with `{`, so they never count.
+# Count "records" inside the ## Findings section. "Zero entries" means the
+# section carries NO record content — so the count is fence-aware and strict:
+#   * inside the fenced ```jsonl block, ANY non-blank line is a record (a
+#     well-formed `F-` record, a malformed `not-json` line, or a truncated
+#     fragment) — the spec: a malformed artifact is NOT clean;
+#   * outside a fence, any line opening a JSON object (`{...`) counts too.
+# A clean section is empty, prose-only ("(none)"), or an EMPTY fenced block.
+# `next` on `## ` lines keeps the heading out of the count and flips the
+# in-section flag; the ``` fence markers toggle the fence and never count.
 finding_count="$(awk '
   /^## / { inF = ($0 ~ /^## Findings[[:space:]]*$/) ? 1 : 0; next }
-  inF && /^[[:space:]]*\{/ { c++ }
+  {
+    if (!inF) next
+    if ($0 ~ /^[[:space:]]*```/) { fence = !fence; next }
+    if (fence) { if ($0 ~ /[^[:space:]]/) c++ }
+    else if ($0 ~ /^[[:space:]]*\{/) c++
+  }
   END { print c+0 }
 ' "$artifact")"
 
 if [ "${finding_count:-0}" -ne 0 ]; then
-  die "artifact has ${finding_count} record(s) in ## Findings — NOT clean; refusing to approve (post/triage them instead)" 1
+  die "artifact has ${finding_count} record line(s) in ## Findings — NOT clean; refusing to approve (post/triage them instead)" 1
 fi
 
 # --- approve + post the exact note -----------------------------------------
