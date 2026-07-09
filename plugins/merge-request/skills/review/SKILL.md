@@ -195,19 +195,103 @@ from the preserved sections + freshly-written ones (an `awk` that drops the old
 `../fix/scripts/gather-feedback.sh`), then re-write the header stamp/marker. Never
 edit `## Intent`/`## Handled`/`## Declined`.
 
-## Step 6 — hand off to finding selection (fn-11.3)
+## Step 6 — finding selection + staging (be Chris)
 
-With a clean checkout and `## Build` written, continue into the **finding-selection**
-half (fn-11.3): fetch and normalize the existing PR/MR threads, drop anything
-already covered by anyone, apply `../../RUBRIC.md` as Chris (`../../SOUL.md`),
-and stage the selected findings into `## Findings` (each with a `prefix`, a
-deterministic `F-<hash>` id, and a `kind`; inline findings carry the location
-fields). If selection adds findings, the marker stays `findings`; if the run ends
-with **zero** findings, selection sets the marker `clean`.
+With a clean checkout and `## Build` written, do the **finding-selection** half:
+read the change the way **Chris** reads it (`../../SOUL.md` — read it and *be*
+Chris, don't summarize it), select only findings that clear `../../RUBRIC.md`,
+drop anything already covered, and stage them to `## Findings`. **Never post to
+the forge** — this only writes disk.
 
-When Step 5 already staged a blocking build/checkout finding, that entry stays
-**first** in `## Findings` and the marker stays `findings` regardless of what
-selection adds.
+The mechanical forge/hash work lives in `scripts/fetch-threads.sh`; the judgment
+(being Chris, applying the rubric, wording the finding) is yours.
+
+### 6a — fetch + normalize the existing threads (dedupe input)
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/skills/review/scripts/fetch-threads.sh" \
+  threads --forge <github|gitlab> --id <ID>
+```
+
+It emits one JSON object per **existing** PR/MR thread/comment —
+`{author, body, file?, line?, resolved?, kind}`, with `file`/`line`/`resolved`
+**null** for global comments and `kind` = `inline`|`general` — followed by a
+`THREADS_FETCHED=…` trailer. It covers **GitHub** (review threads + issue
+comments) and **GitLab** (discussions + notes), and **includes resolved threads**
+(`resolved:true`) — a point already raised must suppress a re-raise even after it
+was resolved. A missing/unauthenticated CLI degrades to zero threads (never a
+hard failure).
+
+### 6b — layer in learned preferences (optional; owned by fn-12)
+
+Read the learned-preferences file per `../../RUBRIC.md`'s lookup contract —
+global base `~/.claude/merge-request-preferences.md` then project override
+`.data/merge/preferences.md` (project overrides global on conflict; additive
+lists union). It is **owned by `/merge-request:post-findings` (fn-12)**; when
+absent, proceed on rubric + persona alone. Apply *Don't raise* (suppress matching
+findings even if they'd clear the rubric), *Wording preferences*, and *Confirmed
+valued* as you select.
+
+### 6c — select findings as Chris
+
+Read the change against a **real checkout** (the `WORKTREE` from Step 3 + its
+diff), and run `../../RUBRIC.md` over it as Chris. Raise only what passes the
+one-line test — *can I name the concrete thing that breaks, and would a good
+engineer nod?* Lead with the highest-ranked defensible finding. Stay silent on
+everything on the rubric's silence list. **Every finding stands on universal
+engineering merit only — never reference any company, brand, framework, or house
+policy.**
+
+### 6d — drop anything already covered (dedupe on substance)
+
+For each candidate finding, check it against the 6a threads: if a human, a prior
+round, or an AI reviewer **already covered it on substance** — inline *or*
+general, resolved *or* not, even clumsily — **drop it**. Don't pile on to look
+thorough. This is a substance match, not a string match; that judgment is yours.
+
+### 6e — tag each surviving finding
+
+Give each finding:
+
+- a **Conventional Comments prefix** (`issue:`/`suggestion:`/`question:`/`todo:`/`nitpick:`) — the honest one;
+- a **`kind`** — `inline` (anchored to a changed diff line) or `general` (no file/line);
+- for `kind: inline`, the **inline-location fields** `file` (new-side path), `old_path` (only if renamed), `line` or `line_range`, `side` (`LEFT`/`RIGHT`), and `head_sha`/`base_sha` (the diff endpoints — the `HEAD_SHA` from Step 3 and the PR/MR base), so fn-12 can post it inline;
+- a **deterministic `F-<hash>` id**, computed with the **same** serialization the engine pinned in Step 5 — do **not** invent your own:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/skills/review/scripts/fetch-threads.sh" \
+  finding-id --id <ID> --prefix "<prefix>" --body "<normalized one-line body>" \
+  [--file <file> --line <line-or-range>]
+```
+
+`finding-id` is **byte-identical** to the Step 5 inline `printf` (tuple
+`{id}|{file}|{line}|{prefix}|{normalized one-line body}` → `{ sha1sum || shasum; }`
+→ `cut -c1-12` → `F-`); pass file/line **empty for a `general` finding**. Using
+the same implementation is what lets a selected finding correlate with the
+engine's blocking finding and with the `## Declined` ledger across re-review runs.
+
+### 6f — stage to `## Findings` and set the marker
+
+Replace the `review`-owned `## Findings` section wholesale (per Step 5's
+preserve-the-rest `awk` pattern — **`## Intent`/`## Handled`/`## Declined` stay
+byte-for-byte intact**). Write one JSON record per finding in a fenced
+```` ```jsonl ```` block (mirrors `## Handled`), so fn-12 can parse and correlate
+by `F-<hash>`:
+
+```jsonl
+{"id":"F-…","prefix":"issue:","kind":"inline","file":"src/config.ts","old_path":null,"line":12,"line_range":null,"side":"RIGHT","head_sha":"…","base_sha":"…","body":"…"}
+{"id":"F-…","prefix":"suggestion:","kind":"general","file":null,"old_path":null,"line":null,"line_range":null,"side":null,"head_sha":null,"base_sha":null,"body":"…"}
+```
+
+- If Step 5 already staged a **blocking** build/checkout finding, it is the
+  **first** record (its `F-<hash>` from Step 5, `issue:`, `kind: general`) and the
+  marker stays `findings` regardless of what selection adds.
+- **Marker rule:** set `<!-- merge-review-status: clean -->` **iff the run ends
+  with zero `## Findings` entries** (no blocking finding, no selected finding) —
+  Chris's clean-change signal; otherwise `findings`. This is the only place the
+  marker is allowed to move toward `clean`.
+- A clean change gets no manufactured praise here — the `Looks good.` sign-off is
+  cast later by fn-12; `review` records the clean state via the marker alone.
 
 ## Notes
 
