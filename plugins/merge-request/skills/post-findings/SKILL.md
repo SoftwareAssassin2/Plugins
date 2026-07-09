@@ -1,6 +1,6 @@
 ---
 name: merge-request:post-findings
-description: Take the findings staged by /merge-request:review in .data/merge/<ID>.md and, with per-finding approval, post the approved ones to the forge as inline comments (general-comment fallback when a finding has no valid diff location) — or formally sign off a clean PR/MR with a single "Looks good." First runs /detect-source-control and hard-stops when the forge is unsupported. Nothing reaches the forge except through the two bundled scripts. Use as "post the review findings", "go through the findings and comment them", "approve the clean PRs/MRs", "post the feedback".
+description: Take the findings staged by /merge-request:review in .data/merge/<ID>.md and, with per-finding approval, post the approved ones to the forge as inline comments (general-comment fallback when a finding has no valid diff location) — or formally sign off a clean PR/MR with a single "Looks good." First runs /detect-source-control and hard-stops when the forge is unsupported. Nothing reaches the forge except through the bundled scripts. Also runs a propose-then-confirm learned-preferences loop that teaches /merge-request:review what you value (Don't-raise / Wording / Confirmed-valued), and records skipped findings to the artifact's ## Declined section. Use as "post the review findings", "go through the findings and comment them", "approve the clean PRs/MRs", "post the feedback".
 argument-hint: "[<ID>]  — a PR/MR number to post one; omit to walk every staged .data/merge/<ID>.md"
 ---
 
@@ -27,13 +27,18 @@ approval). **Never hand-roll a `gh`/`glab` write yourself** — every post goes
 through a script so the fiddly inline-position payload and the high-impact
 approval behave identically every run.
 
-> **Scope note (fn-12.1 vs fn-12.2).** This file is the **posting half**: the
-> per-finding approve/edit/skip gate, inline/general posting, edit-by-stable-id
-> restaging, and the clean-PR/MR sign-off (R1, R2, R8). The **learned-preferences
-> loop** — inferring `## Don't raise` / `## Wording` / `## Confirmed valued`
-> proposals from your skip/edit/approve actions and writing the global-base +
-> project-override preferences file (R3–R7, R9) — is **fn-12.2**, layered on later.
-> Here, a skip simply posts nothing; it does not yet propose a preference.
+> **Two responsibilities.** This skill (a) **posts** — the per-finding
+> approve/edit/skip gate, inline/general posting, edit-by-stable-id restaging,
+> and the clean-PR/MR sign-off (R1, R2, R8) — and (b) **learns** — a
+> propose-then-confirm loop (**Step 7**) that infers `## Don't raise` /
+> `## Wording` / `## Confirmed valued` updates from your skip/edit/approve
+> actions and writes them to the global-base + project-override preferences file
+> (R3–R7, R9), so `/merge-request:review` (fn-11.3, which reads the merged file)
+> sharpens to Chris over time. A **skip** also appends the finding to the shared
+> `## Declined` section of the artifact. A **third script** carries the
+> deterministic preferences work: `scripts/merge-prefs.sh` (the keyed merge, the
+> scoped confirmed write, the append-only `## Declined` record) — never hand-edit
+> the preferences file or the artifact's `## Declined` yourself.
 
 ## Step 1 — detect the forge and hard-stop if unsupported
 
@@ -179,10 +184,26 @@ other finding and every other section byte-for-byte unchanged, and only **after*
 the post succeeds (so disk never runs ahead of the forge). The `<F-hash>` is the
 stable id from `../../ARTIFACT.md` — never an ordinal.
 
-### skip → post nothing
+### skip → post nothing, record the decline, learn from it
 
-Move on; nothing reaches the forge. (In fn-12.2 a skip will also *propose* a
-`## Don't raise` preference — not yet.)
+Nothing reaches the forge. Two things still happen:
+
+1. **Record the decline** in the artifact's shared `## Declined` section, so a
+   later re-review knows this finding was already turned down at the gate and
+   doesn't re-surface it (per `../../ARTIFACT.md`; `fix`/fn-10 owns the other
+   half of this section). Append-only — every other section is untouched:
+
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/skills/post-findings/scripts/merge-prefs.sh" declined-append \
+     --file "<main_root>/.data/merge/<ID>.md" \
+     --finding-id "<F-hash>" \
+     --summary "<the finding's one-line gist>" \
+     [--rationale "<why you skipped it>"]   # defaults to "declined at post gate"
+   ```
+
+2. **Note it for the preferences loop** — a skip is the signal for a
+   `## Don't raise` proposal (Step 7). Don't write the preference now; hold the
+   pattern and propose it at session end.
 
 **When an inline post fails** (`post-inline-comment.sh` exits non-zero — usually
 the target line isn't part of the diff), it prints the forge error and posts
@@ -202,11 +223,98 @@ The failure is informative by design; a real concern is never silently dropped.
 Finish with one line: PRs/MRs processed, comments posted (inline vs general),
 and PRs/MRs approved.
 
+## Step 7 — learned-preferences loop (propose-then-confirm)
+
+At the **end of the session** (after the last PR/MR), fold what you saw into the
+learned preferences so `/merge-request:review` gets sharper. **Nothing is written
+without a per-item confirmation** — you propose, the user confirms *and picks the
+scope*, then you write. Deferring to a natural break keeps the walk uninterrupted.
+
+### Where preferences live — and the merge model
+
+Two files, both optional:
+
+- **global base** `~/.claude/merge-request-preferences.md` — cross-project voice
+  and standards that travel with Chris.
+- **project override** `<main_root>/.data/merge/preferences.md` — per-repo tuning
+  (gitignored; shared only via an explicit `git add -f`).
+
+Every entry carries a normalized, **space-free `key`**. When `review` (fn-11.3)
+reads them, `merge-prefs.sh merge` composes the two: a project entry with the
+**same key replaces** the global one; **different keys union**. So a per-repo rule
+overrides the global default for that exact pattern, and adds otherwise.
+
+Four sections — three inferred here, one preserve-only:
+
+| Section              | Key                                     | Inferred from                |
+|----------------------|-----------------------------------------|------------------------------|
+| `## Don't raise`     | `<rubric-category>/<pattern>` (+ count)  | a **skip**                   |
+| `## Wording`         | `<phrasing-rule id>`                     | an **edit**                  |
+| `## Confirmed valued`| `<rubric-category>/<pattern>`            | an **approve** (borderline)  |
+| `## Rubric weighting`| `<flag name>`                            | **never** — hand-edited only |
+
+### The three inferences
+
+- **skip → `## Don't raise`.** Propose a Don't-raise on the **first** skip of a
+  pattern (fast learning, still gated). Repeated skips of the **same key**
+  `--increment` its `count` — the confidence signal. Generalize the *pattern*
+  (rubric-category + the normalized shape of what you skipped), never the one-off
+  specifics of a single line.
+- **edit → `## Wording`.** The delta between what `review` staged and what the
+  user posted is a phrasing rule. Propose the **generalized rule** (e.g. "frame as
+  suggestions, not directives"), not the verbatim example.
+- **approve of a borderline / previously-flagged finding → `## Confirmed
+  valued`.** When the user approves something that sat near the bar, propose
+  promoting that pattern so `review` keeps surfacing it with confidence.
+
+`## Rubric weighting` is **never inferred** — `merge-prefs.sh upsert` refuses to
+write it. The user edits it by hand; it merges through by the same keyed model.
+
+### Propose, choose scope, then write
+
+For each proposal, first **propose** (writes nothing) so you can show the user the
+exact entry that would land:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/skills/post-findings/scripts/merge-prefs.sh" upsert \
+  --scope <global|project> --file "<that scope's path>" \
+  --section <dont-raise|wording|confirmed-valued> \
+  --key "<normalized key>" --text "<the rule, generalized>" [--increment]
+# → prints PROPOSED=<entry> and writes nothing
+```
+
+Show the `PROPOSED=` line and ask the user to confirm **and pick the scope** — the
+prompt names the target file. Sensible defaults, overridable per item:
+
+- **Don't-raise → project override** (often a per-repo convention).
+- **Wording → global** (a cross-project voice rule).
+
+On confirmation, re-run the same command **with `--confirm`** and the chosen
+`--scope`/`--file`:
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/skills/post-findings/scripts/merge-prefs.sh" upsert \
+  --scope project --file "<main_root>/.data/merge/preferences.md" \
+  --section dont-raise --key "<key>" --text "<rule>" --increment --confirm
+# → WROTE=project  ACTION=appended|incremented  KEY=…  COUNT=…
+```
+
+The two scope paths:
+
+- **global**  → `~/.claude/merge-request-preferences.md`
+- **project** → `<main_root>/.data/merge/preferences.md`
+
+If the user declines a proposal, write nothing and move on. Skipping the whole
+loop is always fine — the preferences file is optional, and the confirm step is
+the only thing that ever writes.
+
 ## Notes
 
-- **Two scripts, always.** Every write to the forge — inline comment, general
+- **Scripts, always.** Every write to the forge — inline comment, general
   comment, approval, `Looks good.` — goes through `post-inline-comment.sh` or
-  `approve-and-lgtm.sh`. No hand-rolled `gh`/`glab` writes.
+  `approve-and-lgtm.sh`; every write to the preferences file or the artifact's
+  `## Declined` goes through `merge-prefs.sh`. No hand-rolled `gh`/`glab` writes,
+  no hand-edited preferences.
 - **Post only what the user approved.** The approval preview and the posted bytes
   are the same `prefix + body`; the general fallback posts that exact text too.
 - **Disk matches the forge on an edit.** The restage rewrites the staged entry by
@@ -216,5 +324,13 @@ and PRs/MRs approved.
 - **Never references any company/brand/framework/policy** — in a comment or in
   your narration. A finding stands on universal engineering merit alone
   (`../../SOUL.md`).
-- **`## Declined` and the learned-preferences file are fn-12.2** — this half
-  posts and signs off; it does not yet write preferences.
+- **A skip records a decline and teaches.** `merge-prefs.sh declined-append`
+  writes the skipped finding to the artifact's append-only `## Declined` section
+  (so a re-review won't re-surface it), and the skip also seeds a `## Don't raise`
+  proposal for Step 7.
+- **Preferences are proposed, never written silently.** Every `## Don't raise` /
+  `## Wording` / `## Confirmed valued` entry lands only after a per-item confirm
+  that also picks the scope (global vs project). `## Rubric weighting` is
+  merge/preserve-only — hand-edited, never inferred. The keyed merge model
+  (`merge-prefs.sh merge`) lets a project override the global for the same key
+  while unioning different keys; `review` (fn-11.3) reads the merged view.
