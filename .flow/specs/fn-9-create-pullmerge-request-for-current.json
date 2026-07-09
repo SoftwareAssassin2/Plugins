@@ -1,6 +1,11 @@
 {
   "branch_name": "fn-9-create-pullmerge-request-for-current",
+  "completion_review_status": "ship",
+  "completion_reviewed_at": "2026-07-09T17:26:11.231095Z",
   "created_at": "2026-07-08T15:49:29.481283Z",
+  "default_impl": null,
+  "default_review": null,
+  "default_sync": null,
   "depends_on_epics": [
     "fn-8-detect-source-control-forge-githubgitlab"
   ],
@@ -22,5 +27,5 @@
     "mergeBaseTracker": null,
     "url": null
   },
-  "updated_at": "2026-07-08T20:41:33.552049Z"
+  "updated_at": "2026-07-09T17:26:11.231277Z"
 }
