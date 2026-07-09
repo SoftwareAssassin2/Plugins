@@ -1,6 +1,11 @@
 {
   "branch_name": "fn-10-merge-request-fix-monitor-and-auto",
+  "completion_review_status": "ship",
+  "completion_reviewed_at": "2026-07-09T18:07:29.464744Z",
   "created_at": "2026-07-08T15:49:29.846529Z",
+  "default_impl": null,
+  "default_review": null,
+  "default_sync": null,
   "depends_on_epics": [
     "fn-8-detect-source-control-forge-githubgitlab"
   ],
@@ -22,5 +27,5 @@
     "mergeBaseTracker": null,
     "url": null
   },
-  "updated_at": "2026-07-08T20:44:53.293483Z"
+  "updated_at": "2026-07-09T18:07:29.465164Z"
 }
