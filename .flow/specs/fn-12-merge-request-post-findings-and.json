@@ -1,0 +1,26 @@
+{
+  "branch_name": "fn-12-merge-request-post-findings-and",
+  "created_at": "2026-07-08T15:49:30.612986Z",
+  "depends_on_epics": [
+    "fn-11-merge-request-review-with-the-chris"
+  ],
+  "id": "fn-12-merge-request-post-findings-and",
+  "next_task": 1,
+  "plan_review_status": "unknown",
+  "plan_reviewed_at": null,
+  "spec_path": ".flow/specs/fn-12-merge-request-post-findings-and.md",
+  "status": "open",
+  "title": "Merge-request post-findings and preferences loop",
+  "tracker": {
+    "baseHashFlow": null,
+    "baseHashTracker": null,
+    "depRelations": [],
+    "id": null,
+    "identifier": null,
+    "lastSyncedAt": null,
+    "mergeBaseFlow": null,
+    "mergeBaseTracker": null,
+    "url": null
+  },
+  "updated_at": "2026-07-08T21:01:43.586354Z"
+}

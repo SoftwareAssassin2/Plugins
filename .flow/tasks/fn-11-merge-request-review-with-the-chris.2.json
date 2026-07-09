@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-07-08T16:01:45.043211Z",
+  "depends_on": [
+    "fn-11-merge-request-review-with-the-chris.1"
+  ],
+  "id": "fn-11-merge-request-review-with-the-chris.2",
+  "priority": null,
+  "spec": "fn-11-merge-request-review-with-the-chris",
+  "spec_path": ".flow/tasks/fn-11-merge-request-review-with-the-chris.2.md",
+  "status": "todo",
+  "title": "review engine: scope + SHA-skip contract + worktree (merge/<ID>) + auto build/test",
+  "updated_at": "2026-07-08T20:54:46.849515Z"
+}

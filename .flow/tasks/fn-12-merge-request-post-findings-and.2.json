@@ -1,0 +1,16 @@
+{
+  "assignee": null,
+  "claim_note": "",
+  "claimed_at": null,
+  "created_at": "2026-07-08T16:02:17.145546Z",
+  "depends_on": [
+    "fn-12-merge-request-post-findings-and.1"
+  ],
+  "id": "fn-12-merge-request-post-findings-and.2",
+  "priority": null,
+  "spec": "fn-12-merge-request-post-findings-and",
+  "spec_path": ".flow/tasks/fn-12-merge-request-post-findings-and.2.md",
+  "status": "todo",
+  "title": "learned-preferences loop: global+project files, propose-then-confirm, 4 sections",
+  "updated_at": "2026-07-08T21:02:15.595233Z"
+}
