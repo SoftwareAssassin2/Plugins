@@ -13,7 +13,8 @@ Add the learned-preferences loop: a propose-then-confirm mechanism writing to a 
 - **Storage + merge model:** global base `~/.claude/merge-request-preferences.md` + optional project override `.data/merge/preferences.md`. Every entry has a normalized `key` (Don't-raise: rubric-category + normalized pattern; Wording: phrasing-rule id; Confirmed-valued: rubric-category + pattern; Rubric-weighting: flag name). Same-key project entry REPLACES the global entry; different keys UNION. Don't-raise entries carry a `count` (confidence); "similar" = same key.
 - **Write scope:** each confirmed preference is written to global OR project — the confirm prompt includes the scope choice and names the target file; default project-override for Don't-raise, global for Wording, overridable per item.
 - Capture `## Don't raise` / `## Wording` / `## Confirmed valued` (inferred) and `## Rubric weighting` (**merge/preserve-only — not inferred by any interaction**; user-edited directly, merged by the same keyed model).
-- **Boundary:** this task OWNS writing the preferences file + the merge model. The review-side consumption of the merged file is implemented in fn-11.3 (this task does not edit review's SKILL.md).
+- **`## Declined` write (fulfils the ARTIFACT.md contract + fn-12.1's forward-reference):** when the user skips a finding at the post gate, append it to the `## Declined` section of `.data/merge/<ID>.md` (finding `F-<hash>` id + one-line summary + a short "declined at post gate" rationale), append-only, preserving every other section. This is the post-findings half of the shared `## Declined` section (fix/fn-10 owns the other half); it is distinct from — and complements — the skip→Don't-raise preference proposal.
+- **Boundary:** this task OWNS the learned-preferences file + merge model AND the post-findings `## Declined` append. The review-side consumption of the merged prefs file is implemented in fn-11.3 (this task does not edit review's SKILL.md).
 
 ## Investigation targets
 **Required:**
@@ -29,6 +30,7 @@ Add the learned-preferences loop: a propose-then-confirm mechanism writing to a 
 - [ ] A skip proposes a Don't-raise on the first skip; an edit proposes a generalized Wording preference; an approve of a borderline finding proposes Confirmed valued.
 - [ ] Preferences live in a global base + optional project override with the keyed merge model (same-key project replaces global, different keys union); Don't-raise carries a `count` confidence; each confirmed write is scoped (global vs project) at the confirm prompt.
 - [ ] Captures `## Don't raise` / `## Wording` / `## Confirmed valued` (inferred) with normalized keys; `## Rubric weighting` is merge/preserve-only (not inferred). The review-side consumption is delivered by fn-11.3 (not edited here).
+- [ ] A skipped finding is appended to the `## Declined` section of `.data/merge/<ID>.md` (id + summary + rationale, append-only, other sections preserved) — fulfilling the ARTIFACT.md shared-`## Declined` contract that fn-12.1 forward-referenced here.
 
 ## Done summary
 TBD
