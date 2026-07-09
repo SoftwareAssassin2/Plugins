@@ -40,9 +40,8 @@ Build the `merge-request:create` skill: detect the forge, ensure the branch/HEAD
 - If a `scripts/create.sh` is added: `shellcheck` clean, and exercise the git/`gh`/`glab` flow with mocked/stubbed `git`, `gh`, `glab` on PATH (no real PR/MR opened) covering: unsupported hard-stop, no-upstream push, behind-upstream push, id capture via JSON, id capture via URL fallback, and intent-stash fallback.
 
 ## Done summary
-TBD
-
+Built the assistant-executed `/merge-request:create` skill: SKILL.md drives detect-source-control -> hard-stop on unsupported -> ensure HEAD pushed -> open a ready PR/MR titled "Merge <source> into <target>" -> capture canonical id (view --json, URL fallback) -> stash `## Intent` to .data/merge/<ID>.md -> continue into /merge-request:fix <ID>. Backed by a shellcheck-clean scripts/create.sh (deterministic push/create/id-capture/intent-stash, already-exists resume, upstream-aware push) and a 31-case mocked git/gh/glab test suite.
 ## Evidence
-- Commits:
-- Tests:
+- Commits: 26fec07, 53dad0e
+- Tests: bash plugins/merge-request/skills/create/tests/create_test.sh (31 passed), shellcheck plugins/merge-request/skills/create/scripts/create.sh (clean)
 - PRs:
