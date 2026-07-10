@@ -710,6 +710,82 @@ check "non-opt-in scaffold succeeds without jq (exit 0)" '[[ $rc -eq 0 && -f "$J
 rm -rf "$JD2" "$JQLESS"
 
 # =====================================================================================
+# Strix opt-in: the AI pentest agent. Mirrors the local-llm opt-in pattern but
+# with NO config.json mutation — --strix only lays down the etc/strix/ subtree (doc +
+# install marker); the CLI is installed in the dev container by setup.sh, gated on the
+# presence of etc/strix/. So --strix needs NO jq, never touches config.json (the
+# config-drift gate stays green on opted-in output), and a non-opt-in --update prunes a
+# prior opt-in's etc/strix/ files (opt-in is NOT sticky).
+# =====================================================================================
+echo "== strix opt-in =="
+
+# target_rel unit: the _optional/strix/ subtree remaps under etc/strix/.
+check "target_rel maps _optional/strix subtree" '[[ "$(target_rel _optional/strix/README.md)" == "etc/strix/README.md" ]]'
+
+# (a) NON-opt-in: zero etc/strix, no _optional leak, manifest has no etc/strix, and NO
+# devTools block added to config.json.
+SN="$(mktemp -d)"; ( cd "$SN" && bash "$SCAFFOLD" demo "x" >/dev/null )
+check "strix non-opt-in: no etc/strix/ files"       '[[ -z "$(find "$SN/demo/etc/strix" -type f 2>/dev/null)" ]]'
+check "strix non-opt-in: no _optional/ leaked"      '[[ ! -e "$SN/demo/_optional" ]]'
+check "strix non-opt-in: manifest has no etc/strix" '! jq -r ".files[].path" "$SN/demo/.init-project-manifest.json" | grep -q "etc/strix"'
+check "strix non-opt-in: no devTools in config.json" '! jq -e ".devTools" "$SN/demo/config.json" >/dev/null 2>&1'
+rm -rf "$SN"
+
+# (b) opt-in: etc/strix/README.md laid down, listed in the manifest, token-free, no
+# _optional leak, exit 0. Crucially config.json is UNTOUCHED, so the config-drift gate
+# still passes on the opted-in output (the regression this design deliberately avoids).
+SC="$(mktemp -d)"; ( cd "$SC" && bash "$SCAFFOLD" demo "x" --strix >/dev/null ); rc=$?
+check "strix opt-in: exit 0"                        '[[ $rc -eq 0 ]]'
+check "strix opt-in: etc/strix/README.md landed"    '[[ -f "$SC/demo/etc/strix/README.md" ]]'
+check "strix opt-in: no _optional/ leaked"          '[[ ! -e "$SC/demo/_optional" ]]'
+check "strix opt-in: README documents authorized-use caveat" 'grep -qi "authorized" "$SC/demo/etc/strix/README.md"'
+check "strix opt-in: no leftover __SCAFFOLD__ tokens" '! grep -rqE "__SCAFFOLD_[A-Z0-9_]+__" "$SC/demo/etc/strix"'
+check "strix opt-in: manifest lists etc/strix/README.md" 'jq -r ".files[].path" "$SC/demo/.init-project-manifest.json" | grep -q "^etc/strix/README.md$"'
+check "strix opt-in: still NO devTools in config.json" '! jq -e ".devTools" "$SC/demo/config.json" >/dev/null 2>&1'
+check "strix opt-in: config-drift gate still passes"  '( cd "$SC/demo" && bash .github/scripts/config-drift.sh config.json config.deploy.json >/dev/null )'
+check "strix opt-in: setup.sh gates install on etc/strix marker" 'grep -q "etc/strix/README.md" "$SC/demo/.devcontainer/setup.sh"'
+rm -rf "$SC"
+
+# (c) opt-in composes with --local-llm (both add-ons at once): etc/strix AND etc/local-llm
+# both land, and the local-llm config.json mutation still applies.
+SB="$(mktemp -d)"; ( cd "$SB" && bash "$SCAFFOLD" demo "x" --strix --local-llm --local-llm-model "qwen2.5:7b" >/dev/null ); rc=$?
+check "strix+local-llm: exit 0"                     '[[ $rc -eq 0 ]]'
+check "strix+local-llm: etc/strix landed"           '[[ -f "$SB/demo/etc/strix/README.md" ]]'
+check "strix+local-llm: etc/local-llm landed"       '[[ -f "$SB/demo/etc/local-llm/docker-compose.yml" ]]'
+check "strix+local-llm: localLlm.model set"         'jq -e ".localLlm.model==\"qwen2.5:7b\"" "$SB/demo/config.json" >/dev/null'
+rm -rf "$SB"
+
+# (d) opt-in applies on --update too (re-scaffold over a prior plain output).
+SU="$(mktemp -d)"
+( cd "$SU" && bash "$SCAFFOLD" demo "x" >/dev/null )                             # plain first scaffold
+( cd "$SU" && bash "$SCAFFOLD" demo "x" --update --strix >/dev/null ); rc=$?
+check "strix opt-in on --update: exit 0"            '[[ $rc -eq 0 ]]'
+check "strix opt-in on --update: etc/strix laid down" '[[ -f "$SU/demo/etc/strix/README.md" ]]'
+rm -rf "$SU"
+
+# (e) NON-opt-in --update RESETS a prior opt-in (NOT sticky): the prior etc/strix/ files
+# are removed (no orphans) and the manifest no longer lists them.
+SR="$(mktemp -d)"
+( cd "$SR" && bash "$SCAFFOLD" demo "x" --strix >/dev/null )
+check "strix reset precondition: etc/strix laid down" '[[ -f "$SR/demo/etc/strix/README.md" ]]'
+( cd "$SR" && bash "$SCAFFOLD" demo "x" --update >/dev/null ); rc=$?
+check "strix non-opt-in --update: exit 0"           '[[ $rc -eq 0 ]]'
+check "strix non-opt-in --update: etc/strix files removed" '[[ -z "$(find "$SR/demo/etc/strix" -type f 2>/dev/null)" ]]'
+check "strix non-opt-in --update: manifest drops etc/strix" '! jq -r ".files[].path" "$SR/demo/.init-project-manifest.json" | grep -q "etc/strix"'
+rm -rf "$SR"
+
+# (f) --strix needs NO jq on the host (no config.json mutation) — a fresh opt-in scaffold
+# succeeds under a curated PATH with jq deliberately omitted.
+SJQLESS="$(mktemp -d)"; mkdir -p "$SJQLESS/bin"
+for t in bash sh env cat cp mkdir find shasum cut dirname openssl tr grep ls mv rm sed sort; do
+  p="$(command -v "$t" 2>/dev/null)" && ln -sf "$p" "$SJQLESS/bin/$t"
+done
+SJD="$(mktemp -d)"
+( cd "$SJD" && PATH="$SJQLESS/bin" bash "$SCAFFOLD" demo "x" --strix >/dev/null 2>&1 ); rc=$?
+check "strix opt-in succeeds without jq on host (exit 0)" '[[ $rc -eq 0 && -f "$SJD/demo/etc/strix/README.md" ]]'
+rm -rf "$SJD" "$SJQLESS"
+
+# =====================================================================================
 # Async team collaboration (fn-7): structural + git-tracked + behavioral hook coverage.
 # Self-contained block (scaffold_test.sh is also touched by fn-2.14 / fn-6.5 — appended
 # at the end to avoid churn). The structural half asserts the protocol doc, team

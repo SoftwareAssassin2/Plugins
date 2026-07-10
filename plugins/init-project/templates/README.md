@@ -97,7 +97,7 @@ removal** — are in [`docs/local-llm.md`](docs/local-llm.md).
 | `src/` | One sub-folder per component (`.NET` projects, Angular SPAs, `postgres`, `keycloak`), plus `src/system-cli/` for the dispatcher subcommands. |
 | `tests/` | Test projects (`tests/<Component>.Tests/`). |
 | `docs/` | Development standards and business direction, plus the git-mediated **async collaboration** protocol ([`docs/collaboration.md`](docs/collaboration.md)) and team registry ([`docs/team.md`](docs/team.md)) — teammates broker questions/handoffs through committed thread inboxes under `docs/collaboration/`. **Keep this repo private:** thread inboxes and the team registry are committed and pushed (and live in history permanently); never put secrets or sensitive personal data in them. |
-| `etc/` | Supporting tooling, including the observability compose stack and the opt-in local LLM mock stack (`etc/local-llm/`, if scaffolded with `--local-llm`). |
+| `etc/` | Supporting tooling, including the observability compose stack, the opt-in local LLM mock stack (`etc/local-llm/`, if scaffolded with `--local-llm`), and the opt-in Strix AI pentest agent (`etc/strix/`, if scaffolded with `--strix` — the CLI installs in the dev container; see [`etc/strix/README.md`](etc/strix/README.md)). |
 | `.devcontainer/` | Dev container definition and setup. |
 | `.claude/` | Claude Code configuration (status line, hooks, settings). |
 

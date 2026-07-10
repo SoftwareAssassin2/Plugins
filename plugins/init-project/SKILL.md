@@ -10,13 +10,18 @@ Stand up a new software project from copy-ready templates. **The templates are a
 
 ## What it does (orchestration)
 1. **Ask** for a **project name** (`^[a-z0-9][a-z0-9-]*$`) and a **short description** — nothing else.
-2. **Local LLM mock stack (opt-in prompt — before running the engine).** Ask the user whether to install the **local LLM mock stack** (LiteLLM + Ollama) so the scaffolded app's outbound LLM calls hit a local gateway instead of paid providers — see the [Local LLM opt-in](#local-llm-opt-in-before-the-engine-runs) section below for the exact prompts (install? → chat-model menu → optional embeddings). The default is **no** (a plain scaffold). Carry the user's answers into the engine flags in the next step.
-3. **Run the bundled engine:** `scaffold.sh <name> "<description>" [--local-llm --local-llm-model <model> [--local-llm-embed-model <model>]]` (see [scaffold.sh](scaffold.sh)). It copies `templates/` into `./<name>/`, substitutes `__SCAFFOLD_PROJECT_NAME__` / `__SCAFFOLD_PROJECT_DESCRIPTION__`, generates a fresh URL-safe value for each `__SCAFFOLD_GEN_URLSAFE__` occurrence, maps `_CLAUDE.md` → `CLAUDE.md`, writes `.init-project-manifest.json`, and fails if any `__SCAFFOLD_*__` token is left behind.
+2. **Opt-in add-ons (prompts — before running the engine).** Ask, each defaulting to **no**:
+   - **Local LLM mock stack** (LiteLLM + Ollama) so the scaffolded app's outbound LLM calls hit a local gateway instead of paid providers — see the [Local LLM opt-in](#local-llm-opt-in-before-the-engine-runs) section for the exact prompts (install? → chat-model menu → optional embeddings).
+   - **Strix AI pentest agent** installed in the dev container — see the [Strix opt-in](#strix-opt-in-before-the-engine-runs) section. A single yes/no; no follow-up prompts.
+
+   Carry the user's answers into the engine flags in the next step.
+3. **Run the bundled engine:** `scaffold.sh <name> "<description>" [--strix] [--local-llm --local-llm-model <model> [--local-llm-embed-model <model>]]` (see [scaffold.sh](scaffold.sh)). It copies `templates/` into `./<name>/`, substitutes `__SCAFFOLD_PROJECT_NAME__` / `__SCAFFOLD_PROJECT_DESCRIPTION__`, generates a fresh URL-safe value for each `__SCAFFOLD_GEN_URLSAFE__` occurrence, maps `_CLAUDE.md` → `CLAUDE.md`, writes `.init-project-manifest.json`, and fails if any `__SCAFFOLD_*__` token is left behind.
    - Refuses a non-empty target unless `--force` (first scaffold, no collision with unmanaged files) or `--update` (re-scaffold over a prior output; `config.json` preserved).
    - `--dry-run` prints the planned tree without writing.
    - **`--local-llm` (opt-in, off by default):** lays down `templates/_optional/local-llm/` → the project's `etc/local-llm/` (this subtree is **excluded from the default copy**, so a plain scaffold has **zero** `etc/local-llm/` files), and `jq`-mutates the generated `config.json` — repointing `claude-api`/`openai-api` base URLs at the local LiteLLM gateway (`http://127.0.0.1:4000` / `…/v1`) with dummy `sk-local-mock` keys, and adding `localLlm.model` (+ `localLlm.embeddingModel` when embeddings were chosen). `--local-llm` **requires** `--local-llm-model <model>` (the model is the single source of truth — there is no hardcoded default); the model flags without `--local-llm`, or an invalid model name, are usage errors (exit 64).
    - **Conditional `jq` dependency:** the `--local-llm` path uses `jq` **on the host** (scaffolding may run outside the dev container). The engine **preflights `jq` only when `--local-llm` is set** and exits 64 with a clear message if it's missing; a plain (non-opt-in) scaffold needs no `jq`.
    - **Opt-in is NOT sticky on `--update`:** the `--local-llm` flag is the source of truth for each run. A re-scaffold (`--update`) **without** `--local-llm` over a previously opted-in project **resets** it — drops the `localLlm` block, restores the `claude-api`/`openai-api` base URLs + keys to real-provider defaults, and removes the prior `etc/local-llm/` files. Pass `--local-llm` again on the `--update` to keep (or re-choose) the stack. (`--update` already requires `jq` for its `config.json` merge, so this reset adds no new dependency.)
+   - **`--strix` (opt-in, off by default):** lays down `templates/_optional/strix/` → the project's `etc/strix/` (this subtree is **excluded from the default copy**, so a plain scaffold has **zero** `etc/strix/` files). It performs **no** `config.json` mutation — so `--strix` needs **no `jq`** and never trips the config-drift gate. The `strix` CLI itself is installed **in the dev container** by `.devcontainer/setup.sh` (via `uv`, pinned), gated on the presence of `etc/strix/`. Like `--local-llm`, opt-in is **NOT sticky on `--update`:** a re-scaffold without `--strix` over a prior opt-in **removes** the orphaned `etc/strix/` files; pass `--strix` again to keep it.
 4. **Report** the created tree to the user.
 5. **Git/GitHub phase** (below) — `git init` + initial commit, status line, optional repo + `/init`.
 6. **Terminal `/dick` hand-off** (below) — the LAST thing the skill does.
@@ -41,6 +46,16 @@ Ask, in order (each defaults to the safe choice):
 3. **Then a second prompt — "Does the project need embeddings?"** (default: **no**). If **yes**, pick an embedding model (default **`nomic-embed-text`**, or **"something else"** — same grammar validation) and pass it as `--local-llm-embed-model`. If **no**, omit the flag entirely (no embeddings entry is written).
 
 Then invoke the engine: `scaffold.sh <name> "<description>" --local-llm --local-llm-model <chat-model> [--local-llm-embed-model <embed-model>]`. The engine lays down `etc/local-llm/`, repoints the base URLs + keys, and writes `localLlm.model` (+ `localLlm.embeddingModel`) into `config.json` — the single source of truth that `build-config` and `system.sh up`/`down` later consume. Reminder: the `--local-llm` path needs **`jq` on the host** (preflighted by the engine; a plain scaffold does not).
+
+## Strix opt-in (before the engine runs)
+
+[Strix](https://github.com/usestrix/strix) is an open-source **autonomous AI penetration-testing agent** — it runs the app's code, probes endpoints, and validates vulnerabilities with real proofs-of-concept. This opt-in installs the `strix` CLI **in the dev container** (via `uv`, pinned in `.devcontainer/setup.sh`); Strix runs its agents in a Docker sandbox, backed by the already-present `docker-in-docker` feature. It is **off by default** and fully removable; declining leaves a plain scaffold with **no** `etc/strix/`.
+
+This is a **single yes/no prompt** — no model/secret prompts. Strix's LLM credentials (`STRIX_LLM` + `LLM_API_KEY`) are **per-user secrets read from the environment**, documented as a follow-up in the scaffolded `etc/strix/README.md` (which also notes how to point Strix at the local LLM mock stack via `LLM_API_BASE` when both add-ons are enabled) — the skill never authors or prompts for them.
+
+- **Ask:** "Install the Strix AI pentest agent in the dev container?" (default: **no**). If **yes**, add `--strix` to the engine invocation; if **no**, omit it.
+
+The `--strix` flag lays down `etc/strix/` (the doc + install marker). The CLI install happens on the **next dev-container build** (`setup.sh` sees `etc/strix/` and installs the pinned `strix-agent`); it is not installed on the scaffolding host. Because `--strix` performs no `config.json` mutation, it needs **no `jq`** and composes freely with `--local-llm` (pass both).
 
 ## Git/GitHub phase (after a successful scaffold)
 
@@ -96,5 +111,6 @@ After the git phase + optional commit, offer to boot **`/dick`** (the business-a
 ## Notes
 - Deterministic stamping lives in `scaffold.sh` (tested, 100% coverage) — not in this prose.
 - The scaffolded project is a mono-repo: every component is `src/<component>/` with a matching `config.json` `systems[]` entry (tooling like `src/system-cli/` and `tests/` are documented exceptions).
-- **Ordering is single and unambiguous:** optional local-LLM opt-in prompt → scaffold → `git init` + status line → optional `/init` → **initial commit + push** (always when a repo was created; else only if auto-commit accepted) → **protect `main`** (whenever a repo was created) → **terminal `/dick` hand-off LAST**.
+- **Ordering is single and unambiguous:** optional opt-in prompts (local-LLM, Strix) → scaffold → `git init` + status line → optional `/init` → **initial commit + push** (always when a repo was created; else only if auto-commit accepted) → **protect `main`** (whenever a repo was created) → **terminal `/dick` hand-off LAST**.
 - The local LLM mock stack lives under `etc/local-llm/` (internal dev tooling, like the observability stack) — it is opt-in, profile-gated, and removable; it is **not** a `systems[]` component.
+- The Strix opt-in lives under `etc/strix/` (a doc + install marker; the CLI is installed in the dev container by `setup.sh`) — opt-in and removable, **not** a `systems[]` component. Unlike the local-LLM stack it touches no `config.json`, so `--strix` needs no `jq`.

@@ -40,6 +40,8 @@ have() { command -v "$1" >/dev/null 2>&1; }
 DUCKDB_VERSION="v1.4.2"      # DuckDB CLI (https://github.com/duckdb/duckdb/releases)
 CODEX_VERSION="0.5.0"        # OpenAI Codex CLI (npm @openai/codex)
 GLAB_VERSION="1.95.0"        # GitLab CLI / glab (https://gitlab.com/gitlab-org/cli/-/releases)
+STRIX_VERSION="1.0.4"        # Strix AI pentest agent (PyPI strix-agent; opt-in, needs Python >=3.12)
+UV_VERSION="0.11.28"         # Astral uv (provisions Strix's isolated Python 3.12 tool env; opt-in)
 
 # Pin the Angular CLI to the SAME exact version the root package.json declares —
 # the single source of truth (owned by the SPA task). Never hard-code a second
@@ -208,6 +210,37 @@ enable_claude_plugins() {
   done
 }
 
+# ---- best-effort: opt-in Strix AI pentest agent ----------------------------
+# Installed ONLY when the project opted in at scaffold time — the presence of
+# etc/strix/ (laid down by `init-project --strix`) is the install signal. Strix
+# ships on PyPI as `strix-agent` and needs Python >=3.12, which the .NET base image
+# does not provide; `uv` fetches a standalone 3.12 and installs the PINNED CLI in an
+# isolated tool env (exposing `strix` on ~/.local/bin). Docker (the docker-in-docker
+# feature) backs Strix's sandbox at RUNTIME. Per-user LLM auth (STRIX_LLM +
+# LLM_API_KEY) is a documented follow-up — see etc/strix/README.md. Best-effort: a
+# network failure warns but never aborts the build.
+install_strix() {
+  log "Strix AI pentest agent (opt-in)"
+  if [[ ! -f etc/strix/README.md ]]; then
+    ok "Strix not enabled (no etc/strix/) — skipping"
+    return 0
+  fi
+  export PATH="$HOME/.local/bin:$PATH"
+  if ! have uv; then
+    # Astral's official installer, PINNED via the versioned URL so the build is
+    # reproducible (never silently tracks "latest"). Installs uv into ~/.local/bin.
+    try "install uv $UV_VERSION" bash -c "curl -LsSf https://astral.sh/uv/${UV_VERSION}/install.sh | sh"
+  fi
+  if ! have uv; then
+    warn "uv unavailable — cannot install Strix; install it later per etc/strix/README.md"
+    return 0
+  fi
+  # uv provisions Python 3.12 on demand and installs the pinned strix-agent as an
+  # isolated tool. The `strix` command lands on ~/.local/bin.
+  try "uv tool install strix-agent==$STRIX_VERSION" \
+    uv tool install --python 3.12 "strix-agent==$STRIX_VERSION"
+}
+
 main() {
   log "Provisioning the dev container"
 
@@ -222,6 +255,7 @@ main() {
 
   # Best-effort enable-steps (never abort the build).
   enable_claude_plugins
+  install_strix
 
   log "Dev container provisioning complete"
   printf '\n  MCP servers (context7, github-mcp-server) are declared in .mcp.json.\n'

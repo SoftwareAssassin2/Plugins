@@ -42,6 +42,14 @@
 # (the non-opt-in scaffold stays jq-free). A non-opt-in scaffold has ZERO etc/local-llm/
 # files and no localLlm config block; base URLs stay real-provider defaults.
 #
+# Strix opt-in (AI pentest agent) — OFF by default:
+#   --strix   lay down templates/_optional/strix/ -> the project's etc/strix/ (the
+#             opt-in AI-pentest-agent doc + install marker). The Strix CLI itself is
+#             installed IN THE DEV CONTAINER by .devcontainer/setup.sh, gated on the
+#             presence of etc/strix/. There is NO config.json mutation (so --strix needs
+#             no jq and never trips the config-drift gate), and a non-opt-in --update
+#             prunes a prior opt-in's etc/strix/ files (opt-in is NOT sticky).
+#
 # Exit codes: 64 usage/validation error, 65 target/collision error, 0 success.
 
 set -euo pipefail
@@ -65,7 +73,7 @@ readonly REAL_OPENAI_BASE_URL="https://api.openai.com/v1"
 readonly REAL_API_KEY="REPLACE_ME"
 
 die() { echo "ERROR: $*" >&2; exit "${2:-64}"; }
-usage() { echo "usage: scaffold.sh <project-name> <description> [--force|--update] [--replace-config] [--dry-run] [--local-llm --local-llm-model <model> [--local-llm-embed-model <model>]]" >&2; exit 64; }
+usage() { echo "usage: scaffold.sh <project-name> <description> [--force|--update] [--replace-config] [--dry-run] [--strix] [--local-llm --local-llm-model <model> [--local-llm-embed-model <model>]]" >&2; exit 64; }
 
 # Generate a URL-safe secret matching [A-Za-z0-9_-]+ (no =, /, +).
 gen_urlsafe() { openssl rand -base64 32 | tr -d '=\n' | tr '/+' '_-'; }
@@ -95,6 +103,7 @@ target_rel() {
     _CLAUDE.md)               echo "CLAUDE.md" ;;
     */_CLAUDE.md)             echo "${1%/_CLAUDE.md}/CLAUDE.md" ;;
     _optional/local-llm/*)    echo "etc/local-llm/${1#_optional/local-llm/}" ;;
+    _optional/strix/*)        echo "etc/strix/${1#_optional/strix/}" ;;
     *)                        echo "$1" ;;
   esac
 }
@@ -104,7 +113,7 @@ manifest_has() { [[ -f "$1" ]] && grep -qF "\"path\": \"$2\"" "$1"; }
 
 main() {
   local name="" desc="" mode="strict" replace_config=0 dry_run=0
-  local local_llm=0 llm_model="" llm_embed_model=""
+  local local_llm=0 llm_model="" llm_embed_model="" strix=0
   local positionals=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -112,6 +121,7 @@ main() {
       --update)         mode="update" ;;
       --replace-config) replace_config=1 ;;
       --dry-run)        dry_run=1 ;;
+      --strix)          strix=1 ;;
       --local-llm)      local_llm=1 ;;
       --local-llm-model)
                         [[ $# -ge 2 && -n "$2" ]] || die "--local-llm-model requires a non-empty value"
@@ -188,6 +198,18 @@ main() {
       < <(cd "$llm_dir" && find . -type f -print0)
   fi
 
+  # Opt-in: same treatment for the Strix subtree -> etc/strix/ (opt-in AI pentest
+  # agent doc + install marker). Unlike --local-llm this performs NO config.json
+  # mutation, so --strix needs no jq and never trips the config-drift gate; the CLI
+  # itself is installed in the dev container by setup.sh, gated on etc/strix/.
+  if [[ "$strix" -eq 1 ]]; then
+    local sx_dir="$templates/_optional/strix"
+    [[ -d "$sx_dir" ]] || die "templates/_optional/strix/ not found (cannot install --strix)" 65
+    local sxf
+    while IFS= read -r -d '' sxf; do sxf="${sxf#./}"; files+=("_optional/strix/$sxf"); done \
+      < <(cd "$sx_dir" && find . -type f -print0)
+  fi
+
   # Planned target paths.
   local planned=() rel
   for rel in "${files[@]}"; do planned+=("$(target_rel "$rel")"); done
@@ -231,6 +253,16 @@ main() {
     local plf
     while IFS= read -r plf; do [[ -n "$plf" ]] && prior_llm_files+=("$plf"); done \
       < <(jq -r '.files[].path | select(startswith("etc/local-llm/"))' "$existing_manifest" 2>/dev/null)
+  fi
+
+  # Same for a prior Strix opt-in (etc/strix/): a non-opt-in --update removes the
+  # orphaned files so opt-in is NOT sticky. Strix has no config block, so this file
+  # prune is the ONLY reset it needs (mirrors the local-llm prune above).
+  local prior_strix_files=()
+  if [[ "$strix" -eq 0 && "$mode" == "update" && -f "$existing_manifest" ]] && command -v jq >/dev/null 2>&1; then
+    local psf
+    while IFS= read -r psf; do [[ -n "$psf" ]] && prior_strix_files+=("$psf"); done \
+      < <(jq -r '.files[].path | select(startswith("etc/strix/"))' "$existing_manifest" 2>/dev/null)
   fi
 
   mkdir -p "$target"
@@ -343,6 +375,13 @@ main() {
     for of in "${prior_llm_files[@]}"; do rm -f "$target/$of"; done
     # Remove the etc/local-llm/ tree if it's now empty (rmdir -p ignores non-empty).
     [[ -d "$target/etc/local-llm" ]] && find "$target/etc/local-llm" -type d -empty -delete 2>/dev/null || true
+  fi
+
+  # Same prune for a prior Strix opt-in's now-orphaned etc/strix/ files.
+  if [[ ${#prior_strix_files[@]} -gt 0 ]]; then
+    local sof
+    for sof in "${prior_strix_files[@]}"; do rm -f "$target/$sof"; done
+    [[ -d "$target/etc/strix" ]] && find "$target/etc/strix" -type d -empty -delete 2>/dev/null || true
   fi
 
   # Leftover-token gate — scan ONLY the scaffold-managed outputs (not unmanaged

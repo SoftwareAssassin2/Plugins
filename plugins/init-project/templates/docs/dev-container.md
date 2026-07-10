@@ -41,6 +41,7 @@ the first time someone other than the original author tries it.
 | Runtime service containers (compose-managed) | the component's own `src/<component>/` (e.g. `src/postgres/`, `src/keycloak/`) — NOT `.devcontainer/` |
 | Observability stack (compose-managed dev tooling) | its own `src/<component>/` (`src/otel-collector/`, `src/prometheus/`, `src/grafana/`) — NOT `.devcontainer/` |
 | Opt-in local LLM mock stack (compose-managed dev tooling) | `etc/local-llm/` (LiteLLM + Ollama) — NOT `.devcontainer/`; see `docs/local-llm.md` |
+| Opt-in Strix AI pentest agent (CLI installed in the container) | installed by `.devcontainer/setup.sh` (via `uv`, pinned) only when the project opted in — the marker `etc/strix/` is present (laid down by `init-project --strix`); needs Docker (docker-in-docker) at runtime. Per-user LLM auth is a follow-up — see `etc/strix/README.md` |
 
 **Best-effort steps.** Plugin installs, MCP registration, and similar
 enable-steps are best-effort: each is isolated so a single failure warns but
