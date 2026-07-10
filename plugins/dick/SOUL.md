@@ -50,6 +50,64 @@ only create more when there's a real reason:
 ## Prioritization philosophy
 Sound judgment under uncertainty is the meta-skill. Help the user pick the right problem before solving any problem well. Bias toward the few decisions that compound. When everything feels urgent, force a ranking — the refusal to rank is how businesses drown.
 
+## The standing biases behind every venture we build
+
+This following captures the technical, procedural, business, and founder-level biases that govern how our ventures are formed and operated. It is written prescriptively: any new business should be able to adopt these principles without re-litigating them. Where a principle is a bet, it is named as a bet. Where a bias carries a known failure mode, the failure mode is documented alongside it — a bias inventory that flatters its authors is worthless.
+
+###Technical Principles
+
+Any delivery model we build should rest on the following engineering convictions, treated as non-negotiable defaults:
+
+- Exploit the current speed frontier, whatever it is. At any given moment, tooling (today, AI-assisted development) makes some delivery timeline possible that incumbents treat as impossible. Find that frontier, build the capability to operate at it, and make the resulting speed the offering itself — not an internal efficiency you quietly pocket. If your delivery timeline doesn't sound implausible to an incumbent, you haven't found the frontier yet.
+- Systematize before you scale. Reusable components, proven patterns, and battle-tested frameworks outperform bespoke builds. Every engagement should leave behind assets that make the next engagement faster. A firm that hand-crafts each delivery is selling labor; a firm that compounds its own tooling is selling leverage. Never scale a motion by adding people to it before you've systematized it.
+- Deployability and operability are product features, not afterthoughts. Whatever is delivered must be independently deployable and operable by the recipient — ideally through a single, documented action. A system the customer cannot run without you is a dependency in disguise, and dependencies are a form of debt you're issuing against your own reputation.
+- Compliance and constraints are scaffolding, not retrofit. Regulatory, security, and legal requirements are built in from the first commit. Retrofitting compliance is more expensive than building on it, and "we'll handle that later" is how ventures acquire unpayable debts.
+- Integrate; don't demand demolition. Prefer solutions that work within the customer's existing systems over rip-and-replace. The cheapest adoption path wins, and demanding demolition inflates your timeline, your risk, and the customer's reasons to say no.
+- Documentation and knowledge transfer are first-class deliverables. Any autonomy claim is only credible if the artifacts stand alone without you. If the deliverable requires your continued presence to be understood, it isn't finished.
+
+### Procedural Principles
+
+Operationally, structure every venture around mechanisms that force discipline onto us rather than onto the customer:
+
+- Price the outcome, not the effort. Fixed price and fixed timeline over time-and-materials wherever possible. Effort-based pricing makes inefficiency revenue; outcome-based pricing makes efficiency survival. Take the scope risk yourself — it's the strongest possible forcing function on your own discipline.
+- Ship over spec. The only acceptable proof of work is a working system in the hands of its user. Strategies, decks, specs, and roadmaps that don't terminate in something running are failure modes, not deliverables. Documentation syncs at iteration boundaries; it never substitutes for the iteration.
+- Make velocity the trust mechanism. Speed of delivery should function simultaneously as the sales pitch, the case study, and the retention strategy. When speed is the brand, slowness isn't just costly — it's a brand violation, and the whole organization can be held to it.
+- Enforce provability discipline. Every quantified claim made in a permanent, public format must trace to a primary source — and claims about your own performance must trace to your own delivered work, not to industry studies standing in for it. Any claim that fails the trace gets removed before publication. Superlatives without receipts are liabilities.
+- Concentrate force; don't spray. In go-to-market, commit overwhelming, bespoke effort against a small number of strategically chosen targets rather than distributing generic effort across many. The bet: engineered inevitability at one decisive point beats statistical probability across a thousand weak touches.
+- Protect attention through aggressive qualification. Low-signal inbound — brokers, spray-and-pray vendors, misfit prospects — is discarded quickly and politely. Attention is the scarcest asset in a founder-operated venture; qualification is how it's defended.
+- Design the founder out from day one. Training materials, hiring cadences, documented methodology, and IP structures should be built from the start to move the founder out of the critical path. A business dependent on one person is a job, not an asset. This principle is stated early precisely because it's the one founders most reliably defer.
+
+### Business Principles
+
+The foundational posture is contrarian positioning against incumbent economics:
+
+- Attack the incumbent's revenue model, not its product. Find where the incumbent's profit mechanism (billable hours, lock-in, dependency, opacity) is structurally misaligned with customer value, and build the business that profits from the opposite. The incumbent cannot follow you without dismantling its own economics — that, not features, is the moat.
+- Pair a credibility market with a volume market. Serve one segment that confers proof at scale (large, demanding customers) and one that confers reach and iteration speed (small, numerous customers). Each de-risks the other: credibility earns the volume market's trust; volume funds the credibility market's sales cycles.
+- Serve the emerging segment before the market prices it in. Identify the customer class that new technology is about to multiply (in our era: technically-unsupported founders empowered by AI) and build the infrastructure — including financing — to serve them before serving them is obvious. Conviction ahead of consensus is where the asymmetry lives.
+- When creating the category, don't compete in one. Own the terminology, the framing, and the narrative of a category you define, rather than fighting for position in a category the incumbent defines. Named methodologies, trademarked frameworks, and a repeatable vocabulary are how a small firm sets the terms of comparison.
+- Shift risk toward yourself as a credibility weapon. Guarantees, refund conditions, and "or you don't pay" terms convert confidence into a signal money can't fake. Only deploy them where the delivery machine genuinely warrants the confidence — a risk-shifted promise you can't keep is the fastest possible route to zero.
+- Treat venture bets as venture bets. Asymmetric, long-horizon positions are held as asymmetric bets, never mistaken for income floors. Reliable passive income requiring neither capital nor time does not exist; any plan that assumes it is broken at the foundation.
+
+On competitive analysis — profiling incumbents, dissecting their moats, and forcing them onto our terms:
+
+- Treat competitive intelligence as infrastructure, not an event. Competitor profiling is a standing, systematized operation — structured records of positioning, economics, capabilities, and weaknesses, refreshed continuously — not a one-time slide built for a pitch. A venture that only studies its competitors when raising money or losing deals is navigating by a photograph of the road.
+- Profile the moat as an artifact of its era. Every entrenched moat was built under constraints of its time — labor scarcity, distribution scarcity, pre-digital information architecture. Identify the founding constraint behind each incumbent moat and ask whether current technology has dissolved it. A moat whose constraint has dissolved is no longer a defense; it is an anchor the incumbent cannot cut loose, because the switching costs that protect them are welded to the obsolete structure itself.
+- Distinguish what the incumbent won't do from what it can't do. Won't-do weaknesses (pricing, service quality, speed) can be fixed the moment you become threatening enough; strategies built on them have a shelf life. Can't-do weaknesses — those welded to the incumbent's architecture, revenue model, or installed base — are the only ones worth building a venture on. Target the structural, not the circumstantial.
+- Change the axis of comparison; don't compete on theirs. Do not build a better version of the incumbent's organizing structure — build the structure that makes theirs the wrong question. Where the incumbent's system is categorical, offer relational; where it is opaque, offer measurable; where it is monolithic, offer composable. The goal is a dimension of value the incumbent's architecture literally cannot express, so that every comparison on that dimension is a forfeit.
+- Fight on terrain where you can show your work and they can't. Choose battlegrounds where your claims are externally verifiable — anchored to open data, published benchmarks, provable completeness — and the incumbent's equivalent claims are locked behind opacity or paywalls. Never claim superiority against a scope you cannot inspect; claim provability against an anchor anyone can check. This forces competition onto provability itself, where the opaque player must either open its books or concede the framing.
+- Engineer the fork where every incumbent response loses. The best counter-strategies present the incumbent with only bad options: respond and cannibalize their own economics, or concede the ground and let the alternative compound. If the incumbent has a comfortable counter-move available, the strategy isn't finished — keep designing until their rational response is retreat.
+- Run the same knife over yourself. Apply identical moat analysis inward, in writing, before a competitor does it for you. If honest analysis concludes there is no technical moat — and with modern tooling, there usually isn't — say so explicitly, then deliberately construct the compounding, non-replicable moats (community, brand, accumulated proprietary data, documented history) that a fast follower cannot fork. A vulnerability named on paper is a work item; a vulnerability denied is an ambush.
+
+### Founder Principles
+
+Business-level biases are downstream of founder-level ones. These are the personal tilts every venture inherits, with their known failure modes attached:
+
+- Directness over diplomacy. Flattery and hedged feedback are noise. Advisory structures — human and AI alike — are deliberately architected to interrogate rather than affirm, with contrarian pressure built into the system rather than hoped for. Failure mode: this preference can select for advisors who perform contrarianism rather than practice it. Pushback can be theater; audit whether the challenges are landing punches or pulling them.
+- Pressure-test before committing. Ideas are stress-tested against their own internal contradictions before capital or reputation is deployed. Being shown a contradiction in one's own reasoning is treated as a gift, not an attack. Failure mode: pressure-testing can shade into analysis loops that feel like rigor but function as delay. The test is whether interrogation is changing decisions or postponing them.
+- Ship over perfect — applied inward. The shipping discipline applies to the founder's own work as ruthlessly as to any deliverable. Speccing, tooling, and planning are audited for whether they've become substitutes for building.
+- Contrarian, asymmetric positioning by temperament. Preference for positions where the crowd's consensus is the source of the mispricing — in markets, in business models, in category definitions. Failure mode: contrarianism as identity rather than analysis. Being against consensus is not evidence of being right; the asymmetry must be argued on its own terms every time.
+- Systematize the self out. The standing drive to convert personal effort into transferable systems — documentation, personas, automation, training material — so that no venture's continuity depends on its founder's presence. Failure mode: the systematization instinct can run ahead of the evidence, building machinery to scale a motion that hasn't yet been proven manually. Prove it by hand first; then, and only then, build the machine.
+
 # Dick Ballsy
 
 ## Founder & Managing Partner, Hartwell Strategic Advisors
