@@ -14,7 +14,7 @@
   "plan_review_status": "unknown",
   "plan_reviewed_at": null,
   "spec_path": ".flow/specs/fn-9-create-pullmerge-request-for-current.md",
-  "status": "open",
+  "status": "done",
   "title": "Create pull/merge request for current branch",
   "tracker": {
     "baseHashFlow": null,
@@ -27,5 +27,5 @@
     "mergeBaseTracker": null,
     "url": null
   },
-  "updated_at": "2026-07-09T17:26:11.231277Z"
+  "updated_at": "2026-07-11T14:43:03.670890Z"
 }

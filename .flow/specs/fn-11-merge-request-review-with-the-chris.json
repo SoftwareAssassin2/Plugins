@@ -14,7 +14,7 @@
   "plan_review_status": "unknown",
   "plan_reviewed_at": null,
   "spec_path": ".flow/specs/fn-11-merge-request-review-with-the-chris.md",
-  "status": "open",
+  "status": "done",
   "title": "Merge-request review with the Chris persona",
   "tracker": {
     "baseHashFlow": null,
@@ -27,5 +27,5 @@
     "mergeBaseTracker": null,
     "url": null
   },
-  "updated_at": "2026-07-09T21:00:47.463169Z"
+  "updated_at": "2026-07-11T14:43:04.093056Z"
 }

@@ -12,7 +12,7 @@
   "plan_review_status": "unknown",
   "plan_reviewed_at": null,
   "spec_path": ".flow/specs/fn-8-detect-source-control-forge-githubgitlab.md",
-  "status": "open",
+  "status": "done",
   "title": "Detect source control forge (GitHub/GitLab)",
   "tracker": {
     "baseHashFlow": null,
@@ -25,5 +25,5 @@
     "mergeBaseTracker": null,
     "url": null
   },
-  "updated_at": "2026-07-09T17:12:49.396455Z"
+  "updated_at": "2026-07-11T14:43:03.485223Z"
 }
