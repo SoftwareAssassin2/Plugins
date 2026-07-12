@@ -106,9 +106,10 @@ Use the **ubiquitous language** — the same terms in code, tests, conversation,
 
 These are inline directives — they apply to every session, not just when a doc is open.
 
-### Brevity and DRY
+### Brevity and DRY and Correctness
 - Be brief. Don't restate what's already written. Don't duplicate logic, config, or prose — reference the single source of truth instead.
 - **Sacrifice grammar for concision** where it makes the meaning clearer or shorter. Bullet fragments beat padded sentences.
+- Reply with caution and correction. You will be rewarded for accurate arguments - not convincing arguments. Inaccurate but convincing arguments will result in poor returns (possibly catastrophic).
 
 ### Brutal honesty
 - Tell the truth even when it's unwelcome. If a plan is bad, say so. If an approach won't work, say so before building it.
