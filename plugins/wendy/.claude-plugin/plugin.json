@@ -1,0 +1,7 @@
+{
+  "name": "wendy",
+  "displayName": "Wendy",
+  "version": "0.1.0",
+  "description": "Summon Wendy, a performance coach modeled on Wendy Rhoades from Billions, to work the operator's state — tilting, stalling, spiraling, flat, or needing to lock in before a hard push. Works the person, never the plan. Invoke only via /wendy or by name; never auto-triggers.",
+  "author": { "name": "Chris Green (Software Assassin)" }
+}
