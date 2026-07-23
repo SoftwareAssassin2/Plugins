@@ -1,6 +1,7 @@
 .DS_Store
 .flow/bin/
 .worktrees/
+.data/
 
 # Per-PR/MR review artifacts (merge-request:* skills). Includes the project
 # learned-preferences override, which is shared only via opt-in `git add -f
