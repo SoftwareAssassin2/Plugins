@@ -1,6 +1,7 @@
 {
   "enabledPlugins": {
     "flow-next@flow-next": true,
-    "speak@plugins": true
+    "speak@plugins": true,
+    "wendy@plugins": true
   }
 }
